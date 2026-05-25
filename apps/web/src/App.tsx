@@ -25,16 +25,42 @@ import {
 import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VisibleNote } from "@pmw/shared";
 import { api, assetForVersion, uploadAudio, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { usePlayer } from "./player";
+import { onAuthChange, signOut, getSession } from "./auth";
+import { SignIn } from "./SignIn";
+import type { Session } from "@supabase/supabase-js";
 
 type ViewMode = "room" | "song" | "compare" | "inbox" | "links" | "assistant";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
   if (sharedToken) return <SharedListeningPage token={sharedToken} />;
-  return <WorkspaceApp />;
+  return <AuthenticatedApp />;
 }
 
-function WorkspaceApp() {
+function AuthenticatedApp() {
+  const [session, setSession] = useState<Session | null | "loading">("loading");
+
+  useEffect(() => {
+    let mounted = true;
+    getSession().then((s) => mounted && setSession(s));
+    const unsub = onAuthChange((s) => mounted && setSession(s));
+    return () => { mounted = false; unsub(); };
+  }, []);
+
+  if (session === "loading") {
+    return (
+      <div className="app-shell" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+        <p className="muted">Loading…</p>
+      </div>
+    );
+  }
+  if (!session) {
+    return <SignIn onSignedIn={() => getSession().then(setSession)} />;
+  }
+  return <WorkspaceApp onSignOut={() => { void signOut(); }} />;
+}
+
+function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [roomPayload, setRoomPayload] = useState<RoomPayload | null>(null);
   const [songPayload, setSongPayload] = useState<SongPayload | null>(null);
   const [mode, setMode] = useState<ViewMode>("song");
@@ -66,7 +92,7 @@ function WorkspaceApp() {
 
   return (
     <div className="app-shell">
-      <TopBar roomTitle={roomPayload?.room.title ?? "Private Workspace"} error={error} />
+      <TopBar roomTitle={roomPayload?.room.title ?? "Private Workspace"} error={error} onSignOut={onSignOut} />
       <main className="workspace-grid">
         <Sidebar
           mode={mode}
@@ -108,7 +134,7 @@ function WorkspaceApp() {
   );
 }
 
-function TopBar({ roomTitle, error }: { roomTitle: string; error: string | null }) {
+function TopBar({ roomTitle, error, onSignOut }: { roomTitle: string; error: string | null; onSignOut?: () => void }) {
   return (
     <header className="top-bar">
       <div className="icon-run">
@@ -126,6 +152,11 @@ function TopBar({ roomTitle, error }: { roomTitle: string; error: string | null 
         <button className="avatar-button" title="Account">
           TB
         </button>
+        {onSignOut && (
+          <button className="signout-chip" title="Sign out" onClick={onSignOut}>
+            Sign out
+          </button>
+        )}
       </div>
     </header>
   );

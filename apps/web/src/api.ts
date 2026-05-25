@@ -1,16 +1,24 @@
 import type { AssistantAnswer, FileAsset, Room, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
+import { supabase } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      "x-user-id": "usr-theo",
-      ...(init?.headers ?? {}),
-    },
-  });
+  // Attach the current Supabase session JWT if logged in; otherwise fall back
+  // to the dev x-user-id header (used by recipient/shared routes that don't
+  // require auth).
+  const { data } = await supabase.auth.getSession();
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...(init?.headers as Record<string, string> | undefined ?? {}),
+  };
+  if (data.session?.access_token) {
+    headers["authorization"] = `Bearer ${data.session.access_token}`;
+  } else if (!headers["x-user-id"]) {
+    headers["x-user-id"] = "usr-theo";
+  }
+
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers });
   const payload = await response.json();
   if (!response.ok || payload.error) {
     throw new Error(payload.error ?? "Request failed");

@@ -4,15 +4,26 @@ import { randomUUID } from "node:crypto";
 import { store, type AuthContext } from "./store";
 import { signUpload, finalizeUpload, type FinalizeUploadInput, type SignUploadInput } from "./uploads";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
+import { authFromHeaders } from "./auth";
 
-const port = Number(process.env.API_PORT ?? 4317);
+const port = Number(process.env.API_PORT ?? Number(process.env.PORT) ?? 4317);
 const server = Fastify({ logger: true });
 
 await server.register(cors, { origin: true });
 
+/**
+ * Legacy sync version, kept for routes that don't yet need verified auth
+ * (recipient/shared endpoints, dev/reset). Use authFromHeaders for any
+ * route that takes producer action.
+ */
 function authFromRequest(request: { headers: Record<string, string | string[] | undefined> }): AuthContext {
   const header = request.headers["x-user-id"];
   return { userID: Array.isArray(header) ? header[0] : header ?? "usr-theo" };
+}
+
+/** Async, verified-JWT version. Use this for `/me`, /notes, /versions, etc. */
+async function authedFromRequest(request: { headers: Record<string, string | string[] | undefined> }): Promise<AuthContext> {
+  return authFromHeaders(request.headers);
 }
 
 function ok<T>(value: T): { data: T } {
@@ -22,7 +33,7 @@ function ok<T>(value: T): { data: T } {
 server.get("/health", async () => ok({ status: "ok", product: "private-music-workspace" }));
 server.post("/dev/reset", async () => ok(store.reset()));
 
-server.get("/me", async (request) => ok(store.me(authFromRequest(request))));
+server.get("/me", async (request) => ok(store.me(await authedFromRequest(request))));
 server.get("/workspaces", async () => ok(store.data.workspaces));
 server.get("/workspaces/:id", async (request) => {
   const { id } = request.params as { id: string };

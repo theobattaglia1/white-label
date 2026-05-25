@@ -1285,6 +1285,148 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 }
 
 /* =====================================================================
+   Sign-in page (the two-doors sign-up screen from wireframes v2 #s06)
+   ===================================================================== */
+.signin-page {
+  min-height: 100vh;
+  background: var(--sleeve-cream);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+}
+.signin-chrome {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--sleeve-hairline);
+}
+.signin-doors {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  padding: 56px clamp(24px, 6vw, 80px);
+  align-items: stretch;
+}
+@media (max-width: 720px) {
+  .signin-doors { grid-template-columns: 1fr; padding: 32px 18px; gap: 18px; }
+}
+.signin-door {
+  background: var(--sleeve-card);
+  border: 1px solid var(--sleeve-hairline);
+  padding: 36px 32px;
+  min-height: 380px;
+  display: flex; flex-direction: column;
+  cursor: pointer;
+  transition: background var(--motion-fast);
+}
+.signin-door:hover { background: var(--sleeve-elevated); }
+.signin-door.listen.active {
+  background: var(--sleeve-elevated);
+  border-color: var(--ink);
+  border-width: 2px;
+  padding: 35px 31px;
+}
+.signin-door.producer.active {
+  background: var(--sleeve-elevated);
+  border-color: var(--ink);
+  border-width: 2px;
+  padding: 35px 31px;
+}
+.signin-door .kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin-bottom: 12px;
+}
+.signin-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(28px, 3.4vw, 40px);
+  letter-spacing: -.02em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0;
+}
+.signin-lede {
+  font-size: 14px;
+  color: var(--pencil-cool);
+  margin-top: 10px;
+  line-height: 1.5;
+  max-width: 38ch;
+}
+.signin-form {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.signin-form input {
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--sleeve-hairline);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  border-radius: 2px;
+}
+.signin-form input:focus { border-color: var(--ink); outline: none; }
+.signin-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
+}
+.signin-actions .accent-button { background: var(--ink); border-color: var(--ink); color: #fff; }
+.signin-actions .accent-button:hover { background: #25221d; border-color: #25221d; }
+.signin-actions .chrome-button { color: var(--ink); border-color: var(--sleeve-hairline); }
+.signin-actions .chrome-button:hover { border-color: var(--ink); }
+.signin-footer {
+  margin-top: auto;
+  padding-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--pencil-cool);
+  letter-spacing: .04em;
+}
+.linklike {
+  background: transparent; border: 0; padding: 0;
+  color: var(--ink);
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: .04em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.signin-toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 24px;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .04em;
+  border-radius: 2px;
+  border: 1px solid var(--ink);
+  background: var(--sleeve-elevated);
+  color: var(--ink);
+}
+.signin-toast.error {
+  border-color: var(--redline);
+  color: var(--redline);
+}
+
+/* Sign-out chip in top-bar */
+.signout-chip {
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: .04em;
+  padding: 6px 10px;
+  border: 1px solid var(--studio-hairline);
+  color: var(--pencil-warm);
+  background: transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+.signout-chip:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
+
+/* =====================================================================
    Visually-hidden helper
    ===================================================================== */
 .sr-only {

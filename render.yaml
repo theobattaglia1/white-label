@@ -1,0 +1,74 @@
+# Render Blueprint for WHITE LABEL (private-music-workspace)
+# Apply by going to https://dashboard.render.com/blueprints and connecting the
+# GitHub repo containing this file. Render will detect render.yaml and offer
+# to create both services in one step.
+
+services:
+  # ===== Backend API (Fastify) =====
+  - type: web
+    name: white-label-api
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: .
+    buildCommand: |
+      npm install
+      npm --workspace @pmw/shared run build
+      npm --workspace @pmw/api run build
+    # The compiled JS uses ESM bare imports that Node's ESM resolver doesn't
+    # like; tsx handles it without modification. Tradeoff: ~12MB overhead in
+    # production. Acceptable for design-partner phase.
+    startCommand: npx --yes tsx apps/api/src/server.ts
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: API_PORT
+        value: "10000"            # Render expects services to bind to $PORT
+      - key: PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: production
+      # Supabase (next session) — uncomment when wired:
+      # - key: SUPABASE_URL
+      #   sync: false
+      # - key: SUPABASE_SERVICE_ROLE_KEY
+      #   sync: false
+
+  # ===== Frontend (Vite SPA, static) =====
+  - type: web
+    name: white-label-web
+    runtime: static
+    rootDir: apps/web
+    buildCommand: |
+      cd ../.. &&
+      npm install &&
+      npm --workspace @pmw/shared run build &&
+      npm --workspace @pmw/web run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN
+      - path: /seed-audio/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /brand/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      # SPA fallback
+      - type: rewrite
+        source: /shared/*
+        destination: /index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      # IMPORTANT: this URL is baked into the Vite bundle at build time.
+      # Replace with your actual Render API URL after first deploy.
+      - key: VITE_API_URL
+        value: https://white-label-api.onrender.com

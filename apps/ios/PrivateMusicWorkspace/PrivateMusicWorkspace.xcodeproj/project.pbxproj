@@ -1,0 +1,359 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		082A249033D39CA53F30E174 /* PMWStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893A1AB4D223C6FCF424DB44 /* PMWStore.swift */; };
+		175871D33BA3F0B66F820504 /* PMWAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21B3364396EF2813AD7DBDB /* PMWAudioEngine.swift */; };
+		2195E362C7DCCCD56C22863D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 89C6EE842A6DCBD79A588CE2 /* Assets.xcassets */; };
+		9FC9C35AC237ED69E8186415 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BF03471EC9402DB7271816CD /* Foundation.framework */; };
+		BE4C1598EC70C8471FFB73E5 /* PMWModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE076524473163447D09AA98 /* PMWModels.swift */; };
+		C865624C36E7DDA3FEC66DEE /* PMWRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9005AAA2E09071FB84936D88 /* PMWRootView.swift */; };
+		DB6F196C2C379A15F982E561 /* PMWSampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8FA7B3F1A48D33BB9A5229 /* PMWSampleData.swift */; };
+		DD9D438F840E7D3F54ADB06C /* PrivateMusicWorkspaceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42CFC8E6F5243E2FC2DEEAA /* PrivateMusicWorkspaceApp.swift */; };
+		F39D788FBD82BF90D25A467B /* PMWTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B7376B3B4508C9151CCEFE /* PMWTheme.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		27B7376B3B4508C9151CCEFE /* PMWTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWTheme.swift; path = PrivateMusicWorkspace/PMWTheme.swift; sourceTree = "<group>"; };
+		5D8FA7B3F1A48D33BB9A5229 /* PMWSampleData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWSampleData.swift; path = PrivateMusicWorkspace/PMWSampleData.swift; sourceTree = "<group>"; };
+		715D2FA0FB2EB6518BDE86FC /* PrivateMusicWorkspace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PrivateMusicWorkspace.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		893A1AB4D223C6FCF424DB44 /* PMWStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWStore.swift; path = PrivateMusicWorkspace/PMWStore.swift; sourceTree = "<group>"; };
+		89C6EE842A6DCBD79A588CE2 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9005AAA2E09071FB84936D88 /* PMWRootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWRootView.swift; path = PrivateMusicWorkspace/PMWRootView.swift; sourceTree = "<group>"; };
+		A42CFC8E6F5243E2FC2DEEAA /* PrivateMusicWorkspaceApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PrivateMusicWorkspaceApp.swift; path = PrivateMusicWorkspace/PrivateMusicWorkspaceApp.swift; sourceTree = "<group>"; };
+		AE076524473163447D09AA98 /* PMWModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWModels.swift; path = PrivateMusicWorkspace/PMWModels.swift; sourceTree = "<group>"; };
+		BF03471EC9402DB7271816CD /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F21B3364396EF2813AD7DBDB /* PMWAudioEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWAudioEngine.swift; path = PrivateMusicWorkspace/PMWAudioEngine.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7B943C9754A97781A45705D0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9FC9C35AC237ED69E8186415 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7F4A907AC26C52D5BD57F7E8 = {
+			isa = PBXGroup;
+			children = (
+				90243341C7DECDF23EB3C09D /* Products */,
+				F1B182EE76ACD73B84DEDD0B /* Frameworks */,
+				C1CF2A2D18D55B998A3E92D7 /* Sources */,
+				89C6EE842A6DCBD79A588CE2 /* Assets.xcassets */,
+			);
+			sourceTree = "<group>";
+		};
+		90243341C7DECDF23EB3C09D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				715D2FA0FB2EB6518BDE86FC /* PrivateMusicWorkspace.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C1CF2A2D18D55B998A3E92D7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				F21B3364396EF2813AD7DBDB /* PMWAudioEngine.swift */,
+				AE076524473163447D09AA98 /* PMWModels.swift */,
+				9005AAA2E09071FB84936D88 /* PMWRootView.swift */,
+				5D8FA7B3F1A48D33BB9A5229 /* PMWSampleData.swift */,
+				893A1AB4D223C6FCF424DB44 /* PMWStore.swift */,
+				27B7376B3B4508C9151CCEFE /* PMWTheme.swift */,
+				A42CFC8E6F5243E2FC2DEEAA /* PrivateMusicWorkspaceApp.swift */,
+			);
+			name = Sources;
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		DA82DFE8296C0592F85C354C /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				BF03471EC9402DB7271816CD /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F1B182EE76ACD73B84DEDD0B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				DA82DFE8296C0592F85C354C /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D958DA5F7ED33328D4DC3B6C /* PrivateMusicWorkspace */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 15F48028104A1BD86D3D4071 /* Build configuration list for PBXNativeTarget "PrivateMusicWorkspace" */;
+			buildPhases = (
+				A34404D164470709BC1E04BB /* Sources */,
+				7B943C9754A97781A45705D0 /* Frameworks */,
+				6E72325CF39153F5E03D0CB1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PrivateMusicWorkspace;
+			productName = "Private Music Workspace";
+			productReference = 715D2FA0FB2EB6518BDE86FC /* PrivateMusicWorkspace.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4642AD2F0406169567D50CD2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+			};
+			buildConfigurationList = 174E5BC34D07105291A11D6D /* Build configuration list for PBXProject "PrivateMusicWorkspace" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 7F4A907AC26C52D5BD57F7E8;
+			minimizedProjectReferenceProxies = 0;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 90243341C7DECDF23EB3C09D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D958DA5F7ED33328D4DC3B6C /* PrivateMusicWorkspace */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6E72325CF39153F5E03D0CB1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2195E362C7DCCCD56C22863D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A34404D164470709BC1E04BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				175871D33BA3F0B66F820504 /* PMWAudioEngine.swift in Sources */,
+				BE4C1598EC70C8471FFB73E5 /* PMWModels.swift in Sources */,
+				C865624C36E7DDA3FEC66DEE /* PMWRootView.swift in Sources */,
+				DB6F196C2C379A15F982E561 /* PMWSampleData.swift in Sources */,
+				082A249033D39CA53F30E174 /* PMWStore.swift in Sources */,
+				F39D788FBD82BF90D25A467B /* PMWTheme.swift in Sources */,
+				DD9D438F840E7D3F54ADB06C /* PrivateMusicWorkspaceApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		57C9BF06084C6BC499DFC847 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		794C329DB56508E4E0742443 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B115021B5F3C58ED34E32CCB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Private Music Workspace";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "audio fetch";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = Theo.PrivateMusicWorkspace;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F81D3C6238B43A93DD4E923A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Private Music Workspace";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "audio fetch";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = Theo.PrivateMusicWorkspace;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		15F48028104A1BD86D3D4071 /* Build configuration list for PBXNativeTarget "PrivateMusicWorkspace" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B115021B5F3C58ED34E32CCB /* Release */,
+				F81D3C6238B43A93DD4E923A /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		174E5BC34D07105291A11D6D /* Build configuration list for PBXProject "PrivateMusicWorkspace" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				57C9BF06084C6BC499DFC847 /* Debug */,
+				794C329DB56508E4E0742443 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4642AD2F0406169567D50CD2 /* Project object */;
+}

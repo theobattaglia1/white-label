@@ -1,0 +1,28 @@
+{
+  "name": "private-music-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build:shared && concurrently -n api,web -c red,black \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --workspace @pmw/api run dev",
+    "dev:web": "npm --workspace @pmw/web run dev",
+    "dev:uploader": "npm --workspace @pmw/uploader run dev",
+    "build": "npm run build:shared && npm run build:api && npm run build:web && npm run build:uploader",
+    "build:shared": "npm --workspace @pmw/shared run build",
+    "build:api": "npm --workspace @pmw/api run build",
+    "build:web": "npm --workspace @pmw/web run build",
+    "build:uploader": "npm --workspace @pmw/uploader run build",
+    "typecheck": "npm run build",
+    "ios:build": "xcodebuild -project apps/ios/PrivateMusicWorkspace/PrivateMusicWorkspace.xcodeproj -scheme PrivateMusicWorkspace -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

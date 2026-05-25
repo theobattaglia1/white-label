@@ -1,0 +1,21 @@
+{
+  "name": "@pmw/api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@pmw/shared": "0.1.0",
+    "@supabase/supabase-js": "^2.46.1",
+    "fastify": "^4.28.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.6"
+  }
+}
+

@@ -83,7 +83,97 @@ export const api = {
     request<{ link: ShareLink; token: string }>("/links", { method: "POST", body: JSON.stringify(body) }),
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
+
+  // === Real audio uploads (Supabase Storage) ============================
+
+  signUpload: (body: { filename: string; contentType?: string; songExternalId?: string }) =>
+    request<{
+      uploadUrl: string;
+      token: string;
+      storagePath: string;
+      publicUrl: string;
+      expiresInSeconds: number;
+    }>("/storage/sign-upload", { method: "POST", body: JSON.stringify(body) }),
+
+  finalizeUpload: (body: {
+    storagePath: string;
+    publicUrl: string;
+    filename: string;
+    contentType?: string;
+    fileSizeBytes: number;
+    durationMs?: number;
+    sampleRate?: number;
+    songExternalId: string;
+    versionLabel?: string;
+    versionType?: string;
+  }) =>
+    request<{ assetExternalId: string; versionExternalId: string; versionNumber: number }>(
+      "/storage/finalize-upload",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
 };
+
+// =====================================================================
+// Audio upload helper — picks duration via Web Audio API, uploads to
+// Supabase Storage via signed URL, finalizes the version row.
+// =====================================================================
+export async function uploadAudio(
+  file: File,
+  opts: { songExternalId: string; versionLabel?: string; versionType?: string },
+  onProgress?: (pct: number) => void
+): Promise<{ assetExternalId: string; versionExternalId: string; versionNumber: number }> {
+  // 1) Ask API for a signed upload URL
+  const sig = await api.signUpload({
+    filename: file.name,
+    contentType: file.type || "audio/mpeg",
+    songExternalId: opts.songExternalId,
+  });
+  onProgress?.(5);
+
+  // 2) Extract duration via Web Audio API (best-effort)
+  let durationMs: number | undefined;
+  let sampleRate: number | undefined;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const AC = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+    const ctx = new AC();
+    const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    durationMs = Math.round(decoded.duration * 1000);
+    sampleRate = decoded.sampleRate;
+    ctx.close();
+  } catch (err) {
+    console.warn("Could not decode audio for metadata", err);
+  }
+  onProgress?.(15);
+
+  // 3) PUT the file directly to Supabase Storage
+  const putRes = await fetch(sig.uploadUrl, {
+    method: "PUT",
+    headers: { "content-type": file.type || "audio/mpeg", "x-upsert": "true" },
+    body: file,
+  });
+  if (!putRes.ok) {
+    const detail = await putRes.text().catch(() => "");
+    throw new Error(`Upload failed (${putRes.status}): ${detail.slice(0, 200)}`);
+  }
+  onProgress?.(90);
+
+  // 4) Tell the API the upload finished — creates file_asset + version rows
+  const result = await api.finalizeUpload({
+    storagePath: sig.storagePath,
+    publicUrl: sig.publicUrl,
+    filename: file.name,
+    contentType: file.type || "audio/mpeg",
+    fileSizeBytes: file.size,
+    durationMs,
+    sampleRate,
+    songExternalId: opts.songExternalId,
+    versionLabel: opts.versionLabel,
+    versionType: opts.versionType,
+  });
+  onProgress?.(100);
+  return result;
+}
 
 export function assetForVersion(assets: FileAsset[], version?: Version): FileAsset | undefined {
   if (!version) return undefined;

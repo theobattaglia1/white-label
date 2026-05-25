@@ -2,6 +2,8 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
 import { store, type AuthContext } from "./store";
+import { signUpload, finalizeUpload, type FinalizeUploadInput, type SignUploadInput } from "./uploads";
+import { loadSnapshotFromSupabase } from "./supabase-loader";
 
 const port = Number(process.env.API_PORT ?? 4317);
 const server = Fastify({ logger: true });
@@ -247,6 +249,28 @@ server.get("/shared/:token/download/:versionId", async (request) => {
     signed_url: `https://r2.example.invalid/watermarked/${versionId}?ttl=300`,
     watermark: shared.link.watermark_enabled ? "recipient-bound trace rendition queued" : "disabled",
   });
+});
+
+// ===== Real audio uploads (Supabase Storage) ============================
+
+/** Mint a signed upload URL the client uses to PUT directly to Supabase Storage. */
+server.post("/storage/sign-upload", async (request) => {
+  const body = request.body as SignUploadInput;
+  if (!body?.filename) throw new Error("filename is required");
+  return ok(await signUpload(body));
+});
+
+/** After the client finishes uploading, create file_asset + version rows
+ *  AND re-hydrate the in-memory store so subsequent reads see the new data. */
+server.post("/storage/finalize-upload", async (request) => {
+  const body = request.body as FinalizeUploadInput;
+  if (!body?.storagePath || !body?.songExternalId || !body?.publicUrl) {
+    throw new Error("storagePath, publicUrl, and songExternalId are required");
+  }
+  const result = await finalizeUpload(body);
+  // Refresh in-memory snapshot so the new version is immediately visible.
+  await store.hydrate();
+  return ok(result);
 });
 
 server.setErrorHandler((error, _request, reply) => {

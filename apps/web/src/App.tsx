@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VisibleNote } from "@pmw/shared";
-import { api, assetForVersion, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
+import { api, assetForVersion, uploadAudio, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { usePlayer } from "./player";
 
 type ViewMode = "room" | "song" | "compare" | "inbox" | "links" | "assistant";
@@ -231,6 +231,9 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
   const [noteDraftOpen, setNoteDraftOpen] = useState(false);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(72000);
   const [noteBody, setNoteBody] = useState("");
+  const [uploadingPct, setUploadingPct] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useMemo(() => ({ current: null as HTMLInputElement | null }), []);
   const player = usePlayer();
 
   const activeVersion = payload.versions.find((version) => version.version_id === activeVersionID) ?? payload.currentVersion;
@@ -256,15 +259,35 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
     onRefresh();
   }
 
-  async function addDemoVersion() {
-    await api.addVersion(payload.song.song_id, {
-      filename: `${payload.song.title} mix v${payload.versions.length + 1}.wav`,
-      label: `Mix v${payload.versions.length + 1}`,
-      type: "mix",
-      duration_ms: (currentAsset?.duration_ms ?? 190000) + 4000,
-      loudness_lufs: -13.4,
-    });
-    onRefresh();
+  function triggerUpload() {
+    setUploadError(null);
+    fileInputRef.current?.click();
+  }
+
+  async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPct(0);
+    setUploadError(null);
+    try {
+      await uploadAudio(
+        file,
+        {
+          songExternalId: payload.song.song_id,
+          versionLabel: `Mix v${payload.versions.length + 1}`,
+          versionType: "mix",
+        },
+        (pct) => setUploadingPct(pct)
+      );
+      setUploadingPct(null);
+      onRefresh();
+    } catch (err) {
+      setUploadingPct(null);
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      // reset input so re-selecting the same file fires onChange
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   const openNotes = payload.notes.filter((n) => n.status === "open");
@@ -335,9 +358,29 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
                 >
                   <Play size={14} /> Play
                 </button>
-                <button className="btn" onClick={addDemoVersion}>
-                  <Upload size={14} /> Upload revision
+                <button
+                  className="btn"
+                  onClick={triggerUpload}
+                  disabled={uploadingPct !== null}
+                  title={uploadingPct !== null ? `Uploading… ${uploadingPct}%` : "Upload a new audio file as the next version"}
+                >
+                  <Upload size={14} />
+                  {uploadingPct === null
+                    ? " Upload revision"
+                    : ` Uploading ${uploadingPct}%`}
                 </button>
+                <input
+                  ref={(el) => { fileInputRef.current = el; }}
+                  type="file"
+                  accept="audio/*,.wav,.mp3,.m4a,.flac,.aiff,.aif"
+                  hidden
+                  onChange={onFileChosen}
+                />
+                {uploadError && (
+                  <span style={{ color: "var(--redline)", fontSize: 12, marginLeft: 8 }}>
+                    {uploadError}
+                  </span>
+                )}
                 <button
                   className="btn ghost"
                   onClick={() => {

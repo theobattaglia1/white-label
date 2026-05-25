@@ -8,9 +8,17 @@ dist/
 .cache/
 .vite/
 .parcel-cache/
+
+# iOS build artifacts
 apps/ios/**/build/
 apps/ios/**/DerivedData/
 apps/ios/**/*.xcuserdata/
 apps/ios/**/xcuserdata/
 apps/ios/**/.swiftpm/
 *.xcuserstate
+
+# Uploads (kept locally only, served via Vite)
+# (Comment out the next two lines if you want to commit the seed audio
+#  so Render builds them into the static site. Recommended: commit them.)
+# apps/web/public/seed-audio/*.mp3
+# apps/web/public/seed-audio/*.m4a

@@ -92,6 +92,8 @@ export const api = {
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
   roomAnalytics: (id = "room-secret-album") =>
     request<Array<ActivityEvent & { actor_display_name: string }>>(`/rooms/${id}/analytics`),
+  workspaceMembers: (id = "wsp-amf-private") =>
+    request<Array<{ user_id: string; display_name: string; role: string }>>(`/workspaces/${id}/members`),
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
   sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
     request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {

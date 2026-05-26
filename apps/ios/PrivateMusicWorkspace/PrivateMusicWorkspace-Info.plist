@@ -32,5 +32,9 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- Face ID gate: PMWBiometricGate calls LAContext.evaluatePolicy(.deviceOwnerAuthentication).
+	     iOS requires NSFaceIDUsageDescription whenever the app uses Face ID. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>White Label uses Face ID to keep your unreleased catalog locked when you set the phone down.</string>
 </dict>
 </plist>

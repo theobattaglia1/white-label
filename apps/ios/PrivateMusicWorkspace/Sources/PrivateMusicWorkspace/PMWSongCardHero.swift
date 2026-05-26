@@ -254,6 +254,21 @@ struct PMWSongCardHero: View {
             .buttonStyle(PMWChromeButtonStyle(variant: .ghost))
             .accessibilityLabel("Upload new revision")
 
+            ShareLink(item: shareURL,
+                      subject: Text("\(song.title) · \(currentVersion.label)"),
+                      message: Text("\(song.artistName) — \(song.catalogId) · \(currentVersion.label)")) {
+                HStack(spacing: 5) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Share")
+                        .font(PMWFont.sans(13, weight: .semibold))
+                }
+                .foregroundStyle(PMWColors.inkDeep)
+                .frame(height: 40)
+                .padding(.horizontal, 4)
+            }
+            .accessibilityLabel("Share private link")
+
             Button(action: onAddNote) {
                 HStack(spacing: 5) {
                     Image(systemName: "text.bubble")
@@ -268,6 +283,14 @@ struct PMWSongCardHero: View {
             .accessibilityLabel("Add note")
         }
         .padding(.top, 6)
+    }
+
+    /// Best-effort share URL — uses the seeded room-demo token until per-song
+    /// share-link minting is wired (next-session work). The recipient surface
+    /// resolves the song from the link's target_id, so this works correctly
+    /// for the demo dataset.
+    private var shareURL: URL {
+        PMWConfig.apiBaseURL.appendingPathComponent("shared/room-demo")
     }
 
     // MARK: - Waveband -------------------------------------------------

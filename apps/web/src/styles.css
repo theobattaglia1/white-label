@@ -716,7 +716,12 @@ h2 {
   color: var(--pencil-cool);
   background: transparent;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transform-origin: center;
+  transition:
+    border-color var(--motion-fast) var(--easing),
+    color var(--motion-fast) var(--easing),
+    background var(--motion-fast) var(--easing),
+    transform 220ms cubic-bezier(.34, 1.56, .64, 1);
 }
 .song-card-info .versions .v:hover { border-color: var(--pencil-cool); color: var(--ink); }
 .song-card-info .versions .v.cur {
@@ -724,6 +729,17 @@ h2 {
   color: var(--ink);
   background: #fff;
   font-weight: 700;
+  /* Brief overshoot when a new version is selected — drops the needle. */
+  animation: version-pill-needle 320ms cubic-bezier(.34, 1.56, .64, 1);
+}
+@keyframes version-pill-needle {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.06); }
+  70%  { transform: scale(0.99); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .song-card-info .versions .v.cur { animation: none; }
 }
 .song-card-info .actions {
   display: flex; gap: 10px; margin-top: auto; flex-wrap: wrap;
@@ -1487,6 +1503,107 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* Routed-link confirmation banner */
+.routed-banner {
+  margin-top: 16px;
+  padding: 18px 20px;
+  border: 1px dashed var(--studio-hairline);
+  border-radius: 2px;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr;
+  gap: 18px;
+  align-items: start;
+}
+.routed-banner .eyebrow { color: var(--redline); }
+.routed-banner h3 {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--tape-oxide);
+}
+.routed-banner ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.routed-banner ul li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+}
+.routed-banner ul li .muted b { color: var(--tape-oxide); }
+
+/* Member picker for Inbox Route action */
+.carry-triage.route-picker .route-list { padding: 6px 14px; }
+.carry-triage.route-picker .route-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--pencil-warm);
+  border-bottom: 0;
+}
+.route-member {
+  appearance: none;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 12px 8px;
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  border-radius: 2px;
+  transition: background var(--motion-fast) var(--easing);
+}
+.route-member:hover { background: rgba(255, 255, 255, .04); }
+.route-member:disabled { opacity: .5; cursor: progress; }
+.route-member .avatar {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--tape-oxide);
+  background: var(--studio-panel);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 50%;
+}
+.route-member .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.route-member .who .name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tape-oxide);
+}
+.route-member .who .role {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+}
+.route-member .send-cue {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--redline);
 }
 
 /* Inbox triage filter (Open / Saved / Passed) */

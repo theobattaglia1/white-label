@@ -312,7 +312,7 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
   const openNotes = payload.notes.filter((n) => n.status === "open");
   const hasNotesDue = openNotes.length > 0;
   const approvedVersion = payload.versions.find((v) => v.version_id === payload.song.approved_version_id);
-  const catalogId = `WL · ${payload.song.song_id.slice(-4).toUpperCase()}`;
+  const catalogId = catalogIdFor(payload.song.song_id);
   const versionLabel = activeVersion?.version_label ?? "v1";
 
   return (
@@ -925,6 +925,8 @@ function NoteComposer({
 
 type InboxFilter = "open" | "saved" | "passed";
 
+type RoutedLink = { songID: string; memberName: string; token: string };
+
 function InboxView({
   items,
   onOpenSong,
@@ -935,6 +937,13 @@ function InboxView({
   const [savedIDs, setSavedIDs] = useState<Set<string>>(new Set());
   const [passedIDs, setPassedIDs] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<InboxFilter>("open");
+  const [routingSong, setRoutingSong] = useState<Awaited<ReturnType<typeof api.inbox>>[number] | null>(null);
+  const [routedLinks, setRoutedLinks] = useState<RoutedLink[]>([]);
+  const [members, setMembers] = useState<Awaited<ReturnType<typeof api.workspaceMembers>>>([]);
+
+  useEffect(() => {
+    void api.workspaceMembers().then(setMembers).catch(() => setMembers([]));
+  }, []);
 
   function save(songID: string) {
     setSavedIDs((s) => { const n = new Set(s); n.add(songID); return n; });
@@ -1017,7 +1026,11 @@ function InboxView({
                       <button className="icon-button" title="Pass — dismiss without keeping" onClick={() => pass(item.song.song_id)}>
                         <X size={16} />
                       </button>
-                      <button className="icon-button" title="Route to a collaborator (coming soon)" disabled>
+                      <button
+                        className="icon-button"
+                        title="Route to a collaborator"
+                        onClick={() => setRoutingSong(item)}
+                      >
                         <Send size={16} />
                       </button>
                     </>
@@ -1031,6 +1044,132 @@ function InboxView({
             );
           })
         )}
+      </div>
+      {routedLinks.length > 0 && (
+        <div className="routed-banner" role="status" aria-live="polite">
+          <div>
+            <p className="eyebrow">ROUTED</p>
+            <h3>{routedLinks.length} link{routedLinks.length === 1 ? "" : "s"} created</h3>
+          </div>
+          <ul>
+            {routedLinks.slice(-3).reverse().map((link) => {
+              const songTitle = items.find((i) => i.song.song_id === link.songID)?.song.title ?? "Song";
+              const url = `${window.location.origin}/shared/${link.token}`;
+              return (
+                <li key={link.token}>
+                  <span className="muted">to <b>{link.memberName}</b> · {songTitle}</span>
+                  <button
+                    className="text-button"
+                    onClick={() => void navigator.clipboard.writeText(url)}
+                    title={url}
+                  >
+                    Copy link
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {routingSong && (
+        <RouteMemberPicker
+          song={routingSong.song}
+          members={members}
+          onCancel={() => setRoutingSong(null)}
+          onRoute={async (member) => {
+            const result = await api.createLink({
+              workspace_id: "wsp-amf-private",
+              target_type: "song",
+              target_id: routingSong.song.song_id,
+              link_name: `${routingSong.song.title} → ${member.display_name}`,
+              access_mode: "identity_required",
+              version_policy: "latest_only",
+              download_policy: "none",
+              watermark_enabled: true,
+              allow_comments: true,
+              allow_approval: true,
+              allow_forwarding: false,
+            });
+            setRoutedLinks((prev) => [...prev, {
+              songID: routingSong.song.song_id,
+              memberName: member.display_name,
+              token: result.token,
+            }]);
+            // Move the routed item to "saved" so it leaves the OPEN bucket
+            save(routingSong.song.song_id);
+            setRoutingSong(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RouteMemberPicker({
+  song,
+  members,
+  onCancel,
+  onRoute,
+}: {
+  song: Song;
+  members: Array<{ user_id: string; display_name: string; role: string }>;
+  onCancel: () => void;
+  onRoute: (member: { user_id: string; display_name: string; role: string }) => Promise<void>;
+}) {
+  const [sending, setSending] = useState<string | null>(null);
+  async function route(member: { user_id: string; display_name: string; role: string }) {
+    if (sending) return;
+    setSending(member.user_id);
+    try {
+      await onRoute(member);
+    } finally {
+      setSending(null);
+    }
+  }
+  return (
+    <div className="carry-triage-backdrop" role="dialog" aria-modal="true" aria-labelledby="route-title">
+      <div className="carry-triage route-picker">
+        <header>
+          <p className="eyebrow">ROUTE TO COLLABORATOR</p>
+          <h2 id="route-title">{song.title}</h2>
+          <p className="muted">
+            Creates an identity-required, latest-only, watermarked link for the chosen collaborator.
+            They get notified; you keep the receipt.
+          </p>
+        </header>
+        <ul className="triage-list route-list">
+          {members.length === 0 ? (
+            <li className="route-empty">No workspace members loaded.</li>
+          ) : members.map((m) => (
+            <li key={m.user_id}>
+              <button
+                type="button"
+                className="route-member"
+                onClick={() => void route(m)}
+                disabled={sending !== null}
+              >
+                <span className="avatar" aria-hidden="true">
+                  {m.display_name.split(/\s+/).map((s) => s[0]).join("").slice(0, 2).toUpperCase()}
+                </span>
+                <span className="who">
+                  <span className="name">{m.display_name}</span>
+                  <span className="role">{m.role}</span>
+                </span>
+                <span className="send-cue">
+                  {sending === m.user_id ? "Routing…" : "Send →"}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <footer>
+          <div className="footer-meta">{members.length} collaborator{members.length === 1 ? "" : "s"}</div>
+          <div className="footer-actions">
+            <button type="button" className="chrome-button" onClick={onCancel} disabled={sending !== null}>
+              Cancel
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
@@ -1190,6 +1329,26 @@ function hashHue(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return h % 360;
+}
+
+/** Derive a stable 4-digit catalog number from a song id. FNV-1a 64-bit,
+ *  bit-for-bit matching iOS's `PMWSong.catalogNumber` so the same song
+ *  reads as the same catalog number on both surfaces. Uses BigInt to
+ *  avoid JS's 53-bit precision limit. */
+function catalogNumber(id: string): string {
+  let hash = 0xcbf29ce484222325n; // FNV-1a 64-bit offset basis
+  const prime = 0x100000001b3n; // FNV-1a 64-bit prime
+  const mask = 0xffffffffffffffffn; // 64-bit unsigned wrap
+  const bytes = new TextEncoder().encode(id);
+  for (const byte of bytes) {
+    hash = ((hash ^ BigInt(byte)) * prime) & mask;
+  }
+  const n = Number(hash % 9000n) + 1000;
+  return String(n);
+}
+
+function catalogIdFor(songId: string): string {
+  return `WL · ${catalogNumber(songId)}`;
 }
 
 /** Build a sleeve-mode gradient string keyed off the song id. */
@@ -1412,7 +1571,7 @@ function SharedListeningView({
     );
   }
 
-  const catalogId = `WL · ${song.song_id.slice(-4).toUpperCase()}`;
+  const catalogId = catalogIdFor(song.song_id);
 
   return (
     <div className="shared-page">
@@ -1530,7 +1689,7 @@ function SharedListeningView({
                     <span className="row-subtitle">{item.artist_display_name}</span>
                   </div>
                   <div className="row-current">
-                    <span>WL · {item.song_id.slice(-4).toUpperCase()}</span>
+                    <span>{catalogIdFor(item.song_id)}</span>
                   </div>
                 </button>
               ))}

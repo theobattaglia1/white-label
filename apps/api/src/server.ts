@@ -39,6 +39,30 @@ server.get("/workspaces/:id", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.data.workspaces.find((workspace) => workspace.workspace_id === id));
 });
+server.get("/workspaces/:id/members", async (request) => {
+  const { id } = request.params as { id: string };
+  const membershipUserIDs = new Set(
+    store.data.memberships
+      .filter((m) => m.workspace_id === id)
+      .map((m) => m.user_id),
+  );
+  // Enrich users with their workspace membership role (if any) so the
+  // client can render "Maya Chen · Manager".
+  const roleByUser = new Map(
+    store.data.memberships
+      .filter((m) => m.workspace_id === id)
+      .map((m) => [m.user_id, m.role]),
+  );
+  const members = store.data.users
+    .filter((u) => membershipUserIDs.has(u.user_id))
+    .map((u) => ({
+      user_id: u.user_id,
+      display_name: u.display_name,
+      role: roleByUser.get(u.user_id) ?? "Member",
+    }));
+  return ok(members);
+});
+
 server.get("/workspaces/:id/rooms", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.listRooms(id));

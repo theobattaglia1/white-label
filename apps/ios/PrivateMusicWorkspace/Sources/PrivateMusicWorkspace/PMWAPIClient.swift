@@ -58,6 +58,7 @@ struct PMWAPIClient {
         let bpm: Int?
         let song_key: String?
         let explicit_flag: Bool?
+        let release_readiness_status: String?
     }
 
     struct APIVersion: Decodable {
@@ -118,8 +119,82 @@ struct PMWAPIClient {
 
     // MARK: - Calls -------------------------------------------------------
 
-    func room(_ id: String = "room-secret-album") async throws -> RoomPayload {
+    func room(_ id: String = "room-hudson-ingram-lp") async throws -> RoomPayload {
         try await get("/rooms/\(id)", as: RoomPayload.self)
+    }
+
+    // MARK: - Library / Rooms / Playlists --------------------------------
+
+    struct APIRoomSummary: Decodable {
+        let room_id: String
+        let title: String
+        let type: String
+        let song_count: Int
+        let open_note_count: Int
+    }
+
+    struct APILibraryItem: Decodable {
+        struct RoomRef: Decodable { let room_id: String; let title: String; let type: String }
+        let song: APISong
+        let room: RoomRef?
+        let current_version: APIVersion?
+        let asset: APIAsset?
+    }
+
+    struct APIPlaylist: Decodable {
+        let playlist_id: String
+        let workspace_id: String
+        let title: String
+        let description: String?
+        let cover_seed: String
+        let is_pinned: Bool?
+        let item_count: Int?
+        let preview_titles: [String]?
+    }
+
+    struct APIPlaylistItem: Decodable {
+        let playlist_item_id: String
+        let playlist_id: String
+        let song_id: String
+        let position: Int
+        let note: String?
+    }
+
+    struct APIPlaylistDetail: Decodable {
+        struct Entry: Decodable {
+            let item: APIPlaylistItem
+            let song: APISong?
+            let current_version: APIVersion?
+            let asset: APIAsset?
+        }
+        let playlist: APIPlaylist
+        let items: [Entry]
+    }
+
+    func roomsSummary(workspaceID: String = "wsp-amf-private") async throws -> [APIRoomSummary] {
+        try await get("/workspaces/\(workspaceID)/rooms-summary", as: [APIRoomSummary].self)
+    }
+
+    func library(workspaceID: String = "wsp-amf-private") async throws -> [APILibraryItem] {
+        try await get("/workspaces/\(workspaceID)/library", as: [APILibraryItem].self)
+    }
+
+    func playlists(workspaceID: String = "wsp-amf-private") async throws -> [APIPlaylist] {
+        try await get("/workspaces/\(workspaceID)/playlists", as: [APIPlaylist].self)
+    }
+
+    func playlist(_ id: String) async throws -> APIPlaylistDetail {
+        try await get("/playlists/\(id)", as: APIPlaylistDetail.self)
+    }
+
+    @discardableResult
+    func addToPlaylist(playlistID: String, songID: String) async throws -> APIPlaylistItem {
+        try await post("/playlists/\(playlistID)/items", body: ["song_id": songID], as: APIPlaylistItem.self)
+    }
+
+    @discardableResult
+    func createPlaylist(workspaceID: String = "wsp-amf-private", title: String) async throws -> APIPlaylist {
+        try await post("/playlists", body: ["workspace_id": workspaceID, "title": title], as: APIPlaylist.self)
     }
 
     func song(_ id: String) async throws -> SongPayload {

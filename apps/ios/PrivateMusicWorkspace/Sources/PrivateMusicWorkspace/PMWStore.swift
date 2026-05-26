@@ -14,11 +14,29 @@ final class PMWStore: ObservableObject {
     @Published private(set) var assets = PMWSampleData.assets
     @Published private(set) var notes = PMWSampleData.notes
     @Published var selectedSongID = "song-midnight"
-    @Published var selectedTab: PMWTab = .song
+    @Published var selectedTab: PMWTab = .library
+    @Published var selectedPlaylistID: String? = nil
     @Published var comparisonLeftID = "ver-midnight-v1"
     @Published var comparisonRightID = "ver-midnight-v2"
     @Published var offlineQueue: Set<String> = ["song-midnight", "song-witness"]
     @Published private(set) var lastError: String?
+
+    // Loaded asynchronously from the API for Library / Playlists / Room switcher.
+    @Published var roomsSummary: [PMWAPIClient.APIRoomSummary] = []
+    @Published var libraryItems: [PMWAPIClient.APILibraryItem] = []
+    @Published var playlistsList: [PMWAPIClient.APIPlaylist] = []
+
+    func loadLibrarySurfaces() async {
+        do {
+            self.roomsSummary  = try await PMWAPIClient.shared.roomsSummary()
+        } catch { print("roomsSummary failed:", error) }
+        do {
+            self.libraryItems  = try await PMWAPIClient.shared.library()
+        } catch { print("library failed:", error) }
+        do {
+            self.playlistsList = try await PMWAPIClient.shared.playlists()
+        } catch { print("playlists failed:", error) }
+    }
 
     var selectedSong: PMWSong {
         songs.first { $0.id == selectedSongID } ?? songs[0]
@@ -225,6 +243,8 @@ final class PMWStore: ObservableObject {
         }
     }
 
+    func adoptRoomPayload(_ payload: PMWAPIClient.RoomPayload) { adopt(payload: payload) }
+
     private func adopt(payload: PMWAPIClient.RoomPayload) {
         room = PMWRoom(
             id: payload.room.room_id,
@@ -288,19 +308,21 @@ final class PMWStore: ObservableObject {
 }
 
 enum PMWTab: String, CaseIterable, Identifiable {
-    case room, song, compare, inbox, links, ask
+    case library, song, inbox, playlists, room, compare, links, ask
     var id: String { rawValue }
 
     /// HIG-compliant primary tabs (max 5). The remaining cases live in a More sheet.
-    static let primary: [PMWTab] = [.room, .song, .inbox]
-    static let secondary: [PMWTab] = [.compare, .links, .ask]
+    static let primary: [PMWTab] = [.library, .song, .inbox]
+    static let secondary: [PMWTab] = [.playlists, .room, .compare, .links, .ask]
 
     var title: String {
         switch self {
-        case .room: "Room"
+        case .library: "Library"
         case .song: "Song"
-        case .compare: "Compare"
         case .inbox: "Inbox"
+        case .playlists: "Playlists"
+        case .room: "Room"
+        case .compare: "Compare"
         case .links: "Links"
         case .ask: "Ask"
         }
@@ -308,10 +330,12 @@ enum PMWTab: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .room: "music.note.list"
+        case .library: "music.note.list"
         case .song: "waveform"
-        case .compare: "rectangle.split.2x1"
         case .inbox: "tray"
+        case .playlists: "list.bullet.rectangle"
+        case .room: "square.stack"
+        case .compare: "rectangle.split.2x1"
         case .links: "link"
         case .ask: "message"
         }

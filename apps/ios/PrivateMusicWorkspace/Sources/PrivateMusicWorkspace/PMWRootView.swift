@@ -64,7 +64,35 @@ struct PMWRootView: View {
                 .buttonStyle(PMWIconButtonStyle())
                 .accessibilityLabel("Search workspace")
 
-                Button {} label: {
+                Menu {
+                    if store.roomsSummary.isEmpty {
+                        Text("Loading rooms…")
+                    } else {
+                        ForEach(store.roomsSummary, id: \.room_id) { r in
+                            Button {
+                                // Pick room → switch to Room tab focused on it.
+                                if PMWConfig.useRemoteAPI {
+                                    Task {
+                                        if let payload = try? await PMWAPIClient.shared.room(r.room_id) {
+                                            store.adoptRoomPayload(payload)
+                                        }
+                                    }
+                                }
+                                store.selectedTab = .room
+                            } label: {
+                                Label {
+                                    VStack(alignment: .leading) {
+                                        Text(r.title)
+                                        Text("\(r.type.replacingOccurrences(of: "_", with: " ")) · \(r.song_count) songs")
+                                            .font(.caption)
+                                    }
+                                } icon: {
+                                    Image(systemName: "square.stack")
+                                }
+                            }
+                        }
+                    }
+                } label: {
                     HStack(spacing: 8) {
                         Text("PMW")
                             .font(.system(size: 9, weight: .black))
@@ -85,6 +113,7 @@ struct PMWRootView: View {
                     .frame(maxWidth: 210)
                 }
                 .buttonStyle(PMWChromeButtonStyle())
+                .accessibilityLabel("Switch room")
 
                 Spacer()
 
@@ -111,6 +140,10 @@ struct PMWRootView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: PMWSpacing.section) {
                 switch store.selectedTab {
+                case .library:
+                    PMWLibraryView(store: store, audio: audio)
+                case .playlists:
+                    PMWPlaylistsListView(store: store, audio: audio)
                 case .room:
                     PMWRoomView(store: store, audio: audio)
                 case .song:
@@ -130,6 +163,9 @@ struct PMWRootView: View {
             .pmwScreen()
             .padding(.top, PMWSpacing.stack)
             .padding(.bottom, 132)
+        }
+        .task {
+            await store.loadLibrarySurfaces()
         }
     }
 
@@ -928,6 +964,312 @@ struct FlowLayout: Layout {
             origin.x += viewSize.width + spacing
             lineHeight = max(lineHeight, viewSize.height)
         }
+    }
+}
+
+// MARK: - Library view (all songs across all rooms) -----------------
+
+struct PMWLibraryView: View {
+    @ObservedObject var store: PMWStore
+    @ObservedObject var audio: PMWAudioEngine
+    @State private var search = ""
+    @State private var filter: Filter = .all
+    @State private var pickerForSongID: String? = nil
+
+    enum Filter: String, CaseIterable, Identifiable {
+        case all, approved, inReview, ready
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: "All"; case .approved: "Approved"; case .inReview: "In review"; case .ready: "Ready"
+            }
+        }
+    }
+
+    private var filtered: [PMWAPIClient.APILibraryItem] {
+        store.libraryItems.filter { item in
+            switch filter {
+            case .all: return true
+            case .approved: return item.song.status == "approved"
+            case .inReview: return item.song.status == "in_review" || item.song.status == "revision_requested"
+            case .ready: return item.song.release_readiness_status == "ready"
+            }
+        }.filter { item in
+            let s = search.trimmingCharacters(in: .whitespaces).lowercased()
+            if s.isEmpty { return true }
+            return item.song.title.lowercased().contains(s)
+                || (item.song.artist_display_name ?? "").lowercased().contains(s)
+                || (item.room?.title ?? "").lowercased().contains(s)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PMWSpacing.stack) {
+            PMWSectionHeader(eyebrow: "LIBRARY", title: "Every song across every room.") {
+                HStack(spacing: 1) {
+                    PMWMetric(value: "\(store.libraryItems.count)", label: "Songs")
+                    PMWMetric(value: "\(store.libraryItems.filter { $0.song.status == "approved" }.count)", label: "Approved")
+                    PMWMetric(value: "\(store.roomsSummary.count)", label: "Rooms")
+                }
+            }
+
+            TextField("Search songs, artists, rooms…", text: $search)
+                .textFieldStyle(.plain)
+                .padding(12)
+                .overlay(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.line, lineWidth: 1))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Filter.allCases) { f in
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) { filter = f }
+                        } label: {
+                            Text(f.label.uppercased())
+                                .font(PMWFont.sans(10, weight: .bold))
+                                .kerning(1.4)
+                                .foregroundStyle(filter == f ? PMWColors.redline : PMWColors.muted)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .overlay(RoundedRectangle(cornerRadius: 2).stroke(filter == f ? PMWColors.redline : PMWColors.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            VStack(spacing: 0) {
+                PMWRule()
+                ForEach(filtered, id: \.song.song_id) { item in
+                    libraryRow(item)
+                    PMWRule()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func libraryRow(_ item: PMWAPIClient.APILibraryItem) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                if let s = mapSong(item.song) { store.selectSong(s) }
+            } label: {
+                HStack(spacing: 12) {
+                    PMWCoverMark(songID: item.song.song_id)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.song.title)
+                            .font(PMWFont.sans(15, weight: .semibold))
+                            .foregroundStyle(PMWColors.ink)
+                        Text("\(item.song.artist_display_name ?? "") · \(item.room?.title ?? "—")\(item.current_version?.version_label.map { " · " + $0 } ?? "")")
+                            .font(PMWFont.sans(11))
+                            .foregroundStyle(PMWColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Text(catalogIdShort(for: item.song.song_id))
+                .font(PMWFont.readout(11))
+                .foregroundStyle(PMWColors.muted)
+            Button { pickerForSongID = item.song.song_id } label: {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PMWColors.muted)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add \(item.song.title) to a playlist")
+        }
+        .padding(.vertical, 10)
+        .confirmationDialog(
+            "Add to playlist",
+            isPresented: Binding(
+                get: { pickerForSongID == item.song.song_id },
+                set: { if !$0 { pickerForSongID = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            ForEach(store.playlistsList, id: \.playlist_id) { p in
+                Button("\(p.title) · \(p.item_count ?? 0) songs") {
+                    Task {
+                        _ = try? await PMWAPIClient.shared.addToPlaylist(playlistID: p.playlist_id, songID: item.song.song_id)
+                        await store.loadLibrarySurfaces()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func catalogIdShort(for id: String) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for byte in id.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
+        return "WL · \(String(format: "%04d", hash % 9000 + 1000))"
+    }
+
+    private func mapSong(_ s: PMWAPIClient.APISong) -> PMWSong? {
+        PMWSong(id: s.song_id, roomID: s.primary_room_id ?? "",
+                title: s.title, artistName: s.artist_display_name ?? "",
+                projectName: s.project_name ?? "", status: s.status,
+                currentVersionID: s.current_version_id ?? "",
+                approvedVersionID: s.approved_version_id,
+                bpm: s.bpm ?? 0, songKey: s.song_key ?? "",
+                explicit: s.explicit_flag ?? false)
+    }
+}
+
+// MARK: - Playlists list + detail ------------------------------------
+
+struct PMWPlaylistsListView: View {
+    @ObservedObject var store: PMWStore
+    @ObservedObject var audio: PMWAudioEngine
+
+    var body: some View {
+        if let activeID = store.selectedPlaylistID,
+           let active = store.playlistsList.first(where: { $0.playlist_id == activeID }) {
+            PMWPlaylistDetailView(playlist: active, store: store, audio: audio)
+        } else {
+            list
+        }
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: PMWSpacing.stack) {
+            PMWSectionHeader(eyebrow: "PLAYLISTS", title: "Your queues.") {
+                EmptyView()
+            }
+            VStack(spacing: 0) {
+                PMWRule()
+                ForEach(store.playlistsList, id: \.playlist_id) { p in
+                    Button {
+                        store.selectedPlaylistID = p.playlist_id
+                    } label: {
+                        HStack(spacing: 14) {
+                            pmwCoverGradient(for: p.cover_seed)
+                                .frame(width: 56, height: 56)
+                                .overlay(Rectangle().stroke(PMWColors.lineStrong.opacity(0.35), lineWidth: 1))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(p.title)
+                                    .font(PMWFont.sans(15, weight: .semibold))
+                                    .foregroundStyle(PMWColors.ink)
+                                Text("\(p.item_count ?? 0) \((p.item_count ?? 0) == 1 ? "song" : "songs")\(p.description.map { " · \($0)" } ?? "")")
+                                    .font(PMWFont.sans(11))
+                                    .foregroundStyle(PMWColors.muted)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(PMWColors.muted)
+                        }
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    PMWRule()
+                }
+            }
+        }
+    }
+}
+
+struct PMWPlaylistDetailView: View {
+    let playlist: PMWAPIClient.APIPlaylist
+    @ObservedObject var store: PMWStore
+    @ObservedObject var audio: PMWAudioEngine
+    @State private var detail: PMWAPIClient.APIPlaylistDetail? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PMWSpacing.stack) {
+            HStack(alignment: .top, spacing: 16) {
+                pmwCoverGradient(for: playlist.cover_seed)
+                    .frame(width: 132, height: 132)
+                    .overlay(Rectangle().stroke(PMWColors.lineStrong.opacity(0.35), lineWidth: 1))
+                VStack(alignment: .leading, spacing: 6) {
+                    Button { store.selectedPlaylistID = nil } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Playlists")
+                        }
+                        .font(PMWFont.sans(11, weight: .semibold))
+                        .foregroundStyle(PMWColors.muted)
+                    }
+                    .buttonStyle(.plain)
+                    Text("PLAYLIST")
+                        .font(PMWFont.sans(10, weight: .bold))
+                        .kerning(1.6)
+                        .foregroundStyle(PMWColors.redline)
+                    Text(playlist.title)
+                        .font(PMWFont.display(28, weight: .heavy))
+                        .kerning(-0.5)
+                        .lineLimit(3)
+                        .foregroundStyle(PMWColors.ink)
+                    if let d = playlist.description {
+                        Text(d)
+                            .font(PMWFont.sans(13))
+                            .foregroundStyle(PMWColors.muted)
+                            .lineLimit(2)
+                    }
+                    Text("\(detail?.items.count ?? playlist.item_count ?? 0) songs")
+                        .font(PMWFont.readout(11))
+                        .foregroundStyle(PMWColors.muted)
+                }
+                Spacer(minLength: 0)
+            }
+            VStack(spacing: 0) {
+                PMWRule()
+                if let detail {
+                    ForEach(detail.items, id: \.item.playlist_item_id) { entry in
+                        row(entry)
+                        PMWRule()
+                    }
+                } else {
+                    ProgressView().tint(PMWColors.muted).padding(.vertical, 24)
+                }
+            }
+        }
+        .task(id: playlist.playlist_id) {
+            do {
+                detail = try await PMWAPIClient.shared.playlist(playlist.playlist_id)
+            } catch {
+                detail = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ entry: PMWAPIClient.APIPlaylistDetail.Entry) -> some View {
+        HStack(spacing: 12) {
+            Text(String(format: "%02d", entry.item.position))
+                .font(PMWFont.readout(11))
+                .foregroundStyle(PMWColors.muted)
+                .frame(width: 28, alignment: .leading)
+            if let song = entry.song {
+                pmwCoverGradient(for: song.song_id)
+                    .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(PMWFont.sans(14, weight: .semibold))
+                        .foregroundStyle(PMWColors.ink)
+                    Text("\(song.artist_display_name ?? "")\(entry.current_version?.version_label.map { " · " + $0 } ?? "")")
+                        .font(PMWFont.sans(11))
+                        .foregroundStyle(PMWColors.muted)
+                        .lineLimit(1)
+                }
+            } else {
+                Text("Song removed").font(PMWFont.sans(13)).foregroundStyle(PMWColors.muted)
+            }
+            Spacer()
+            if let ms = entry.asset?.duration_ms {
+                Text(formatMs(ms))
+                    .font(PMWFont.readout(11))
+                    .foregroundStyle(PMWColors.muted)
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func formatMs(_ ms: Int) -> String {
+        let total = max(0, ms / 1000)
+        return "\(total / 60):\(String(format: "%02d", total % 60))"
     }
 }
 

@@ -6,6 +6,8 @@ import type {
   Membership,
   Note,
   NotificationItem,
+  Playlist,
+  PlaylistItem,
   Room,
   SavedView,
   ShareLink,
@@ -21,7 +23,12 @@ const now = "2026-05-22T18:30:00.000Z";
 
 const ids = {
   workspace: "wsp-amf-private",
-  room: "room-secret-album",
+  room: "room-hudson-ingram-lp", // kept as legacy alias so /rooms/room-secret-album still works via redirect
+  rooms: {
+    hudson: "room-hudson-ingram-lp",
+    ruby: "room-ruby-plume-single",
+    daniel: "room-daniel-price-ep",
+  },
   users: {
     theo: "usr-theo",
     alex: "usr-alex",
@@ -148,16 +155,46 @@ const memberships: Membership[] = [
 
 const rooms: Room[] = [
   {
-    room_id: ids.room,
+    room_id: ids.rooms.hudson,
     workspace_id: ids.workspace,
-    type: "producer_delivery",
-    title: "Hudson Ingram LP · Approval run",
-    description: "Private review room — four songs on the approval path before label submission.",
+    type: "album_ep",
+    title: "Hudson Ingram LP",
+    description: "Approval-path album — Hudson Ingram's debut record.",
     visibility: "workspace",
     status: "active",
     default_version_visibility: "full_history",
     default_download_policy: "none",
     due_date: "2026-06-07",
+    created_by: ids.users.theo,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    room_id: ids.rooms.ruby,
+    workspace_id: ids.workspace,
+    type: "pitch",
+    title: "Ruby Plume single",
+    description: "One-off single pitch — Ruby Plume's first solo release outside the band.",
+    visibility: "workspace",
+    status: "active",
+    default_version_visibility: "latest_only",
+    default_download_policy: "none",
+    due_date: "2026-07-15",
+    created_by: ids.users.theo,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    room_id: ids.rooms.daniel,
+    workspace_id: ids.workspace,
+    type: "album_ep",
+    title: "Daniel Price · EP",
+    description: "Daniel Price · Olmo · Mills collab EP — early demos and instrumentals.",
+    visibility: "workspace",
+    status: "active",
+    default_version_visibility: "full_history",
+    default_download_policy: "none",
+    due_date: undefined,
     created_by: ids.users.theo,
     created_at: now,
     updated_at: now,
@@ -187,7 +224,7 @@ const songs: Song[] = [
   {
     song_id: "song-midnight",
     workspace_id: ids.workspace,
-    primary_room_id: ids.room,
+    primary_room_id: ids.rooms.hudson,
     title: "The First Night",
     artist_display_name: "Hudson Ingram",
     project_name: "Hudson Ingram LP",
@@ -209,7 +246,7 @@ const songs: Song[] = [
   {
     song_id: "song-neon",
     workspace_id: ids.workspace,
-    primary_room_id: ids.room,
+    primary_room_id: ids.rooms.hudson,
     title: "Lighting The Fuse",
     artist_display_name: "Hudson Ingram",
     project_name: "Hudson Ingram LP",
@@ -231,7 +268,7 @@ const songs: Song[] = [
   {
     song_id: "song-witness",
     workspace_id: ids.workspace,
-    primary_room_id: ids.room,
+    primary_room_id: ids.rooms.ruby,
     title: "Duel",
     artist_display_name: "Ruby Plume",
     project_name: "Ruby Plume single",
@@ -253,7 +290,7 @@ const songs: Song[] = [
   {
     song_id: "song-lowlight",
     workspace_id: ids.workspace,
-    primary_room_id: ids.room,
+    primary_room_id: ids.rooms.daniel,
     title: "Best Of Me",
     artist_display_name: "Daniel Price · Olmo · Mills",
     project_name: "Daniel Price · EP",
@@ -671,6 +708,44 @@ const savedViews: SavedView[] = [
   },
 ];
 
+const playlists: Playlist[] = [
+  {
+    playlist_id: "playlist-friday-listen",
+    workspace_id: ids.workspace,
+    owner_user_id: ids.users.theo,
+    title: "Friday listening session",
+    description: "What to play through on the train home.",
+    cover_seed: "friday-listen-2026-05",
+    is_pinned: true,
+    created_by: ids.users.theo,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    playlist_id: "playlist-pitch-mira",
+    workspace_id: ids.workspace,
+    owner_user_id: ids.users.theo,
+    title: "Pitch shortlist · Mira",
+    description: "Three tracks I'd send to Mira at the label.",
+    cover_seed: "mira-pitch-shortlist",
+    is_pinned: false,
+    created_by: ids.users.theo,
+    created_at: now,
+    updated_at: now,
+  },
+];
+
+const playlistItems: PlaylistItem[] = [
+  // Friday listening session — one from each room, top picks
+  { playlist_item_id: "pli-fri-1", playlist_id: "playlist-friday-listen", song_id: "song-midnight", position: 1, added_by: ids.users.theo, added_at: now },
+  { playlist_item_id: "pli-fri-2", playlist_id: "playlist-friday-listen", song_id: "song-witness",  position: 2, added_by: ids.users.theo, added_at: now },
+  { playlist_item_id: "pli-fri-3", playlist_id: "playlist-friday-listen", song_id: "song-neon",     position: 3, added_by: ids.users.theo, added_at: now },
+  { playlist_item_id: "pli-fri-4", playlist_id: "playlist-friday-listen", song_id: "song-lowlight", position: 4, added_by: ids.users.theo, added_at: now },
+  // Mira pitch — only the strongest two
+  { playlist_item_id: "pli-mira-1", playlist_id: "playlist-pitch-mira", song_id: "song-witness", position: 1, added_by: ids.users.theo, added_at: now, note: "lead with this" },
+  { playlist_item_id: "pli-mira-2", playlist_id: "playlist-pitch-mira", song_id: "song-midnight", position: 2, added_by: ids.users.theo, added_at: now },
+];
+
 export function createSeedSnapshot(): WorkspaceSnapshot {
   return structuredClone({
     workspaces,
@@ -688,6 +763,8 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     activityEvents,
     notifications,
     savedViews,
+    playlists,
+    playlistItems,
   });
 }
 

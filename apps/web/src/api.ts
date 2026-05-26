@@ -1,4 +1,4 @@
-import type { ActivityEvent, AssistantAnswer, FileAsset, Room, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
+import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Room, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
 import { supabase } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
@@ -55,7 +55,7 @@ export type SharedPayload = {
 };
 
 export const api = {
-  room: (id = "room-secret-album") => request<RoomPayload>(`/rooms/${id}`),
+  room: (id = "room-hudson-ingram-lp") => request<RoomPayload>(`/rooms/${id}`),
   song: (id: string) => request<SongPayload>(`/songs/${id}`),
   inbox: () =>
     request<
@@ -90,10 +90,37 @@ export const api = {
   createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "room"; target_id: string }) =>
     request<{ link: ShareLink; token: string }>("/links", { method: "POST", body: JSON.stringify(body) }),
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
-  roomAnalytics: (id = "room-secret-album") =>
+  roomAnalytics: (id = "room-hudson-ingram-lp") =>
     request<Array<ActivityEvent & { actor_display_name: string }>>(`/rooms/${id}/analytics`),
   workspaceMembers: (id = "wsp-amf-private") =>
     request<Array<{ user_id: string; display_name: string; role: string }>>(`/workspaces/${id}/members`),
+  roomsSummary: (id = "wsp-amf-private") =>
+    request<Array<Room & { song_count: number; open_note_count: number }>>(`/workspaces/${id}/rooms-summary`),
+  workspaceLibrary: (id = "wsp-amf-private") =>
+    request<Array<{
+      song: Song;
+      room: { room_id: string; title: string; type: string } | null;
+      current_version: Version | null;
+      asset: FileAsset | null;
+    }>>(`/workspaces/${id}/library`),
+  playlists: (id = "wsp-amf-private") =>
+    request<Array<Playlist & { item_count: number; preview_titles: string[] }>>(`/workspaces/${id}/playlists`),
+  playlist: (id: string) =>
+    request<{
+      playlist: Playlist;
+      items: Array<{
+        item: PlaylistItem;
+        song: Song | null;
+        current_version: Version | null;
+        asset: FileAsset | null;
+      }>;
+    }>(`/playlists/${id}`),
+  createPlaylist: (body: { workspace_id: string; title: string; description?: string }) =>
+    request<Playlist>("/playlists", { method: "POST", body: JSON.stringify(body) }),
+  addToPlaylist: (playlistID: string, body: { song_id: string; note?: string }) =>
+    request<PlaylistItem>(`/playlists/${playlistID}/items`, { method: "POST", body: JSON.stringify(body) }),
+  removeFromPlaylist: (playlistID: string, itemID: string) =>
+    request<{ removed: number }>(`/playlists/${playlistID}/items/${itemID}`, { method: "DELETE" }),
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
   sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
     request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {

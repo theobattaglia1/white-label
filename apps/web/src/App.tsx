@@ -29,7 +29,7 @@ import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import type { Session } from "@supabase/supabase-js";
 
-type ViewMode = "room" | "song" | "compare" | "inbox" | "links" | "assistant";
+type ViewMode = "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
@@ -68,15 +68,25 @@ function AuthenticatedApp() {
 function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [roomPayload, setRoomPayload] = useState<RoomPayload | null>(null);
   const [songPayload, setSongPayload] = useState<SongPayload | null>(null);
-  const [mode, setMode] = useState<ViewMode>("song");
+  const [mode, setMode] = useState<ViewMode>("library");
   const [selectedSongID, setSelectedSongID] = useState("song-midnight");
+  const [activeRoomID, setActiveRoomID] = useState("room-hudson-ingram-lp");
+  const [activePlaylistID, setActivePlaylistID] = useState<string | null>(null);
   const [inboxItems, setInboxItems] = useState<Awaited<ReturnType<typeof api.inbox>>>([]);
+  const [roomsSummary, setRoomsSummary] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
+  const [playlists, setPlaylists] = useState<Awaited<ReturnType<typeof api.playlists>>>([]);
   const [error, setError] = useState<string | null>(null);
 
-  async function refresh(nextSongID = selectedSongID) {
+  async function refresh(nextSongID = selectedSongID, nextRoomID = activeRoomID) {
     try {
-      const room = await api.room();
+      const [room, summary, allPlaylists] = await Promise.all([
+        api.room(nextRoomID),
+        api.roomsSummary(),
+        api.playlists(),
+      ]);
       setRoomPayload(room);
+      setRoomsSummary(summary);
+      setPlaylists(allPlaylists);
       const songID = nextSongID || room.songs[0]?.song_id;
       if (songID) {
         setSelectedSongID(songID);
@@ -90,48 +100,74 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   }
 
   useEffect(() => {
-    void refresh(selectedSongID);
+    void refresh(selectedSongID, activeRoomID);
   }, []);
 
   const selectedSong = roomPayload?.songs.find((song) => song.song_id === selectedSongID) ?? songPayload?.song;
 
+  function openSong(songID: string) {
+    setSelectedSongID(songID);
+    setMode("song");
+    void refresh(songID, activeRoomID);
+  }
+
+  function openRoom(roomID: string) {
+    setActiveRoomID(roomID);
+    setMode("room");
+    setActivePlaylistID(null);
+    void refresh(selectedSongID, roomID);
+  }
+
+  function openPlaylist(playlistID: string) {
+    setActivePlaylistID(playlistID);
+    setMode("playlist");
+  }
+
   return (
     <div className="app-shell">
-      <TopBar roomTitle={roomPayload?.room.title ?? "Private Workspace"} error={error} onSignOut={onSignOut} />
+      <TopBar
+        roomTitle={roomPayload?.room.title ?? "Private Workspace"}
+        error={error}
+        onSignOut={onSignOut}
+        rooms={roomsSummary}
+        activeRoomID={activeRoomID}
+        onPickRoom={openRoom}
+      />
       <main className="workspace-grid">
         <Sidebar
           mode={mode}
           setMode={setMode}
           room={roomPayload}
+          rooms={roomsSummary}
+          activeRoomID={activeRoomID}
+          onSelectRoom={openRoom}
+          playlists={playlists}
+          activePlaylistID={activePlaylistID}
+          onSelectPlaylist={openPlaylist}
           selectedSongID={selectedSongID}
-          onSelectSong={(id) => {
-            setSelectedSongID(id);
-            setMode("song");
-            void refresh(id);
-          }}
+          onSelectSong={openSong}
         />
         <section className="workspace-main">
-          {mode === "room" && roomPayload && (
-            <RoomView
-              payload={roomPayload}
-              onOpenSong={(songID) => {
-                setSelectedSongID(songID);
-                setMode("song");
-                void refresh(songID);
-              }}
-            />
+          {mode === "library" && (
+            <LibraryView onOpenSong={openSong} playlists={playlists} onRefreshPlaylists={() => api.playlists().then(setPlaylists)} />
           )}
-          {mode === "song" && songPayload && <SongWorkspace payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
+          {mode === "room" && roomPayload && (
+            <RoomView payload={roomPayload} onOpenSong={openSong} />
+          )}
+          {mode === "song" && songPayload && <SongWorkspace payload={songPayload} playlists={playlists} onRefresh={() => refresh(songPayload.song.song_id)} onRefreshPlaylists={() => api.playlists().then(setPlaylists)} />}
           {mode === "compare" && songPayload && <ComparisonMode payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
-          {mode === "inbox" && <InboxView items={inboxItems} onOpenSong={(id) => {
-            setSelectedSongID(id);
-            setMode("song");
-            void refresh(id);
-          }} />}
+          {mode === "inbox" && <InboxView items={inboxItems} onOpenSong={openSong} />}
           {mode === "links" && roomPayload && selectedSong && (
             <LinkManager room={roomPayload} song={selectedSong} onRefresh={() => refresh(selectedSong.song_id)} />
           )}
           {mode === "assistant" && <AssistantPanel />}
+          {mode === "playlist" && activePlaylistID && (
+            <PlaylistView
+              playlistID={activePlaylistID}
+              onOpenSong={openSong}
+              onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
+            />
+          )}
         </section>
       </main>
       <MiniPlayer />
@@ -139,22 +175,75 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   );
 }
 
-function TopBar({ roomTitle, error, onSignOut }: { roomTitle: string; error: string | null; onSignOut?: () => void }) {
+function TopBar({
+  roomTitle,
+  error,
+  onSignOut,
+  rooms = [],
+  activeRoomID,
+  onPickRoom,
+}: {
+  roomTitle: string;
+  error: string | null;
+  onSignOut?: () => void;
+  rooms?: Awaited<ReturnType<typeof api.roomsSummary>>;
+  activeRoomID?: string;
+  onPickRoom?: (id: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const activeRoom = rooms.find((r) => r.room_id === activeRoomID);
   return (
     <header className="top-bar">
       <div className="icon-run">
-        <button className="icon-button active" title="Notifications">
+        <button className="icon-button active" title="Notifications" aria-label="Notifications, unread">
           <Bell size={17} />
           <span className="notify-dot" />
         </button>
-        <button className="icon-button" title="Search">
+        <button className="icon-button" title="Search" aria-label="Search workspace">
           <Search size={17} />
         </button>
+        {rooms.length > 0 && onPickRoom && (
+          <div className="room-picker">
+            <button
+              className="room-picker-trigger"
+              onClick={() => setPickerOpen((o) => !o)}
+              aria-expanded={pickerOpen}
+              aria-haspopup="listbox"
+            >
+              <span className="dot" />
+              <span className="label">{activeRoom?.title ?? roomTitle}</span>
+              <span className="chev">▾</span>
+            </button>
+            {pickerOpen && (
+              <ul className="room-picker-menu" role="listbox">
+                {rooms.map((r) => (
+                  <li key={r.room_id}>
+                    <button
+                      type="button"
+                      className={`room-picker-item ${r.room_id === activeRoomID ? "on" : ""}`}
+                      onClick={() => { onPickRoom(r.room_id); setPickerOpen(false); }}
+                      role="option"
+                      aria-selected={r.room_id === activeRoomID}
+                    >
+                      <span className="who">
+                        <span className="title">{r.title}</span>
+                        <span className="meta">{r.type.replace(/_/g, " ")} · {r.song_count} song{r.song_count === 1 ? "" : "s"}</span>
+                      </span>
+                      {r.open_note_count > 0 && (
+                        <span className="cue">{r.open_note_count} open</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
       <Wordmark size="sm" title={roomTitle} />
       <div className="top-right">
         {error && <span className="error-pill">{error}</span>}
-        <button className="avatar-button" title="Account">
+        <button className="avatar-button" title="Account" aria-label="Theo Battaglia — account">
           TB
         </button>
         {onSignOut && (
@@ -171,20 +260,31 @@ function Sidebar({
   mode,
   setMode,
   room,
+  rooms = [],
+  activeRoomID,
+  onSelectRoom,
+  playlists = [],
+  activePlaylistID,
+  onSelectPlaylist,
   selectedSongID,
   onSelectSong,
 }: {
   mode: ViewMode;
   setMode: (mode: ViewMode) => void;
   room: RoomPayload | null;
+  rooms?: Awaited<ReturnType<typeof api.roomsSummary>>;
+  activeRoomID?: string;
+  onSelectRoom?: (id: string) => void;
+  playlists?: Awaited<ReturnType<typeof api.playlists>>;
+  activePlaylistID?: string | null;
+  onSelectPlaylist?: (id: string) => void;
   selectedSongID: string;
   onSelectSong: (songID: string) => void;
 }) {
   const nav = [
-    ["room", "Room", ListMusic],
-    ["song", "Song", Radio],
-    ["compare", "Compare", GitCompare],
+    ["library", "Library", ListMusic],
     ["inbox", "Inbox", Inbox],
+    ["compare", "Compare", GitCompare],
     ["links", "Links", Link2],
     ["assistant", "Ask", MessageSquare],
   ] as const;
@@ -199,25 +299,325 @@ function Sidebar({
           </button>
         ))}
       </nav>
-      <div className="side-rule" />
-      <div className="side-label">SONGS</div>
-      <div className="song-rail">
-        {room?.songs.map((song) => {
-          const versions = versionsForSong(room.versions, song.song_id);
-          const current = versions.find((version) => version.version_id === song.current_version_id);
-          return (
-            <button
-              key={song.song_id}
-              className={`song-rail-item ${selectedSongID === song.song_id ? "selected" : ""}`}
-              onClick={() => onSelectSong(song.song_id)}
-            >
-              <span className="song-title">{song.title}</span>
-              <span className="song-meta">{current?.version_label ?? "No version"}</span>
-            </button>
-          );
-        })}
-      </div>
+
+      {rooms.length > 0 && onSelectRoom && (
+        <>
+          <div className="side-rule" />
+          <div className="side-label">Rooms</div>
+          <div className="side-list">
+            {rooms.map((r) => (
+              <button
+                key={r.room_id}
+                className={`side-list-item ${mode === "room" && activeRoomID === r.room_id ? "selected" : ""}`}
+                onClick={() => onSelectRoom(r.room_id)}
+              >
+                <span className="side-title">{r.title}</span>
+                <span className="side-meta">{r.song_count} {r.song_count === 1 ? "song" : "songs"}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {playlists.length > 0 && onSelectPlaylist && (
+        <>
+          <div className="side-rule" />
+          <div className="side-label">Playlists</div>
+          <div className="side-list">
+            {playlists.map((p) => (
+              <button
+                key={p.playlist_id}
+                className={`side-list-item ${mode === "playlist" && activePlaylistID === p.playlist_id ? "selected" : ""}`}
+                onClick={() => onSelectPlaylist(p.playlist_id)}
+              >
+                <span className="side-title">{p.title}</span>
+                <span className="side-meta">{p.item_count} {p.item_count === 1 ? "song" : "songs"}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {mode === "room" && room && room.songs.length > 0 && (
+        <>
+          <div className="side-rule" />
+          <div className="side-label">In this room</div>
+          <div className="song-rail">
+            {room.songs.map((song) => {
+              const versions = versionsForSong(room.versions, song.song_id);
+              const current = versions.find((version) => version.version_id === song.current_version_id);
+              return (
+                <button
+                  key={song.song_id}
+                  className={`song-rail-item ${selectedSongID === song.song_id ? "selected" : ""}`}
+                  onClick={() => onSelectSong(song.song_id)}
+                >
+                  <span className="song-title">{song.title}</span>
+                  <span className="song-meta">{current?.version_label ?? "No version"}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </aside>
+  );
+}
+
+function LibraryView({
+  onOpenSong,
+  playlists,
+  onRefreshPlaylists,
+}: {
+  onOpenSong: (songID: string) => void;
+  playlists: Awaited<ReturnType<typeof api.playlists>>;
+  onRefreshPlaylists: () => void;
+}) {
+  const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
+  const [filter, setFilter] = useState<"all" | "approved" | "in-review" | "ready">("all");
+  const [search, setSearch] = useState("");
+  const [addingFor, setAddingFor] = useState<string | null>(null);
+  const [creatingPlaylist, setCreatingPlaylist] = useState(false);
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
+
+  useEffect(() => { void api.workspaceLibrary().then(setLibrary); }, []);
+
+  const lowerSearch = search.trim().toLowerCase();
+  const filtered = library
+    .filter((item) => {
+      if (filter === "approved") return item.song.status === "approved";
+      if (filter === "in-review") return item.song.status === "in_review" || item.song.status === "revision_requested";
+      if (filter === "ready") return item.song.release_readiness_status === "ready";
+      return true;
+    })
+    .filter((item) => {
+      if (!lowerSearch) return true;
+      const hay = `${item.song.title} ${item.song.artist_display_name} ${item.room?.title ?? ""}`.toLowerCase();
+      return hay.includes(lowerSearch);
+    });
+
+  async function addToExisting(playlistID: string, songID: string) {
+    await api.addToPlaylist(playlistID, { song_id: songID });
+    onRefreshPlaylists();
+    setAddingFor(null);
+  }
+
+  async function createPlaylistWithSong(songID: string) {
+    if (!newPlaylistTitle.trim()) return;
+    const playlist = await api.createPlaylist({
+      workspace_id: "wsp-amf-private",
+      title: newPlaylistTitle.trim(),
+    });
+    await api.addToPlaylist(playlist.playlist_id, { song_id: songID });
+    setNewPlaylistTitle("");
+    setCreatingPlaylist(false);
+    setAddingFor(null);
+    onRefreshPlaylists();
+  }
+
+  return (
+    <div className="view-stack">
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">LIBRARY</p>
+          <h1>Every song across every room.</h1>
+        </div>
+        <div className="metric-strip">
+          <Metric label="Songs" value={library.length} />
+          <Metric label="Approved" value={library.filter((i) => i.song.status === "approved").length} />
+          <Metric label="Rooms" value={new Set(library.map((i) => i.room?.room_id).filter(Boolean)).size} />
+        </div>
+      </div>
+
+      <div className="library-toolbar">
+        <input
+          className="library-search"
+          placeholder="Search songs, artists, rooms…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search library"
+        />
+        <div className="library-filters">
+          {([
+            ["all", "All"],
+            ["approved", "Approved"],
+            ["in-review", "In review"],
+            ["ready", "Ready"],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              className={`library-filter ${filter === id ? "on" : ""}`}
+              onClick={() => setFilter(id)}
+              aria-pressed={filter === id}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="library-grid">
+        {filtered.length === 0 ? (
+          <div className="library-empty">Nothing matches.</div>
+        ) : (
+          filtered.map(({ song, room, current_version }) => (
+            <article key={song.song_id} className="library-row">
+              <button
+                className="library-row-main"
+                onClick={() => onOpenSong(song.song_id)}
+              >
+                <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(song.song_id) }} />
+                <div className="library-row-text">
+                  <span className="library-title">{song.title}</span>
+                  <span className="library-meta">
+                    {song.artist_display_name}
+                    {room && <> · <span className="library-room">{room.title}</span></>}
+                    {current_version && <> · {current_version.version_label}</>}
+                  </span>
+                </div>
+              </button>
+              <div className="library-row-meta">
+                <span className="library-catalog">{catalogIdFor(song.song_id)}</span>
+                <span className={`status-pill ${song.status === "approved" ? "saved" : ""}`}>
+                  {song.status.replace(/_/g, " ")}
+                </span>
+              </div>
+              <button
+                className="library-add"
+                onClick={() => setAddingFor(addingFor === song.song_id ? null : song.song_id)}
+                title="Add to a playlist"
+              >
+                <Plus size={16} />
+              </button>
+              {addingFor === song.song_id && (
+                <div className="library-add-menu" role="menu">
+                  <p className="eyebrow">ADD TO PLAYLIST</p>
+                  {playlists.map((p) => (
+                    <button
+                      key={p.playlist_id}
+                      className="add-menu-item"
+                      onClick={() => void addToExisting(p.playlist_id, song.song_id)}
+                    >
+                      <span className="title">{p.title}</span>
+                      <span className="count">{p.item_count} songs</span>
+                    </button>
+                  ))}
+                  {creatingPlaylist ? (
+                    <div className="add-menu-create">
+                      <input
+                        value={newPlaylistTitle}
+                        onChange={(e) => setNewPlaylistTitle(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") void createPlaylistWithSong(song.song_id); }}
+                        placeholder="Playlist name…"
+                        autoFocus
+                      />
+                      <button className="text-button" onClick={() => void createPlaylistWithSong(song.song_id)}>Create</button>
+                    </div>
+                  ) : (
+                    <button className="add-menu-item create" onClick={() => setCreatingPlaylist(true)}>
+                      <Plus size={14} />
+                      <span className="title">New playlist…</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlaylistView({
+  playlistID,
+  onOpenSong,
+  onRefreshPlaylists,
+}: {
+  playlistID: string;
+  onOpenSong: (songID: string) => void;
+  onRefreshPlaylists: () => void;
+}) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.playlist>> | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api.playlist(playlistID).then(setData);
+  }, [playlistID]);
+
+  async function remove(itemID: string) {
+    setRemoving(itemID);
+    try {
+      await api.removeFromPlaylist(playlistID, itemID);
+      const fresh = await api.playlist(playlistID);
+      setData(fresh);
+      onRefreshPlaylists();
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  if (!data) {
+    return <div className="view-stack"><p className="muted">Loading playlist…</p></div>;
+  }
+
+  const totalDuration = data.items.reduce((sum, it) => sum + (it.asset?.duration_ms ?? 0), 0);
+  const cover = coverGradient(data.playlist.cover_seed);
+
+  return (
+    <div className="view-stack">
+      <div className="playlist-hero">
+        <div className="playlist-cover" style={{ backgroundImage: cover }} aria-hidden="true" />
+        <div className="playlist-info">
+          <p className="eyebrow">PLAYLIST</p>
+          <h1>{data.playlist.title}</h1>
+          {data.playlist.description && <p className="playlist-desc">{data.playlist.description}</p>}
+          <div className="playlist-meta">
+            <span>{data.items.length} {data.items.length === 1 ? "song" : "songs"}</span>
+            <span>{formatTimestamp(totalDuration)}</span>
+          </div>
+        </div>
+      </div>
+      <ol className="playlist-list">
+        {data.items.length === 0 ? (
+          <li className="playlist-empty">Nothing here yet. Add songs from Library.</li>
+        ) : (
+          data.items.map(({ item, song, current_version, asset }) => (
+            <li key={item.playlist_item_id}>
+              <span className="playlist-index">{String(item.position).padStart(2, "0")}</span>
+              <button
+                className="playlist-song"
+                onClick={() => song && onOpenSong(song.song_id)}
+              >
+                {song ? (
+                  <>
+                    <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(song.song_id) }} />
+                    <div className="who">
+                      <span className="title">{song.title}</span>
+                      <span className="meta">
+                        {song.artist_display_name}
+                        {current_version && <> · {current_version.version_label}</>}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <span className="muted">Song removed</span>
+                )}
+              </button>
+              <span className="playlist-duration">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
+              <button
+                className="icon-button"
+                title="Remove from playlist"
+                onClick={() => void remove(item.playlist_item_id)}
+                disabled={removing === item.playlist_item_id}
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))
+        )}
+      </ol>
+    </div>
   );
 }
 
@@ -260,7 +660,17 @@ function RoomView({ payload, onOpenSong }: { payload: RoomPayload; onOpenSong: (
   );
 }
 
-function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh: () => void }) {
+function SongWorkspace({
+  payload,
+  onRefresh,
+  playlists = [],
+  onRefreshPlaylists,
+}: {
+  payload: SongPayload;
+  onRefresh: () => void;
+  playlists?: Awaited<ReturnType<typeof api.playlists>>;
+  onRefreshPlaylists?: () => void;
+}) {
   const [activeVersionID, setActiveVersionID] = useState(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
   const [noteDraftOpen, setNoteDraftOpen] = useState(false);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(undefined);
@@ -408,6 +818,13 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
                 >
                   <MessageSquare size={14} /> Add note
                 </button>
+                {playlists.length > 0 && onRefreshPlaylists && (
+                  <AddToPlaylistMenu
+                    playlists={playlists}
+                    songID={payload.song.song_id}
+                    onAdded={onRefreshPlaylists}
+                  />
+                )}
                 {uploadError && (
                   <span className="upload-error">{uploadError}</span>
                 )}
@@ -499,6 +916,76 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
         <NotesPanel notes={payload.notes} onRefresh={onRefresh} />
         <DeliverablesPanel payload={payload} />
       </div>
+    </div>
+  );
+}
+
+function AddToPlaylistMenu({
+  playlists,
+  songID,
+  onAdded,
+}: {
+  playlists: Awaited<ReturnType<typeof api.playlists>>;
+  songID: string;
+  onAdded: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+
+  async function add(playlistID: string) {
+    await api.addToPlaylist(playlistID, { song_id: songID });
+    setOpen(false);
+    onAdded();
+  }
+
+  async function createWith() {
+    if (!title.trim()) return;
+    const p = await api.createPlaylist({ workspace_id: "wsp-amf-private", title: title.trim() });
+    await api.addToPlaylist(p.playlist_id, { song_id: songID });
+    setTitle("");
+    setCreating(false);
+    setOpen(false);
+    onAdded();
+  }
+
+  return (
+    <div className="add-to-playlist">
+      <button
+        className="text-button with-icon"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <Plus size={14} /> Playlist
+      </button>
+      {open && (
+        <div className="add-menu" role="menu">
+          <p className="eyebrow">ADD TO PLAYLIST</p>
+          {playlists.map((p) => (
+            <button key={p.playlist_id} className="add-menu-item" onClick={() => void add(p.playlist_id)}>
+              <span className="title">{p.title}</span>
+              <span className="count">{p.item_count} songs</span>
+            </button>
+          ))}
+          {creating ? (
+            <div className="add-menu-create">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void createWith(); }}
+                placeholder="Playlist name…"
+                autoFocus
+              />
+              <button className="text-button" onClick={() => void createWith()}>Create</button>
+            </div>
+          ) : (
+            <button className="add-menu-item create" onClick={() => setCreating(true)}>
+              <Plus size={14} />
+              <span className="title">New playlist…</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

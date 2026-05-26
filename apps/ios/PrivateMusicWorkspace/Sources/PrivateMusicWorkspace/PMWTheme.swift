@@ -120,20 +120,48 @@ enum PMWSpacing {
 
 // MARK: - Type ----------------------------------------------------------
 
+/// All non-readout type is Helvetica Neue. Drama comes from size, weight
+/// and tracking — not from novelty fonts. Mono is reserved for actual
+/// instrument readouts (time codes, LUFS, BPM-as-number, dB).
 enum PMWFont {
-    /// Display — heavy condensed grotesque. The brand wordmark uses this.
-    static func display(_ size: CGFloat, weight: Font.Weight = .heavy) -> Font {
-        .system(size: size, weight: weight, design: .default).width(.condensed)
+    private static func helvetica(_ size: CGFloat, weight: Font.Weight) -> Font {
+        Font.custom(helveticaName(for: weight), size: size)
     }
 
-    /// Typewriter mono — metadata, catalog ids, stamps, cues.
+    private static func helveticaName(for weight: Font.Weight) -> String {
+        switch weight {
+        case .ultraLight, .thin: return "HelveticaNeue-Thin"
+        case .light:             return "HelveticaNeue-Light"
+        case .regular:           return "HelveticaNeue"
+        case .medium:            return "HelveticaNeue-Medium"
+        case .semibold:          return "HelveticaNeue-Medium"
+        case .bold:              return "HelveticaNeue-Bold"
+        case .heavy, .black:     return "HelveticaNeue-Bold"
+        default:                 return "HelveticaNeue"
+        }
+    }
+
+    /// Display — heavy Helvetica. Wordmark, hero titles.
+    static func display(_ size: CGFloat, weight: Font.Weight = .heavy) -> Font {
+        helvetica(size, weight: weight)
+    }
+
+    /// "Mono" in name only — now Helvetica, used for eyebrows / labels /
+    /// catalog ids / stamp text where tight tracking + uppercase is the
+    /// effect we want. Call sites supply tracking via `.kerning(...)`.
     static func mono(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        helvetica(size, weight: weight)
     }
 
     /// Body sans — note text, paragraph copy.
     static func sans(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .default)
+        helvetica(size, weight: weight)
+    }
+
+    /// Genuine monospace for instrument readouts only — time codes, LUFS,
+    /// BPM-as-number, dB. The system mono on iOS is SF Mono.
+    static func readout(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .monospaced)
     }
 
     // ---- Back-compat ----
@@ -191,13 +219,16 @@ struct PMWMonoMark: View {
     }
 }
 
-/// Typewriter-style stamp tag (NOTES DUE, APPROVED, PRIVATE COPY).
+/// Status indicator label — a small color-dot followed by tight Helvetica
+/// caps. No rotation, no double-border. Used for "Notes Due", "Approved",
+/// "Latest", etc. Drama comes from tracking + color, not from kitsch.
 struct PMWStamp: View {
     enum Kind { case privateCopy, notesDue, approved, latest, custom }
 
     let text: String
     var kind: Kind = .privateCopy
     var tight: Bool = false
+    /// Retained for source compat — the stamp is never rotated now.
     var straight: Bool = false
 
     private var color: Color {
@@ -211,17 +242,15 @@ struct PMWStamp: View {
     }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(PMWFont.mono(tight ? 9 : 11, weight: .bold))
-            .kerning(tight ? 1.4 : 1.8)
-            .foregroundStyle(color)
-            .padding(.horizontal, tight ? 6 : 10)
-            .padding(.vertical, tight ? 2 : 4)
-            .overlay(
-                RoundedRectangle(cornerRadius: 1)
-                    .stroke(color, lineWidth: 1.5)
-            )
-            .rotationEffect(.degrees(straight ? 0 : (tight ? -0.5 : -1.2)))
+        HStack(spacing: tight ? 5 : 6) {
+            Circle()
+                .fill(color)
+                .frame(width: tight ? 5 : 6, height: tight ? 5 : 6)
+            Text(text.uppercased())
+                .font(PMWFont.sans(tight ? 9 : 10, weight: .bold))
+                .kerning(tight ? 1.2 : 1.4)
+                .foregroundStyle(color)
+        }
     }
 }
 

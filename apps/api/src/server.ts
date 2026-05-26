@@ -67,6 +67,150 @@ server.get("/workspaces/:id/rooms", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.listRooms(id));
 });
+
+/** Rooms enriched with their song-count + open-note-count — used to render
+ *  the room switcher dropdown without doing N round-trips. */
+server.get("/workspaces/:id/rooms-summary", async (request) => {
+  const { id } = request.params as { id: string };
+  const rooms = store.listRooms(id);
+  const summary = rooms.map((room) => {
+    const songs = store.data.songs.filter((s) => s.primary_room_id === room.room_id);
+    const songIDs = new Set(songs.map((s) => s.song_id));
+    const openNotes = store.data.notes.filter(
+      (n) => n.status === "open" && songIDs.has(n.song_id),
+    );
+    return {
+      ...room,
+      song_count: songs.length,
+      open_note_count: openNotes.length,
+    };
+  });
+  return ok(summary);
+});
+
+/** All playlists in the workspace. Each is enriched with its item-count
+ *  and a small preview (first 3 song titles) for the picker rendering. */
+server.get("/workspaces/:id/playlists", async (request) => {
+  const { id } = request.params as { id: string };
+  const playlists = store.data.playlists.filter((p) => p.workspace_id === id);
+  const songByID = new Map(store.data.songs.map((s) => [s.song_id, s]));
+  const items = store.data.playlistItems;
+  const enriched = playlists.map((p) => {
+    const own = items
+      .filter((it) => it.playlist_id === p.playlist_id)
+      .sort((a, b) => a.position - b.position);
+    return {
+      ...p,
+      item_count: own.length,
+      preview_titles: own.slice(0, 3).map((it) => songByID.get(it.song_id)?.title ?? "").filter(Boolean),
+    };
+  });
+  return ok(enriched);
+});
+
+/** One playlist + its ordered items + each item's song / version / asset. */
+server.get("/playlists/:id", async (request) => {
+  const { id } = request.params as { id: string };
+  const playlist = store.data.playlists.find((p) => p.playlist_id === id);
+  if (!playlist) throw new Error("Playlist not found");
+  const ownItems = store.data.playlistItems
+    .filter((it) => it.playlist_id === id)
+    .sort((a, b) => a.position - b.position);
+  const songByID = new Map(store.data.songs.map((s) => [s.song_id, s]));
+  const versionByID = new Map(store.data.versions.map((v) => [v.version_id, v]));
+  const assetByID = new Map(store.data.assets.map((a) => [a.asset_id, a]));
+  const items = ownItems.map((it) => {
+    const song = songByID.get(it.song_id);
+    const current = song ? versionByID.get(song.current_version_id) : undefined;
+    const asset = current ? assetByID.get(current.file_asset_id) : undefined;
+    return {
+      item: it,
+      song: song ?? null,
+      current_version: current ?? null,
+      asset: asset ?? null,
+    };
+  });
+  return ok({ playlist, items });
+});
+
+server.post("/playlists", async (request) => {
+  const body = request.body as {
+    workspace_id: string;
+    title: string;
+    description?: string;
+    owner_user_id?: string;
+  };
+  const playlist = {
+    playlist_id: `playlist-${randomUUID()}`,
+    workspace_id: body.workspace_id,
+    owner_user_id: body.owner_user_id ?? authFromRequest(request).userID,
+    title: body.title,
+    description: body.description,
+    cover_seed: `${body.title.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`,
+    is_pinned: false,
+    created_by: authFromRequest(request).userID,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  store.data.playlists.push(playlist);
+  return ok(playlist);
+});
+
+server.post("/playlists/:id/items", async (request) => {
+  const { id } = request.params as { id: string };
+  const body = request.body as { song_id: string; note?: string };
+  const existing = store.data.playlistItems.filter((it) => it.playlist_id === id);
+  const nextPosition = (existing.reduce((max, it) => Math.max(max, it.position), 0)) + 1;
+  const item = {
+    playlist_item_id: `pli-${randomUUID()}`,
+    playlist_id: id,
+    song_id: body.song_id,
+    position: nextPosition,
+    added_by: authFromRequest(request).userID,
+    added_at: new Date().toISOString(),
+    note: body.note,
+  };
+  store.data.playlistItems.push(item);
+  return ok(item);
+});
+
+server.delete("/playlists/:id/items/:itemId", async (request) => {
+  const { itemId } = request.params as { id: string; itemId: string };
+  const before = store.data.playlistItems.length;
+  store.data.playlistItems = store.data.playlistItems.filter(
+    (it) => it.playlist_item_id !== itemId,
+  );
+  return ok({ removed: before - store.data.playlistItems.length });
+});
+
+server.delete("/playlists/:id", async (request) => {
+  const { id } = request.params as { id: string };
+  store.data.playlists = store.data.playlists.filter((p) => p.playlist_id !== id);
+  store.data.playlistItems = store.data.playlistItems.filter((it) => it.playlist_id !== id);
+  return ok({ removed: true });
+});
+
+/** Workspace-wide library. Every song in the workspace plus its room +
+ *  current version + asset, suitable for an "All Songs" surface. */
+server.get("/workspaces/:id/library", async (request) => {
+  const { id } = request.params as { id: string };
+  const songs = store.data.songs.filter((s) => s.workspace_id === id);
+  const roomByID = new Map(store.data.rooms.map((r) => [r.room_id, r]));
+  const items = songs.map((song) => {
+    const current = store.data.versions.find((v) => v.version_id === song.current_version_id);
+    const asset = current
+      ? store.data.assets.find((a) => a.asset_id === current.file_asset_id)
+      : undefined;
+    const room = roomByID.get(song.primary_room_id);
+    return {
+      song,
+      room: room ? { room_id: room.room_id, title: room.title, type: room.type } : null,
+      current_version: current ?? null,
+      asset: asset ?? null,
+    };
+  });
+  return ok(items);
+});
 server.get("/workspaces/:id/tasks", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.data.tasks.filter((task) => task.workspace_id === id));

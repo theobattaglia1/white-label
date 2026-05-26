@@ -45,10 +45,15 @@
   --focus: var(--notes-blue);
   --shadow: rgba(0, 0, 0, 0.08);
 
-  /* === Type ========================================= */
-  --font-display: "Inter Tight", "Helvetica Neue", "Helvetica", "Inter", "Arial", sans-serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Courier New", Courier, ui-monospace, "SF Mono", Menlo, monospace;
+  /* === Type ========================================
+     Helvetica everywhere — drama from tracking / weight / size,
+     not from novelty fonts. Mono is reserved for *genuine* instrument
+     readouts (LUFS, BPM, ms timestamps, dB). Stamps, eyebrows, catalog
+     labels all live in Helvetica with tight tracking. */
+  --font-display: "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+  --font-sans: "Helvetica Neue", "Helvetica", -apple-system, BlinkMacSystemFont, "Arial", sans-serif;
+  --font-mono: "Helvetica Neue", "Helvetica", "Arial", sans-serif; /* labels in Helvetica caps */
+  --font-readout: ui-monospace, "SF Mono", "Menlo", monospace; /* ONLY instrument readouts */
 
   --motion-fast: 120ms;
   --motion-mid: 220ms;
@@ -1505,6 +1510,444 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   border: 0;
 }
 
+/* =====================================================================
+   Top-bar room picker — dropdown showing all workspace rooms
+   ===================================================================== */
+.room-picker { position: relative; }
+.room-picker-trigger {
+  appearance: none;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  padding: 6px 14px 6px 10px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tape-oxide);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--easing);
+}
+.room-picker-trigger:hover { border-color: var(--pencil-warm); }
+.room-picker-trigger .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--redline);
+}
+.room-picker-trigger .label {
+  font-weight: 600;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-picker-trigger .chev { font-size: 10px; opacity: 0.7; }
+.room-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  min-width: 320px;
+  max-width: 420px;
+  background: var(--studio-elevated);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  padding: 6px;
+  list-style: none;
+  margin: 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.room-picker-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--tape-oxide);
+  text-align: left;
+  border-radius: 2px;
+}
+.room-picker-item:hover { background: rgba(255,255,255,0.04); }
+.room-picker-item.on { background: rgba(217,40,29,0.08); color: var(--redline); }
+.room-picker-item .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.room-picker-item .title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+}
+.room-picker-item .meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--pencil-warm);
+  text-transform: uppercase;
+}
+.room-picker-item .cue {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--redline);
+}
+
+/* =====================================================================
+   Sidebar list groups (Rooms / Playlists)
+   ===================================================================== */
+.side-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.side-list-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 8px 14px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  color: var(--tape-oxide);
+}
+.side-list-item:hover { background: rgba(255,255,255,0.03); }
+.side-list-item.selected {
+  border-left-color: var(--redline);
+  background: rgba(217,40,29,0.06);
+}
+.side-list-item .side-title {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.side-list-item .side-meta {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+}
+
+/* =====================================================================
+   Library view
+   ===================================================================== */
+.library-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 16px 0 4px;
+}
+.library-search {
+  flex: 1 1 260px;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  padding: 10px 14px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--tape-oxide);
+  letter-spacing: -0.005em;
+}
+.library-search:focus-visible {
+  outline: 0;
+  border-color: var(--notes-blue);
+}
+.library-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.library-filter {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--pencil-warm);
+  cursor: pointer;
+}
+.library-filter:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
+.library-filter.on { color: var(--redline); border-color: var(--redline); }
+
+.library-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--studio-hairline);
+}
+.library-empty {
+  padding: 64px 0;
+  text-align: center;
+  font-family: var(--font-sans);
+  color: var(--pencil-warm);
+  font-size: 13px;
+}
+.library-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+.library-row-main {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+}
+.library-row-main .cover-art {
+  width: 52px; height: 52px;
+  border-radius: 2px;
+  flex: 0 0 52px;
+}
+.library-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.library-title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tape-oxide);
+}
+.library-meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--pencil-warm);
+}
+.library-meta .library-room { color: var(--tape-oxide); font-weight: 500; }
+.library-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.library-catalog {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pencil-warm);
+}
+.library-add {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  width: 32px; height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--tape-oxide);
+}
+.library-add:hover { border-color: var(--redline); color: var(--redline); }
+.library-add-menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 0;
+  z-index: 50;
+  width: 280px;
+  background: var(--studio-elevated);
+  border: 1px solid var(--studio-hairline);
+  padding: 10px;
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.library-add-menu .eyebrow {
+  color: var(--redline);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  margin-bottom: 6px;
+}
+.add-menu-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  cursor: pointer;
+  color: var(--tape-oxide);
+  border-radius: 2px;
+}
+.add-menu-item:hover { background: rgba(255,255,255,0.04); }
+.add-menu-item .title { font-family: var(--font-sans); font-size: 13px; font-weight: 500; }
+.add-menu-item .count { font-family: var(--font-readout); font-size: 10px; color: var(--pencil-warm); }
+.add-menu-item.create {
+  color: var(--redline);
+  border-top: 1px dashed var(--studio-hairline);
+  margin-top: 6px;
+  padding-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.add-menu-create {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px dashed var(--studio-hairline);
+  margin-top: 6px;
+}
+.add-menu-create input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  padding: 6px 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--tape-oxide);
+  border-radius: 2px;
+}
+.add-menu-create input:focus-visible { outline: 0; border-color: var(--notes-blue); }
+
+/* Same menu shape, used from Song hero action row */
+.add-to-playlist { position: relative; }
+.add-to-playlist .add-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 280px;
+  background: var(--sleeve-elevated);
+  color: var(--ink);
+  border: 1px solid var(--sleeve-hairline);
+  padding: 10px;
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+}
+.add-to-playlist .add-menu .eyebrow { color: var(--redline); margin-bottom: 8px; }
+.add-to-playlist .add-menu-item { color: var(--ink); }
+.add-to-playlist .add-menu-item:hover { background: rgba(0,0,0,0.04); }
+.add-to-playlist .add-menu-item .count { color: var(--pencil-cool); }
+.add-to-playlist .add-menu-create input {
+  background: white;
+  border-color: var(--sleeve-hairline);
+  color: var(--ink);
+}
+
+/* =====================================================================
+   Playlist detail view
+   ===================================================================== */
+.playlist-hero {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 32px;
+  align-items: end;
+  padding: 32px 0 24px;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+.playlist-cover {
+  width: 240px;
+  height: 240px;
+  border-radius: 2px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+}
+.playlist-info { min-width: 0; padding-bottom: 4px; }
+.playlist-info .eyebrow { color: var(--redline); margin-bottom: 8px; }
+.playlist-info h1 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5vw, 72px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 0.95;
+  margin: 0;
+  color: var(--tape-oxide);
+}
+.playlist-info .playlist-desc {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--pencil-warm);
+  margin: 14px 0 0;
+  max-width: 540px;
+}
+.playlist-info .playlist-meta {
+  display: flex;
+  gap: 18px;
+  margin-top: 18px;
+  font-family: var(--font-readout);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--pencil-warm);
+}
+.playlist-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0 0;
+}
+.playlist-empty {
+  padding: 48px 0;
+  font-family: var(--font-sans);
+  color: var(--pencil-warm);
+  font-size: 13px;
+}
+.playlist-list li {
+  display: grid;
+  grid-template-columns: 32px 1fr auto auto;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--studio-hairline);
+  align-items: center;
+}
+.playlist-index {
+  font-family: var(--font-readout);
+  font-size: 12px;
+  color: var(--pencil-warm);
+}
+.playlist-song {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+}
+.playlist-song .cover-art { width: 44px; height: 44px; border-radius: 2px; flex: 0 0 44px; }
+.playlist-song .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.playlist-song .title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tape-oxide);
+}
+.playlist-song .meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--pencil-warm);
+}
+.playlist-duration {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  color: var(--pencil-warm);
+}
+
 /* Routed-link confirmation banner */
 .routed-banner {
   margin-top: 16px;
@@ -1978,7 +2421,7 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 }
 .recipient-approve .accent-button.approve:hover { background: var(--redline); border-color: var(--redline); }
 .recipient-approve .accent-button.approve:disabled { opacity: .6; cursor: not-allowed; }
-.recipient-approve .stamp.approved { transform: rotate(-2deg); font-size: 14px; padding: 8px 18px 7px; }
+.recipient-approve .stamp.approved { font-size: 12px; letter-spacing: 0.16em; }
 
 /* Song hero action-row — tertiary text-button with icon */
 .text-button.with-icon {
@@ -2030,6 +2473,65 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .link-activity .what { font-weight: 500; color: inherit; }
 .link-activity .when { font-weight: 400; opacity: .7; }
 
+
+/* =====================================================================
+   Instrument readouts — the ONLY mono usage. Time codes, LUFS,
+   BPM-as-number, dB values. Everything else stays in Helvetica. */
+.time-row,
+.song-card-waveband .times,
+.recipient-controls .time-row,
+.song-card-info .meta-row span,
+.recipient-meta-row span,
+.recipient-meta-row .b,
+.compare-deck .time-row,
+.link-activity .when,
+.note-foot .approx,
+.note-foot > span:first-child,
+.song-row .row-current small,
+.mini-copy small {
+  font-family: var(--font-readout);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stamp rebuild — drop the rotated typewriter affectation. Helvetica
+   uppercase with tight tracking + a small color-dot indicator. Used to
+   surface "Notes Due", "Approved", "Latest", etc. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--redline);
+  transform: none;
+  border-radius: 0;
+  white-space: nowrap;
+  line-height: 1;
+}
+.stamp::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.stamp.notes-due { color: var(--notes-blue); }
+.stamp.approved { color: var(--approved-ink); }
+.app-shell .stamp.approved,
+.app-shell .stamp.latest { color: var(--tape-oxide); }
+.stamp.latest { color: var(--approved-ink); }
+.stamp.private { color: var(--redline); }
+.stamp.tight { font-size: 9px; letter-spacing: 0.12em; gap: 5px; }
+.stamp.tight::before { width: 5px; height: 5px; }
+/* .straight is now a no-op (the stamp is never rotated). */
+.stamp.straight { transform: none; }
 
 /* =====================================================================
    Missing component styles — these classes are referenced in App.tsx

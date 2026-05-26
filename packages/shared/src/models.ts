@@ -314,6 +314,41 @@ export interface DeliverableStatus {
   present: string[];
 }
 
+/**
+ * Producer-curated ordered list of songs. Unlike a Room (which is
+ * permissioned and purposeful — "Hudson Ingram LP · Approval run"), a
+ * Playlist is ad-hoc and personal. Songs can live in multiple playlists,
+ * playlists can cross rooms, and a playlist's purpose is just to be a
+ * thing you can play through or share.
+ */
+export interface Playlist {
+  playlist_id: string;
+  workspace_id: string;
+  /** Set when the playlist is private to one user; null = workspace-wide. */
+  owner_user_id?: string;
+  title: string;
+  description?: string;
+  /** Stable seed used to derive the cover gradient. Independent of title
+   *  so renames don't change the visual identity. */
+  cover_seed: string;
+  is_pinned?: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlaylistItem {
+  playlist_item_id: string;
+  playlist_id: string;
+  song_id: string;
+  /** Producer-defined ordering. Smaller = earlier in the list. */
+  position: number;
+  added_by: string;
+  added_at: string;
+  /** Optional per-item note ("send me this with the vocal pulled 1dB"). */
+  note?: string;
+}
+
 export interface WorkspaceSnapshot {
   workspaces: Workspace[];
   users: User[];
@@ -330,5 +365,7 @@ export interface WorkspaceSnapshot {
   activityEvents: ActivityEvent[];
   notifications: NotificationItem[];
   savedViews: SavedView[];
+  playlists: Playlist[];
+  playlistItems: PlaylistItem[];
 }
 

@@ -6,7 +6,7 @@ import { signUpload, finalizeUpload, type FinalizeUploadInput, type SignUploadIn
 import { loadSnapshotFromSupabase } from "./supabase-loader";
 import { authFromHeaders } from "./auth";
 
-const port = Number(process.env.API_PORT ?? Number(process.env.PORT) ?? 4317);
+const port = Number(process.env.API_PORT ?? process.env.PORT ?? 4317);
 const server = Fastify({ logger: true });
 
 await server.register(cors, { origin: true });
@@ -64,7 +64,17 @@ server.get("/rooms/:id/analytics", async (request) => {
   const { id } = request.params as { id: string };
   const room = store.getRoom(id);
   const songIDs = new Set(room.songs.map((song) => song.song_id));
-  return ok(store.data.activityEvents.filter((event) => event.song_id && songIDs.has(event.song_id)));
+  const events = store.data.activityEvents.filter((event) => event.song_id && songIDs.has(event.song_id));
+  // Enrich with actor display name so the client doesn't have to do a second join
+  const userByID = new Map(store.data.users.map((u) => [u.user_id, u]));
+  const enriched = events.map((event) => ({
+    ...event,
+    actor_display_name:
+      (event.actor_user_id && userByID.get(event.actor_user_id)?.display_name) ??
+      event.actor_recipient_label ??
+      "Unknown",
+  }));
+  return ok(enriched);
 });
 
 server.get("/songs/:id", async (request) => {

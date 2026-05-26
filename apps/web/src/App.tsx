@@ -34,6 +34,11 @@ type ViewMode = "room" | "song" | "compare" | "inbox" | "links" | "assistant";
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
   if (sharedToken) return <SharedListeningPage token={sharedToken} />;
+  // Dev-only auth bypass — stripped in production builds so prod URLs cannot
+  // be backdoored with ?dev=1.
+  const devBypass =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).get("dev") === "1";
+  if (devBypass) return <WorkspaceApp />;
   return <AuthenticatedApp />;
 }
 
@@ -117,7 +122,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
             />
           )}
           {mode === "song" && songPayload && <SongWorkspace payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
-          {mode === "compare" && songPayload && <ComparisonMode payload={songPayload} />}
+          {mode === "compare" && songPayload && <ComparisonMode payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
           {mode === "inbox" && <InboxView items={inboxItems} onOpenSong={(id) => {
             setSelectedSongID(id);
             setMode("song");
@@ -237,9 +242,7 @@ function RoomView({ payload, onOpenSong }: { payload: RoomPayload; onOpenSong: (
           const asset = assetForVersion(payload.assets, current);
           return (
             <button key={song.song_id} className="song-row" onClick={() => onOpenSong(song.song_id)}>
-              <div className="cover-art" aria-hidden="true">
-                <span>{song.title.slice(0, 2).toUpperCase()}</span>
-              </div>
+              <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(song.song_id) }} />
               <div className="row-main">
                 <span className="row-title">{song.title}</span>
                 <span className="row-subtitle">{song.artist_display_name} · {song.project_name}</span>
@@ -260,8 +263,7 @@ function RoomView({ payload, onOpenSong }: { payload: RoomPayload; onOpenSong: (
 function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh: () => void }) {
   const [activeVersionID, setActiveVersionID] = useState(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
   const [noteDraftOpen, setNoteDraftOpen] = useState(false);
-  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(72000);
-  const [noteBody, setNoteBody] = useState("");
+  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(undefined);
   const [uploadingPct, setUploadingPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useMemo(() => ({ current: null as HTMLInputElement | null }), []);
@@ -274,21 +276,6 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
   useEffect(() => {
     setActiveVersionID(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
   }, [payload.song.song_id, payload.currentVersion?.version_id]);
-
-  async function submitNote() {
-    if (!activeVersion || !noteBody.trim()) return;
-    await api.createNote({
-      song_id: payload.song.song_id,
-      anchor_version_id: activeVersion.version_id,
-      body: noteBody.trim(),
-      timestamp_start_ms: noteTimestamp,
-      scope: "song",
-      visibility: "everyone",
-    });
-    setNoteBody("");
-    setNoteDraftOpen(false);
-    onRefresh();
-  }
 
   function triggerUpload() {
     setUploadError(null);
@@ -323,6 +310,7 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
 
   const openNotes = payload.notes.filter((n) => n.status === "open");
   const hasNotesDue = openNotes.length > 0;
+  const approvedVersion = payload.versions.find((v) => v.version_id === payload.song.approved_version_id);
   const catalogId = `WL · ${payload.song.song_id.slice(-4).toUpperCase()}`;
   const versionLabel = activeVersion?.version_label ?? "v1";
 
@@ -333,13 +321,16 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
           {payload.song.project_name ?? "Room"} / <b>{payload.song.title}</b> / {versionLabel}
         </div>
         <div className="song-card-frame">
-          {hasNotesDue && (
-            <span className="nd-stamp">
+          <div className="stamp-row">
+            {approvedVersion && (
+              <Stamp kind="approved" straight>Approved · {approvedVersion.version_label}</Stamp>
+            )}
+            {hasNotesDue && (
               <Stamp kind="notes-due">Notes Due · {openNotes.length}</Stamp>
-            </span>
-          )}
+            )}
+          </div>
           <div className="song-card-body">
-            <div className="song-card-cover">
+            <div className="song-card-cover" style={{ backgroundImage: coverGradient(payload.song.song_id) }}>
               <div className="grain" />
               <span className="cat-strip">{catalogId} · {versionLabel}</span>
               <div className="mono-corner">
@@ -384,21 +375,21 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
               </div>
               <div className="actions">
                 <button
-                  className="btn red"
+                  className="btn red primary"
                   onClick={() => activeVersion && activeAsset && player.play(payload.song, activeVersion, activeAsset)}
                 >
                   <Play size={14} /> Play
                 </button>
                 <button
-                  className="btn"
+                  className="chrome-button"
                   onClick={triggerUpload}
                   disabled={uploadingPct !== null}
-                  title={uploadingPct !== null ? `Uploading… ${uploadingPct}%` : "Upload a new audio file as the next version"}
+                  title={uploadingPct !== null ? `Uploading… ${uploadingPct}%` : "Drop a new revision into the version stack"}
                 >
                   <Upload size={14} />
                   {uploadingPct === null
-                    ? " Upload revision"
-                    : ` Uploading ${uploadingPct}%`}
+                    ? "New revision"
+                    : `Uploading ${uploadingPct}%`}
                 </button>
                 <input
                   ref={(el) => { fileInputRef.current = el; }}
@@ -407,13 +398,8 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
                   hidden
                   onChange={onFileChosen}
                 />
-                {uploadError && (
-                  <span style={{ color: "var(--redline)", fontSize: 12, marginLeft: 8 }}>
-                    {uploadError}
-                  </span>
-                )}
                 <button
-                  className="btn ghost"
+                  className="text-button with-icon"
                   onClick={() => {
                     setNoteTimestamp(player.positionMs);
                     setNoteDraftOpen(true);
@@ -421,6 +407,9 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
                 >
                   <MessageSquare size={14} /> Add note
                 </button>
+                {uploadError && (
+                  <span className="upload-error">{uploadError}</span>
+                )}
               </div>
             </div>
           </div>
@@ -453,22 +442,17 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
         </div>
       </div>
 
-      {noteDraftOpen && (
-        <div className="note-composer">
-          <div>
-            <p className="eyebrow">NOTE AT {formatTimestamp(noteTimestamp)}</p>
-            <input value={noteBody} onChange={(event) => setNoteBody(event.target.value)} placeholder="Pull the snare 1dB at the bridge…" autoFocus />
-          </div>
-          <div className="composer-actions">
-            <button className="icon-button" title="Dismiss" onClick={() => setNoteDraftOpen(false)}>
-              <X size={16} />
-            </button>
-            <button className="accent-button" onClick={submitNote}>
-              <Send size={15} />
-              Send
-            </button>
-          </div>
-        </div>
+      {noteDraftOpen && activeVersion && (
+        <NoteComposer
+          song={payload.song}
+          version={activeVersion}
+          timestampMs={noteTimestamp}
+          onPosted={() => {
+            setNoteDraftOpen(false);
+            onRefresh();
+          }}
+          onDismiss={() => setNoteDraftOpen(false)}
+        />
       )}
 
       <div className="content-columns">
@@ -525,21 +509,26 @@ function VersionStack({
               if (event.key === "Enter" || event.key === " ") onSelect(version);
             }}
           >
-            <div className="version-number">{String(version.version_number).padStart(2, "0")}</div>
+            <div className="ver-num">{String(version.version_number).padStart(2, "0")}</div>
             <div className="version-body">
               <span>{version.version_label}</span>
               <small>{version.type} · {asset?.loudness_lufs} LUFS · {formatTimestamp(asset?.duration_ms)}</small>
             </div>
-            {version.is_current ? (
-              <span className="status-pill red">Current</span>
-            ) : (
-              <button className="text-button" onClick={(event) => {
-                event.stopPropagation();
-                onSetCurrent(version.version_id);
-              }}>
-                Set current
-              </button>
-            )}
+            <div className="version-state">
+              {version.version_id === payload.song.approved_version_id && (
+                <Stamp kind="approved" tight straight>Approved</Stamp>
+              )}
+              {version.is_current ? (
+                <span className="status-pill red">Current</span>
+              ) : (
+                <button className="text-button" onClick={(event) => {
+                  event.stopPropagation();
+                  onSetCurrent(version.version_id);
+                }}>
+                  Set current
+                </button>
+              )}
+            </div>
           </div>
         );
       })}
@@ -622,15 +611,17 @@ function DeliverablesPanel({ payload }: { payload: SongPayload }) {
   );
 }
 
-function ComparisonMode({ payload }: { payload: SongPayload }) {
+function ComparisonMode({ payload, onRefresh }: { payload: SongPayload; onRefresh: () => void }) {
   const [leftID, setLeftID] = useState(payload.versions[0]?.version_id);
   const [rightID, setRightID] = useState(payload.currentVersion?.version_id);
+  const [activeDeck, setActiveDeck] = useState<"A" | "B">("B");
   const player = usePlayer();
   const left = payload.versions.find((version) => version.version_id === leftID) ?? payload.versions[0];
   const right = payload.versions.find((version) => version.version_id === rightID) ?? payload.versions.at(-1);
   const leftAsset = assetForVersion(payload.assets, left);
   const rightAsset = assetForVersion(payload.assets, right);
   const gainFor = (asset?: FileAsset) => (asset ? (-14 - asset.loudness_lufs).toFixed(1) : "0.0");
+  const activeVersion = activeDeck === "A" ? left : right;
 
   return (
     <div className="view-stack">
@@ -639,15 +630,47 @@ function ComparisonMode({ payload }: { payload: SongPayload }) {
           <p className="eyebrow">COMPARISON MODE</p>
           <h1>{payload.song.title}</h1>
         </div>
-        <label className="toggle">
-          <input type="checkbox" checked={player.loudnessMatched} onChange={(event) => player.setLoudnessMatched(event.target.checked)} />
-          <span>Loudness Match</span>
-        </label>
+        <ToggleSwitch
+          label="Loudness Match"
+          checked={player.loudnessMatched}
+          onChange={(next) => player.setLoudnessMatched(next)}
+        />
       </div>
       <div className="compare-grid">
-        <CompareDeck title="A" song={payload.song} version={left} asset={leftAsset} selectedID={leftID} versions={payload.versions} onSelect={setLeftID} gain={gainFor(leftAsset)} />
-        <CompareDeck title="B" song={payload.song} version={right} asset={rightAsset} selectedID={rightID} versions={payload.versions} onSelect={setRightID} gain={gainFor(rightAsset)} />
+        <CompareDeck
+          title="A"
+          song={payload.song}
+          version={left}
+          asset={leftAsset}
+          selectedID={leftID}
+          versions={payload.versions}
+          onSelect={(id) => { setLeftID(id); setActiveDeck("A"); }}
+          onActivate={() => setActiveDeck("A")}
+          isActive={activeDeck === "A"}
+          gain={gainFor(leftAsset)}
+        />
+        <CompareDeck
+          title="B"
+          song={payload.song}
+          version={right}
+          asset={rightAsset}
+          selectedID={rightID}
+          versions={payload.versions}
+          onSelect={(id) => { setRightID(id); setActiveDeck("B"); }}
+          onActivate={() => setActiveDeck("B")}
+          isActive={activeDeck === "B"}
+          gain={gainFor(rightAsset)}
+        />
       </div>
+      {activeVersion && (
+        <NoteComposer
+          song={payload.song}
+          version={activeVersion}
+          timestampMs={player.positionMs || undefined}
+          deckLabel={activeDeck}
+          onPosted={onRefresh}
+        />
+      )}
     </div>
   );
 }
@@ -660,6 +683,8 @@ function CompareDeck({
   selectedID,
   versions,
   onSelect,
+  onActivate,
+  isActive,
   gain,
 }: {
   title: string;
@@ -669,33 +694,113 @@ function CompareDeck({
   selectedID?: string;
   versions: Version[];
   onSelect: (id: string) => void;
+  onActivate: () => void;
+  isActive: boolean;
   gain: string;
 }) {
   const player = usePlayer();
+  const isPlayingThis = player.isPlaying && player.version?.version_id === version?.version_id;
   return (
-    <section className="compare-deck">
+    <section className={`compare-deck ${isActive ? "active" : ""}`}>
       <div className="panel-topline">
         <div>
-          <p className="eyebrow">DECK {title}</p>
+          <p className="eyebrow">DECK {title}{isActive ? " · ACTIVE" : ""}</p>
           <h2>{version?.version_label}</h2>
         </div>
-        <button className="icon-button" title="Play deck" onClick={() => version && asset && player.play(song, version, asset)}>
-          {player.isPlaying && player.version?.version_id === version?.version_id ? <Pause size={17} /> : <Play size={17} />}
+        <button className="icon-button" title="Play deck" onClick={() => {
+          onActivate();
+          if (version && asset) player.play(song, version, asset);
+        }}>
+          {isPlayingThis ? <Pause size={17} /> : <Play size={17} />}
         </button>
       </div>
-      <select value={selectedID} onChange={(event) => onSelect(event.target.value)}>
+      <div className="deck-version-pills">
         {versions.map((item) => (
-          <option key={item.version_id} value={item.version_id}>
+          <button
+            key={item.version_id}
+            className={`v ${item.version_id === selectedID ? "cur" : ""}`}
+            onClick={() => { onActivate(); onSelect(item.version_id); }}
+          >
             {item.version_label}
-          </option>
+          </button>
         ))}
-      </select>
+      </div>
       <Waveform peaks={asset?.waveform_peaks ?? []} positionMs={player.positionMs} durationMs={asset?.duration_ms ?? 1} onSeek={player.seek} />
       <div className="time-row">
         <span>{formatTimestamp(player.positionMs)}</span>
         <span>{asset?.loudness_lufs} LUFS · gain {gain} dB</span>
       </div>
     </section>
+  );
+}
+
+function NoteComposer({
+  song,
+  version,
+  timestampMs,
+  deckLabel,
+  onPosted,
+  onDismiss,
+}: {
+  song: Song;
+  version: Version;
+  timestampMs?: number;
+  deckLabel?: string;
+  onPosted: () => void;
+  onDismiss?: () => void;
+}) {
+  const [body, setBody] = useState("");
+  const [posting, setPosting] = useState(false);
+  async function submit() {
+    if (!body.trim()) return;
+    setPosting(true);
+    try {
+      await api.createNote({
+        song_id: song.song_id,
+        anchor_version_id: version.version_id,
+        body: body.trim(),
+        timestamp_start_ms: timestampMs,
+        scope: "song",
+        visibility: "everyone",
+      });
+      setBody("");
+      onPosted();
+    } finally {
+      setPosting(false);
+    }
+  }
+  const cueLabel = timestampMs && timestampMs > 0 ? `@ ${formatTimestamp(timestampMs)}` : "@ start";
+  const ariaLabel = `Leave a note on ${version.version_label}${deckLabel ? ` · Deck ${deckLabel}` : ""} ${cueLabel}`;
+  return (
+    <div className="note-composer">
+      <div>
+        <p className="eyebrow">
+          NOTE ON {version.version_label}
+          {deckLabel ? ` · DECK ${deckLabel}` : ""}
+          {" · "}{cueLabel}
+        </p>
+        <input
+          aria-label={ariaLabel}
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter" && body.trim()) submit(); }}
+          placeholder="Pull the snare 1dB at the bridge…"
+          autoFocus
+          disabled={posting}
+        />
+      </div>
+      <div className="composer-actions">
+        {onDismiss && (
+          <button className="icon-button" title="Dismiss" onClick={onDismiss}>
+            <X size={16} />
+          </button>
+        )}
+        <button className="accent-button" onClick={submit} disabled={posting || !body.trim()}>
+          <Send size={15} />
+          {posting ? "Sending…" : "Send"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -721,9 +826,7 @@ function InboxView({
       <div className="song-table">
         {items.map((item) => (
           <article key={item.song.song_id} className="song-row">
-            <div className="cover-art" aria-hidden="true">
-              <span>{item.song.title.slice(0, 2).toUpperCase()}</span>
-            </div>
+            <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.song.song_id) }} />
             <button className="row-main row-open" onClick={() => onOpenSong(item.song.song_id)}>
               <span className="row-title">{item.song.title}</span>
               <span className="row-subtitle">Shared by {item.shared_by} · {item.room.title}</span>
@@ -749,7 +852,12 @@ function InboxView({
 
 function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song; onRefresh: () => void }) {
   const [latestToken, setLatestToken] = useState<string | null>(null);
+  const [analytics, setAnalytics] = useState<Awaited<ReturnType<typeof api.roomAnalytics>>>([]);
   const links = [...room.links, ...roomPayloadSongLinks(room, song.song_id)];
+
+  useEffect(() => {
+    void api.roomAnalytics(room.room.room_id).then(setAnalytics).catch(() => setAnalytics([]));
+  }, [room.room.room_id]);
 
   async function createRoomLink() {
     const result = await api.createLink({
@@ -785,7 +893,7 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
       <div className="link-list">
         {links.map((link) => (
           <article key={link.link_id} className="link-row">
-            <div>
+            <div className="link-body">
               <p className="eyebrow">{link.target_type.toUpperCase()}</p>
               <h2>{link.link_name ?? link.link_id}</h2>
               <div className="hero-meta">
@@ -794,6 +902,7 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
                 <span>{link.download_policy}</span>
                 <span>{link.watermark_enabled ? "watermark tracing" : "watermark off"}</span>
               </div>
+              <LinkActivity events={analytics.filter((e) => e.link_id === link.link_id)} versions={room.versions} songs={room.songs} />
             </div>
             <div className="row-actions">
               <a className="chrome-button" href={`/shared/${link.demo_token ?? ""}`}>
@@ -814,19 +923,150 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
   );
 }
 
+function LinkActivity({
+  events,
+  versions,
+  songs,
+}: {
+  events: Array<{
+    event_id: string;
+    event_type: string;
+    actor_display_name: string;
+    created_at: string;
+    version_id?: string;
+    song_id?: string;
+    metadata: Record<string, unknown>;
+  }>;
+  versions: Version[];
+  songs: Song[];
+}) {
+  if (events.length === 0) {
+    return <p className="link-activity-empty">No plays yet.</p>;
+  }
+  const versionByID = new Map(versions.map((v) => [v.version_id, v]));
+  const songByID = new Map(songs.map((s) => [s.song_id, s]));
+  // Newest first
+  const sorted = [...events].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return (
+    <ul className="link-activity">
+      {sorted.map((event) => {
+        const version = event.version_id ? versionByID.get(event.version_id) : undefined;
+        const song = event.song_id ? songByID.get(event.song_id) : undefined;
+        const heardMs = typeof event.metadata?.heard_ms === "number" ? (event.metadata.heard_ms as number) : null;
+        const verb = describeEvent(event.event_type);
+        return (
+          <li key={event.event_id}>
+            <span className="who">{event.actor_display_name}</span>
+            <span className="what">
+              {verb}
+              {song && <> · <b>{song.title}</b></>}
+              {version && <> · {version.version_label}</>}
+              {heardMs !== null && <> · heard {formatTimestamp(heardMs)}</>}
+            </span>
+            <span className="when">{formatRelative(event.created_at)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function describeEvent(type: string): string {
+  switch (type) {
+    case "played_track": return "listened";
+    case "opened_link": return "opened";
+    case "downloaded_file": return "downloaded";
+    case "approved_version": return "approved";
+    case "requested_revision": return "asked for revisions";
+    case "commented": return "left a note";
+    case "mentioned_user": return "mentioned someone";
+    default: return type.replace(/_/g, " ");
+  }
+}
+
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const diffMs = Date.now() - then;
+  const min = Math.max(0, Math.round(diffMs / 60000));
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.round(hr / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.round(days / 7);
+  return `${weeks}w ago`;
+}
+
+/** Derive a stable hue (0–360) from a string id so every song has a distinct face. */
+function hashHue(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+/** Build a sleeve-mode gradient string keyed off the song id. */
+function coverGradient(id: string): string {
+  const hue = hashHue(id);
+  const angle = 130 + (hashHue(id + "a") % 40);
+  return `linear-gradient(${angle}deg,
+    hsl(${(hue + 200) % 360} 8% 14%) 0%,
+    hsl(${(hue + 30) % 360} 18% 32%) 32%,
+    hsl(${hue} 28% 56%) 66%,
+    hsl(${(hue + 25) % 360} 38% 78%) 100%)`;
+}
+
+/** Simple on-brand toggle switch — used in place of native checkboxes. */
+function ToggleSwitch({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`toggle-switch ${checked ? "on" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="track" aria-hidden="true">
+        <span className="knob" />
+      </span>
+      <span className="toggle-label">{label}</span>
+    </button>
+  );
+}
+
 function roomPayloadSongLinks(room: RoomPayload, songID: string): ShareLink[] {
   return room.links.filter((link) => link.target_type === "song" && link.target_id === songID);
 }
 
+const SUGGESTED_QUERIES = [
+  "Who hasn't heard v2?",
+  "What notes are still open from v1?",
+  "Who has approved what?",
+  "What's blocking release readiness?",
+] as const;
+
 function AssistantPanel() {
-  const [question, setQuestion] = useState("Who hasn't heard v2?");
+  const [question, setQuestion] = useState<string>(SUGGESTED_QUERIES[0]);
   const [answer, setAnswer] = useState<Awaited<ReturnType<typeof api.ask>> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  async function submit() {
+  async function submit(text = question) {
     setIsLoading(true);
-    setAnswer(await api.ask(question));
-    setIsLoading(false);
+    setQuestion(text);
+    try {
+      setAnswer(await api.ask(text));
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -840,17 +1080,27 @@ function AssistantPanel() {
           <p className="eyebrow">READ-ONLY ASK</p>
           <h1>Workspace Questions</h1>
         </div>
-        <Shield size={22} />
+        <Shield size={22} aria-label="Read-only — Ask cannot modify workspace state" />
       </div>
       <div className="ask-box">
-        <input value={question} onChange={(event) => setQuestion(event.target.value)} />
-        <button className="accent-button" onClick={submit}>
+        <input
+          aria-label="Ask a question about the workspace"
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}
+        />
+        <button className="accent-button" onClick={() => void submit()}>
           <Send size={16} />
           Ask
         </button>
       </div>
+      <div className="ask-chips">
+        {SUGGESTED_QUERIES.map((q) => (
+          <button key={q} className="ask-chip" onClick={() => void submit(q)}>{q}</button>
+        ))}
+      </div>
       <section className="answer-panel">
-        <p>{isLoading ? "Reading records..." : answer?.answer}</p>
+        <p>{isLoading ? "Checking the session…" : answer?.answer}</p>
         <div className="citation-row">
           {answer?.citations.map((citation) => (
             <span key={`${citation.type}-${citation.id}`} className="status-pill">
@@ -922,13 +1172,29 @@ function SharedListeningView({
   const [activeVersionID, setActiveVersionID] = useState<string | null>(current?.version_id ?? null);
   const [noteBody, setNoteBody] = useState("");
   const [posting, setPosting] = useState(false);
+  const [approveState, setApproveState] = useState<"idle" | "pending" | "done">("idle");
 
   useEffect(() => {
     setActiveVersionID(current?.version_id ?? null);
+    setApproveState("idle");
   }, [current?.version_id]);
 
   const activeVersion = versions.find((v) => v.version_id === activeVersionID) ?? current;
   const activeAsset = payload && activeVersion ? assetForVersion(payload.assets, activeVersion) : asset;
+  const allowApproval = payload?.link.allow_approval ?? false;
+  const alreadyApproved = !!activeVersion?.is_approved;
+
+  async function approve() {
+    if (!activeVersion || approveState !== "idle") return;
+    setApproveState("pending");
+    try {
+      await api.sharedApprove(token, activeVersion.version_id);
+      setApproveState("done");
+      onNotePosted();
+    } catch {
+      setApproveState("idle");
+    }
+  }
 
   const songNotes = payload?.songs.length && song ? (payload as any).notes?.filter?.((n: VisibleNote) => n.song_id === song.song_id) ?? [] : [];
 
@@ -981,13 +1247,13 @@ function SharedListeningView({
             </div>
           </div>
 
-          <div className="recipient-cover">
-            <div className="mono-corner"><MonoMark size={22} /></div>
-          </div>
-
           <h1 className="recipient-title">{song.title}</h1>
           <div className="recipient-artist">
             {song.artist_display_name}{activeVersion?.version_label ? ` · ${activeVersion.version_label}` : ""}
+          </div>
+
+          <div className="recipient-cover" style={{ backgroundImage: coverGradient(song.song_id) }}>
+            <div className="mono-corner"><MonoMark size={22} /></div>
           </div>
 
           <div className="recipient-meta-row">
@@ -1023,6 +1289,26 @@ function SharedListeningView({
             </div>
           </div>
 
+          {allowApproval && (
+            <div className="recipient-approve">
+              {alreadyApproved ? (
+                <Stamp kind="approved" straight>Approved · {activeVersion?.version_label}</Stamp>
+              ) : approveState === "done" ? (
+                <Stamp kind="approved" straight>Approved · just now</Stamp>
+              ) : (
+                <button
+                  type="button"
+                  className="accent-button approve"
+                  onClick={approve}
+                  disabled={approveState === "pending"}
+                >
+                  <CheckCircle2 size={16} />
+                  {approveState === "pending" ? "Sending approval…" : `Approve ${activeVersion?.version_label ?? "version"}`}
+                </button>
+              )}
+            </div>
+          )}
+
           {payload.link.version_policy === "full_history" && versions.length > 1 && (
             <div className="recipient-versions">
               {versions.map((v) => (
@@ -1052,9 +1338,7 @@ function SharedListeningView({
                   onClick={() => onSelectSong(item.song_id)}
                   style={item.song_id === selectedSongID ? { background: "rgba(0,0,0,.04)" } : undefined}
                 >
-                  <div className="cover-art no-art" aria-hidden="true">
-                    <span>{item.title.slice(0, 2).toUpperCase()}</span>
-                  </div>
+                  <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.song_id) }} />
                   <div className="row-main">
                     <span className="row-title">{item.title}</span>
                     <span className="row-subtitle">{item.artist_display_name}</span>

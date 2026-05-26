@@ -1,4 +1,4 @@
-import type { AssistantAnswer, FileAsset, Room, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
+import type { ActivityEvent, AssistantAnswer, FileAsset, Room, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
 import { supabase } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
@@ -90,7 +90,14 @@ export const api = {
   createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "room"; target_id: string }) =>
     request<{ link: ShareLink; token: string }>("/links", { method: "POST", body: JSON.stringify(body) }),
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
+  roomAnalytics: (id = "room-secret-album") =>
+    request<Array<ActivityEvent & { actor_display_name: string }>>(`/rooms/${id}/analytics`),
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
+  sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
+    request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ version_id: versionId, state, note }),
+    }),
 
   // === Real audio uploads (Supabase Storage) ============================
 

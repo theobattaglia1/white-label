@@ -211,6 +211,13 @@ a:hover { color: var(--redline); }
 .stamp.latest { color: var(--approved-ink); border-color: var(--approved-ink); }
 .stamp.tight { font-size: 9px; padding: 3px 6px 2px; letter-spacing: .14em; transform: rotate(-.5deg); }
 .stamp.straight { transform: none; }
+/* In studio (dark) mode, the approved/latest stamps would be invisible
+   since --approved-ink is near-black. Flip to tape-oxide on dark canvas. */
+.app-shell .stamp.approved,
+.app-shell .stamp.latest {
+  color: var(--tape-oxide);
+  border-color: var(--tape-oxide);
+}
 
 /* === Catalog ID (mono caps) ============================= */
 .cat {
@@ -261,6 +268,15 @@ a:hover { color: var(--redline); }
 }
 .chrome-button:hover { border-color: var(--pencil-warm); }
 .shared-page .chrome-button:hover { border-color: var(--ink); }
+/* song-card-hero is a sleeve-mode (cream) block inside the studio shell —
+   chrome-buttons there need ink-on-cream styling, not tape-oxide-on-dark. */
+.song-card-hero .chrome-button {
+  color: var(--ink);
+  border-color: var(--sleeve-hairline);
+}
+.song-card-hero .chrome-button:hover { border-color: var(--ink); background: rgba(0,0,0,.03); }
+.song-card-hero .text-button { color: var(--pencil-cool); }
+.song-card-hero .text-button:hover { color: var(--ink); border-bottom-color: var(--sleeve-hairline); }
 
 .accent-button {
   background: var(--redline);
@@ -392,6 +408,29 @@ a:hover { color: var(--redline); }
   letter-spacing: .04em;
   font-weight: 500;
 }
+.note-head, .note-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.note-head > span:first-child::after { content: ""; }
+.note-head > span:nth-child(2)::before {
+  content: "·";
+  margin-right: 4px;
+  opacity: .55;
+}
+.note-foot { justify-content: space-between; }
+.note-item { padding: 10px 0; border-bottom: 1px solid var(--studio-hairline); }
+.note-item:last-child { border-bottom: 0; }
+.note-item p {
+  margin: 6px 0 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--tape-oxide);
+}
+.shared-page .note-item { border-bottom-color: var(--sleeve-hairline); }
+.shared-page .note-item p { color: var(--ink); }
 .shared-page .song-meta, .shared-page .row-subtitle,
 .shared-page .time-row, .shared-page .hero-meta,
 .shared-page .note-head, .shared-page .note-foot { color: var(--pencil-cool); }
@@ -574,6 +613,18 @@ h2 {
   z-index: 2;
   background: var(--sleeve-cream);
 }
+
+.song-card-frame .stamp-row {
+  position: absolute;
+  top: -14px;
+  right: 28px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.song-card-frame .stamp-row .stamp { background: var(--sleeve-cream); }
+.song-card-frame .stamp-row:empty { display: none; }
 
 .song-card-body {
   display: grid;
@@ -1436,6 +1487,387 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* Compare mode — active deck indicator + version pill row */
+.compare-deck {
+  position: relative;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  padding: 16px;
+  transition: border-color var(--motion-fast) var(--easing), background var(--motion-fast) var(--easing);
+}
+.compare-deck.active {
+  border-color: var(--redline);
+  background: rgba(217, 40, 29, 0.09);
+}
+.compare-deck.active::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--redline);
+}
+.compare-deck.active .panel-topline .eyebrow {
+  color: var(--redline);
+}
+.compare-deck .deck-version-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 12px;
+}
+.compare-deck .deck-version-pills .v {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  color: var(--pencil-warm);
+  padding: 4px 10px 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-radius: 1px;
+  cursor: pointer;
+  transition: all var(--motion-fast) var(--easing);
+}
+.compare-deck .deck-version-pills .v:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
+.compare-deck .deck-version-pills .v.cur {
+  color: var(--tape-oxide);
+  border-color: var(--tape-oxide);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Link analytics — listener log per share link */
+.link-row { display: flex; gap: 24px; }
+.link-body { flex: 1; min-width: 0; }
+.link-activity {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px dashed var(--studio-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shared-page .link-activity { border-top-color: var(--sleeve-hairline); }
+.link-activity li {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.4fr) 1fr auto;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+  align-items: baseline;
+}
+.shared-page .link-activity li { color: var(--pencil-cool); }
+.link-activity .who {
+  color: var(--tape-oxide);
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.shared-page .link-activity .who { color: var(--ink); }
+.link-activity .what b { color: var(--tape-oxide); }
+.shared-page .link-activity .what b { color: var(--ink); }
+.link-activity .when { white-space: nowrap; }
+.link-activity-empty {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--studio-hairline);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--pencil-warm);
+  font-style: italic;
+}
+.shared-page .link-activity-empty { border-top-color: var(--sleeve-hairline); color: var(--pencil-cool); }
+
+/* Version row right-edge state cluster — stamp + current pill / set-current button */
+.version-row .version-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* On-brand toggle switch — replaces native <input type="checkbox"> */
+.toggle-switch {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.toggle-switch .track {
+  display: inline-block;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--studio-hairline);
+  transition: background var(--motion-fast) var(--easing);
+}
+.toggle-switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--tape-oxide);
+  transition: transform var(--motion-fast) var(--easing), background var(--motion-fast) var(--easing);
+}
+.toggle-switch.on .track { background: var(--redline); }
+.toggle-switch.on .knob { transform: translateX(16px); background: var(--tape-oxide); }
+.shared-page .toggle-switch .track { background: var(--sleeve-hairline); }
+.shared-page .toggle-switch .knob { background: var(--ink); }
+.shared-page .toggle-switch.on .track { background: var(--redline); }
+.shared-page .toggle-switch.on .knob { background: var(--sleeve-cream); }
+.toggle-switch .toggle-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+}
+.toggle-switch.on .toggle-label { color: var(--tape-oxide); }
+.shared-page .toggle-switch .toggle-label { color: var(--pencil-cool); }
+.shared-page .toggle-switch.on .toggle-label { color: var(--ink); }
+
+/* Ask panel — suggested-query chips */
+.ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+.ask-chip {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+  cursor: pointer;
+  transition: all var(--motion-fast) var(--easing);
+}
+.ask-chip:hover {
+  color: var(--tape-oxide);
+  border-color: var(--pencil-warm);
+}
+.shared-page .ask-chip { border-color: var(--sleeve-hairline); color: var(--pencil-cool); }
+.shared-page .ask-chip:hover { color: var(--ink); border-color: var(--pencil-cool); }
+
+/* Recipient page — approval button */
+.recipient-approve {
+  display: flex;
+  justify-content: center;
+  margin: 20px auto 0;
+  max-width: 480px;
+}
+.recipient-approve .accent-button.approve {
+  width: 100%;
+  background: var(--ink);
+  color: var(--sleeve-cream);
+  border-color: var(--ink);
+  height: 56px;
+  font-size: 14px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-radius: 2px;
+}
+.recipient-approve .accent-button.approve:hover { background: var(--redline); border-color: var(--redline); }
+.recipient-approve .accent-button.approve:disabled { opacity: .6; cursor: not-allowed; }
+.recipient-approve .stamp.approved { transform: rotate(-2deg); font-size: 14px; padding: 8px 18px 7px; }
+
+/* Song hero action-row — tertiary text-button with icon */
+.text-button.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 4px;
+  border-bottom: none;
+}
+.text-button.with-icon:hover {
+  color: var(--ink);
+  border-bottom: none;
+}
+.text-button.with-icon svg { color: currentColor; }
+.song-card-hero .actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.song-card-hero .upload-error {
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--redline);
+  margin-top: 4px;
+}
+
+/* View transitions — fade-up on workspace-main content swap.
+   Each WorkspaceApp mode-view is wrapped in this animation key. */
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.workspace-main > .view-stack,
+.workspace-main > .shared-page,
+.workspace-main > section {
+  animation: view-enter var(--motion-mid) var(--easing);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-main > .view-stack,
+  .workspace-main > .shared-page,
+  .workspace-main > section { animation: none; }
+}
+
+/* Link analytics — stronger weight contrast (per design-critic) */
+.link-activity .who { font-weight: 700; }
+.link-activity .what { font-weight: 500; color: inherit; }
+.link-activity .when { font-weight: 400; opacity: .7; }
+
+
+/* =====================================================================
+   Missing component styles — these classes are referenced in App.tsx
+   but had no rules, causing actions/checklists/inbox rows to render
+   as bare UA defaults. Added 2026-05-25.
+   ===================================================================== */
+
+/* Text-only secondary action — used for Set current / Resolve / Reopen */
+.text-button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  margin: 0;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color var(--motion-fast) var(--easing), border-color var(--motion-fast) var(--easing);
+}
+.text-button:hover { color: var(--tape-oxide); border-bottom-color: var(--studio-hairline); }
+.shared-page .text-button { color: var(--pencil-cool); }
+.shared-page .text-button:hover { color: var(--ink); border-bottom-color: var(--sleeve-hairline); }
+
+/* Release Readiness checklist — DeliverablesPanel */
+.checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 4px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.check.present { color: var(--tape-oxide); }
+.check.missing { color: var(--pencil-warm); text-decoration: line-through; text-decoration-color: rgba(140, 132, 115, .55); }
+.shared-page .check.present { color: var(--ink); }
+.shared-page .check.missing { color: var(--pencil-cool); }
+.check svg { flex: 0 0 auto; }
+.check.present svg { color: var(--redline); }
+.check.missing svg { color: var(--pencil-warm); opacity: .6; }
+
+/* Inbox row reset — .row-main used as a <button> needs UA reset */
+button.row-main, .row-main.row-open {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.row-main .row-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tape-oxide);
+  line-height: 1.25;
+}
+.shared-page .row-main .row-title { color: var(--ink); }
+.row-main .row-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+}
+.shared-page .row-main .row-subtitle { color: var(--pencil-cool); }
+
+/* Inbox "NEW" / "Heard" status pill — demote NEW from giant red box to small dot */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--studio-hairline);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  white-space: nowrap;
+}
+.shared-page .status-pill { border-color: var(--sleeve-hairline); color: var(--pencil-cool); }
+.status-pill.red {
+  border: 0;
+  background: transparent;
+  color: var(--redline);
+  padding: 0;
+  height: auto;
+  letter-spacing: .12em;
+}
+.status-pill.red::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--redline);
+  display: inline-block;
+}
+
+/* Keyboard focus — every interactive element. The --focus token was
+   defined but never applied; this restores keyboard navigability. */
+*:focus { outline: none; }
+*:focus-visible {
+  outline: 2px solid var(--notes-blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.shared-page *:focus-visible { outline-color: var(--notes-blue); }
+/* Inputs already manage their own focus border — give them outline-offset 0 */
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline-offset: 0;
 }
 
 /* =====================================================================

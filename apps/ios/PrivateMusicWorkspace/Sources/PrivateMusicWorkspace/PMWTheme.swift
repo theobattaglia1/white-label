@@ -292,14 +292,25 @@ struct PMWCatalogId: View {
 
 // MARK: - Button styles ------------------------------------------------
 
-/// Circular icon button. Dark-mode neumorphic — RESTING reads as raised
-/// (top highlight + bottom shadow + soft drop shadow), PRESSED reads as
-/// recessed (inner-top shadow + bottom highlight + no drop shadow).
-/// Built specifically for dark canvas where MH's light-mode flat circles
-/// would just look like discs.
+/// Circular icon button. Dark-mode neumorphic.
+///
+/// RESTING — reads as raised:
+///   • fill ~3 steps brighter than the studio canvas (#25211B)
+///   • inset top highlight (white @ 10%)
+///   • inset bottom-edge dark (black @ 70%)
+///   • soft drop shadow with real radius (radius 7, y 3, black @ 55%)
+///
+/// PRESSED — reads as recessed into the canvas:
+///   • fill DARKER than canvas (#07060A) so the button reads as a hole
+///   • deep inner shadow at the top of the well
+///   • faint bottom-edge highlight (light catching the recessed lip)
+///   • drop shadow killed
 struct PMWIconButtonStyle: ButtonStyle {
     var active = false
     var diameter: CGFloat = 44
+
+    private static let restingFill = Color(red: 37/255, green: 33/255, blue: 27/255)
+    private static let pressedFill = Color(red: 7/255, green: 6/255, blue: 10/255)
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
@@ -309,57 +320,61 @@ struct PMWIconButtonStyle: ButtonStyle {
             .frame(width: diameter, height: diameter)
             .background(
                 ZStack {
-                    Circle()
-                        .fill(pressed ? Color.black.opacity(0.45) : PMWColors.studioElevated)
-                    // Resting: top highlight + bottom-edge dark
-                    if !pressed {
+                    Circle().fill(pressed ? Self.pressedFill : Self.restingFill)
+
+                    if pressed {
+                        // Deep inner shadow at top of the well — multiple
+                        // layered strokes simulate a soft inner shadow.
                         Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.08),
-                                        Color.white.opacity(0.0),
-                                        Color.black.opacity(0.45),
-                                    ],
-                                    startPoint: .top, endPoint: .bottom
-                                ),
-                                lineWidth: 1
+                            .stroke(Color.black.opacity(0.85), lineWidth: 3)
+                            .blur(radius: 3)
+                            .mask(
+                                Circle().fill(
+                                    LinearGradient(
+                                        colors: [.black, .black.opacity(0.4), .clear],
+                                        startPoint: .top, endPoint: .center
+                                    )
+                                )
+                            )
+                        // Faint bottom-edge highlight
+                        Circle()
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.8)
+                            .mask(
+                                Circle().fill(
+                                    LinearGradient(
+                                        colors: [.clear, .clear, .black],
+                                        startPoint: .top, endPoint: .bottom
+                                    )
+                                )
                             )
                     } else {
-                        // Pressed: top-edge inner shadow + faint bottom highlight
+                        // Top highlight (catches the light)
                         Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.black.opacity(0.7),
-                                        Color.black.opacity(0.25),
-                                        Color.white.opacity(0.04),
-                                    ],
-                                    startPoint: .top, endPoint: .bottom
-                                ),
-                                lineWidth: 1
-                            )
-                            // Soft inner shadow at the top of the well
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.black.opacity(0.4), lineWidth: 1.4)
-                                    .blur(radius: 1.2)
-                                    .mask(
-                                        Circle()
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [.black, .clear],
-                                                    startPoint: .top,
-                                                    endPoint: .center
-                                                )
-                                            )
+                            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1.2)
+                            .mask(
+                                Circle().fill(
+                                    LinearGradient(
+                                        colors: [.black, .clear],
+                                        startPoint: .top, endPoint: .center
                                     )
+                                )
+                            )
+                        // Bottom-edge dark (form's underside)
+                        Circle()
+                            .strokeBorder(Color.black.opacity(0.7), lineWidth: 1.4)
+                            .mask(
+                                Circle().fill(
+                                    LinearGradient(
+                                        colors: [.clear, .black],
+                                        startPoint: .center, endPoint: .bottom
+                                    )
+                                )
                             )
                     }
                 }
             )
-            // Drop shadow only while resting (raised)
-            .shadow(color: pressed ? .clear : Color.black.opacity(0.5), radius: 2, x: 0, y: 1.5)
+            // Real lift while raised — disappears on press
+            .shadow(color: pressed ? .clear : Color.black.opacity(0.55), radius: 7, x: 0, y: 3)
             .scaleEffect(pressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.14), value: pressed)
     }
@@ -381,9 +396,12 @@ struct PMWChromeButtonStyle: ButtonStyle {
     init(variant: Variant, compact: Bool = false) { self.variant = variant; self.compact = compact }
     init(accent: Bool = false) { self.variant = accent ? .accent : .ghost }
 
+    private static let ghostResting = Color(red: 37/255, green: 33/255, blue: 27/255)
+    private static let ghostPressed = Color(red: 7/255, green: 6/255, blue: 10/255)
+
     private var background: Color {
         switch variant {
-        case .ghost:  return PMWColors.studioElevated
+        case .ghost:  return Self.ghostResting
         case .dark:   return PMWColors.inkDeep
         case .accent: return PMWColors.redline
         }
@@ -396,22 +414,42 @@ struct PMWChromeButtonStyle: ButtonStyle {
     }
 
     @ViewBuilder
-    private func edge(pressed: Bool) -> some View {
-        // Ghost variant gets the full raised/recessed neumorphic edge;
-        // dark + accent stay flat-filled but still respect the press.
+    private func neumorphicEdges(pressed: Bool) -> some View {
+        // Ghost variant gets the full raised/recessed neumorphic edge.
+        // Dark + accent stay flat-filled but still respect the press.
         if variant == .ghost {
-            Capsule()
-                .strokeBorder(
-                    LinearGradient(
-                        colors: pressed
-                            ? [Color.black.opacity(0.7), Color.black.opacity(0.18), Color.white.opacity(0.04)]
-                            : [Color.white.opacity(0.08), Color.white.opacity(0.0), Color.black.opacity(0.45)],
-                        startPoint: .top, endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        } else {
-            Capsule().stroke(.clear, lineWidth: 0)
+            if pressed {
+                Capsule()
+                    .stroke(Color.black.opacity(0.85), lineWidth: 3)
+                    .blur(radius: 3)
+                    .mask(
+                        Capsule().fill(
+                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .center)
+                        )
+                    )
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.8)
+                    .mask(
+                        Capsule().fill(
+                            LinearGradient(colors: [.clear, .black], startPoint: .center, endPoint: .bottom)
+                        )
+                    )
+            } else {
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1.2)
+                    .mask(
+                        Capsule().fill(
+                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .center)
+                        )
+                    )
+                Capsule()
+                    .strokeBorder(Color.black.opacity(0.7), lineWidth: 1.4)
+                    .mask(
+                        Capsule().fill(
+                            LinearGradient(colors: [.clear, .black], startPoint: .center, endPoint: .bottom)
+                        )
+                    )
+            }
         }
     }
 
@@ -424,20 +462,21 @@ struct PMWChromeButtonStyle: ButtonStyle {
             .frame(height: compact ? 36 : 42)
             .background(
                 ZStack {
-                    Capsule().fill(pressed
-                        ? (variant == .ghost ? Color.black.opacity(0.45) : background)
-                        : background
+                    Capsule().fill(
+                        variant == .ghost
+                            ? (pressed ? Self.ghostPressed : Self.ghostResting)
+                            : background
                     )
-                    edge(pressed: pressed)
+                    neumorphicEdges(pressed: pressed)
                 }
             )
             .shadow(
-                color: (variant == .ghost && !pressed) ? Color.black.opacity(0.5) : .clear,
-                radius: 2, x: 0, y: 1.5
+                color: (variant == .ghost && !pressed) ? Color.black.opacity(0.55) : .clear,
+                radius: 7, x: 0, y: 3
             )
             .scaleEffect(pressed ? 0.98 : 1)
-            .brightness(pressed && variant != .ghost ? -0.04 : 0)
-            .animation(.easeOut(duration: 0.16), value: pressed)
+            .brightness(pressed && variant != .ghost ? -0.06 : 0)
+            .animation(.easeOut(duration: 0.14), value: pressed)
     }
 }
 

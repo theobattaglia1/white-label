@@ -2606,20 +2606,28 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .avatar-button,
 .scope-chip {
   border-radius: 999px !important;
-  background: var(--studio-elevated);
-  border: 1px solid transparent !important;
+  /* clearly raised: ~3 steps brighter than studio-black canvas so the
+     button reads as elevated, not flat-on-flat */
+  background: #25211B;
+  border: 0 !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
-    0 1px 2px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
+    /* top-edge highlight — catches the "light" */
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.10),
+    /* bottom-edge inner dark — the form's underside */
+    inset 0 -1.5px 0 rgba(0, 0, 0, 0.70),
+    /* sharp 1px line below — separates from canvas */
+    0 1px 0 rgba(0, 0, 0, 0.7),
+    /* soft drop — gives it lift off the canvas */
+    0 6px 14px rgba(0, 0, 0, 0.55),
+    /* tight outer halo so dark-on-dark still has a perimeter */
+    0 0 0 1px rgba(255, 255, 255, 0.04);
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
-              box-shadow 160ms cubic-bezier(.2,.6,.2,1),
-              background 160ms cubic-bezier(.2,.6,.2,1),
-              filter 160ms cubic-bezier(.2,.6,.2,1);
+  transition: transform 140ms cubic-bezier(.2,.6,.2,1),
+              box-shadow 140ms cubic-bezier(.2,.6,.2,1),
+              background 140ms cubic-bezier(.2,.6,.2,1),
+              filter 140ms cubic-bezier(.2,.6,.2,1);
 }
 .chrome-button:active,
 .btn:active,
@@ -2627,14 +2635,18 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .icon-button:active,
 .avatar-button:active,
 .scope-chip:active {
-  transform: scale(0.98);
-  background: rgba(0, 0, 0, 0.32);
+  transform: scale(0.97);
+  /* DARKER than canvas — the surface really sinks in */
+  background: #07060A;
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(0, 0, 0, 0.4),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
-  filter: brightness(0.93);
+    /* deep inner shadow at top — the well */
+    inset 0 3px 6px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(0, 0, 0, 0.6),
+    /* faint bottom highlight — light catching the recessed bottom edge */
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    /* no outer drop shadow — it's not floating anymore */
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+  filter: brightness(0.9);
 }
 
 /* Accent + red — keep their fills but still get the press treatment. */

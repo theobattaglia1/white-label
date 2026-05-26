@@ -1,4 +1,4 @@
-import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Room, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
+import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Room, SavedView, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
 import { supabase } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
@@ -52,6 +52,8 @@ export type SharedPayload = {
   versions: Version[];
   assets: FileAsset[];
   rooms: Room[];
+  /** Set when the link's `target_type === "playlist"`. */
+  playlist?: Playlist | null;
 };
 
 export const api = {
@@ -87,7 +89,7 @@ export const api = {
     request<VisibleNote>(`/notes/${noteID}`, { method: "PATCH", body: JSON.stringify(body) }),
   approve: (versionID: string, state: "approved" | "revision_requested" | "passed") =>
     request(`/versions/${versionID}/approvals`, { method: "POST", body: JSON.stringify({ state }) }),
-  createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "room"; target_id: string }) =>
+  createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "room" | "playlist"; target_id: string }) =>
     request<{ link: ShareLink; token: string }>("/links", { method: "POST", body: JSON.stringify(body) }),
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
   roomAnalytics: (id = "room-hudson-ingram-lp") =>
@@ -121,6 +123,13 @@ export const api = {
     request<PlaylistItem>(`/playlists/${playlistID}/items`, { method: "POST", body: JSON.stringify(body) }),
   removeFromPlaylist: (playlistID: string, itemID: string) =>
     request<{ removed: number }>(`/playlists/${playlistID}/items/${itemID}`, { method: "DELETE" }),
+  savedViews: (id = "wsp-amf-private") =>
+    request<SavedView[]>(`/workspaces/${id}/saved-views`),
+  reorderPlaylistItems: (playlistID: string, item_ids: string[]) =>
+    request<{ reordered: number }>(`/playlists/${playlistID}/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ item_ids }),
+    }),
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
   sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
     request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {

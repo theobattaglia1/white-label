@@ -242,7 +242,7 @@ export interface Approval {
 export interface ShareLink {
   link_id: string;
   workspace_id: string;
-  target_type: "song" | "room";
+  target_type: "song" | "room" | "playlist";
   target_id: string;
   token_hash: string;
   demo_token?: string;

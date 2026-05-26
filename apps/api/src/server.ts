@@ -88,6 +88,14 @@ server.get("/workspaces/:id/rooms-summary", async (request) => {
   return ok(summary);
 });
 
+/** Saved smart-views (queries against the library). Surfaced as
+ *  smart-playlists in the sidebar. */
+server.get("/workspaces/:id/saved-views", async (request) => {
+  const { id } = request.params as { id: string };
+  const views = store.data.savedViews.filter((v) => v.workspace_id === id);
+  return ok(views);
+});
+
 /** All playlists in the workspace. Each is enriched with its item-count
  *  and a small preview (first 3 song titles) for the picker rendering. */
 server.get("/workspaces/:id/playlists", async (request) => {
@@ -181,6 +189,20 @@ server.delete("/playlists/:id/items/:itemId", async (request) => {
     (it) => it.playlist_item_id !== itemId,
   );
   return ok({ removed: before - store.data.playlistItems.length });
+});
+
+/** Bulk reorder — client sends the new ordered list of item ids and
+ *  the server rewrites positions accordingly. */
+server.post("/playlists/:id/reorder", async (request) => {
+  const { id } = request.params as { id: string };
+  const body = request.body as { item_ids: string[] };
+  const orderByID = new Map(body.item_ids.map((itemId, idx) => [itemId, idx + 1]));
+  store.data.playlistItems = store.data.playlistItems.map((it) => {
+    if (it.playlist_id !== id) return it;
+    const nextPos = orderByID.get(it.playlist_item_id);
+    return nextPos ? { ...it, position: nextPos } : it;
+  });
+  return ok({ reordered: orderByID.size });
 });
 
 server.delete("/playlists/:id", async (request) => {

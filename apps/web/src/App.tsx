@@ -75,18 +75,22 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [inboxItems, setInboxItems] = useState<Awaited<ReturnType<typeof api.inbox>>>([]);
   const [roomsSummary, setRoomsSummary] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
   const [playlists, setPlaylists] = useState<Awaited<ReturnType<typeof api.playlists>>>([]);
+  const [savedViews, setSavedViews] = useState<Awaited<ReturnType<typeof api.savedViews>>>([]);
+  const [activeSmartViewID, setActiveSmartViewID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh(nextSongID = selectedSongID, nextRoomID = activeRoomID) {
     try {
-      const [room, summary, allPlaylists] = await Promise.all([
+      const [room, summary, allPlaylists, allSavedViews] = await Promise.all([
         api.room(nextRoomID),
         api.roomsSummary(),
         api.playlists(),
+        api.savedViews(),
       ]);
       setRoomPayload(room);
       setRoomsSummary(summary);
       setPlaylists(allPlaylists);
+      setSavedViews(allSavedViews);
       const songID = nextSongID || room.songs[0]?.song_id;
       if (songID) {
         setSelectedSongID(songID);
@@ -120,7 +124,14 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
 
   function openPlaylist(playlistID: string) {
     setActivePlaylistID(playlistID);
+    setActiveSmartViewID(null);
     setMode("playlist");
+  }
+
+  function openSmartView(viewID: string) {
+    setActiveSmartViewID(viewID);
+    setActivePlaylistID(null);
+    setMode("library");
   }
 
   return (
@@ -144,12 +155,21 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           playlists={playlists}
           activePlaylistID={activePlaylistID}
           onSelectPlaylist={openPlaylist}
+          savedViews={savedViews}
+          activeSmartViewID={activeSmartViewID}
+          onSelectSmartView={openSmartView}
           selectedSongID={selectedSongID}
           onSelectSong={openSong}
         />
         <section className="workspace-main">
           {mode === "library" && (
-            <LibraryView onOpenSong={openSong} playlists={playlists} onRefreshPlaylists={() => api.playlists().then(setPlaylists)} />
+            <LibraryView
+              onOpenSong={openSong}
+              playlists={playlists}
+              onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
+              smartView={savedViews.find((v) => v.view_id === activeSmartViewID) ?? null}
+              onClearSmart={() => setActiveSmartViewID(null)}
+            />
           )}
           {mode === "room" && roomPayload && (
             <RoomView payload={roomPayload} onOpenSong={openSong} />
@@ -266,6 +286,9 @@ function Sidebar({
   playlists = [],
   activePlaylistID,
   onSelectPlaylist,
+  savedViews = [],
+  activeSmartViewID,
+  onSelectSmartView,
   selectedSongID,
   onSelectSong,
 }: {
@@ -278,6 +301,9 @@ function Sidebar({
   playlists?: Awaited<ReturnType<typeof api.playlists>>;
   activePlaylistID?: string | null;
   onSelectPlaylist?: (id: string) => void;
+  savedViews?: Awaited<ReturnType<typeof api.savedViews>>;
+  activeSmartViewID?: string | null;
+  onSelectSmartView?: (viewID: string) => void;
   selectedSongID: string;
   onSelectSong: (songID: string) => void;
 }) {
@@ -338,6 +364,25 @@ function Sidebar({
         </>
       )}
 
+      {savedViews.length > 0 && onSelectSmartView && (
+        <>
+          <div className="side-rule" />
+          <div className="side-label smart">Smart views</div>
+          <div className="side-list">
+            {savedViews.map((v) => (
+              <button
+                key={v.view_id}
+                className={`side-list-item smart ${activeSmartViewID === v.view_id ? "selected" : ""}`}
+                onClick={() => onSelectSmartView(v.view_id)}
+              >
+                <span className="side-title">{v.name}</span>
+                <span className="side-meta">Saved query</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       {mode === "room" && room && room.songs.length > 0 && (
         <>
           <div className="side-rule" />
@@ -368,10 +413,14 @@ function LibraryView({
   onOpenSong,
   playlists,
   onRefreshPlaylists,
+  smartView = null,
+  onClearSmart,
 }: {
   onOpenSong: (songID: string) => void;
   playlists: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists: () => void;
+  smartView?: { view_id: string; name: string; filter: Record<string, unknown> } | null;
+  onClearSmart?: () => void;
 }) {
   const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
   const [filter, setFilter] = useState<"all" | "approved" | "in-review" | "ready">("all");
@@ -382,8 +431,22 @@ function LibraryView({
 
   useEffect(() => { void api.workspaceLibrary().then(setLibrary); }, []);
 
+  function matchesSmart(item: Awaited<ReturnType<typeof api.workspaceLibrary>>[number]): boolean {
+    if (!smartView) return true;
+    const f = smartView.filter;
+    if (typeof f.status === "string" && item.song.status !== f.status) return false;
+    if (typeof f.release_readiness === "string" && item.song.release_readiness_status !== f.release_readiness) return false;
+    // For now, "missing": ["instrumental", "stems"] is interpreted as
+    // "show me songs whose release_readiness_status is not 'ready'" since
+    // we don't have a deliverables computation here in the client.
+    // Sufficient signal for the demo of the SavedView surfacing.
+    if (Array.isArray(f.missing) && item.song.release_readiness_status === "ready") return false;
+    return true;
+  }
+
   const lowerSearch = search.trim().toLowerCase();
   const filtered = library
+    .filter(matchesSmart)
     .filter((item) => {
       if (filter === "approved") return item.song.status === "approved";
       if (filter === "in-review") return item.song.status === "in_review" || item.song.status === "revision_requested";
@@ -419,15 +482,27 @@ function LibraryView({
     <div className="view-stack">
       <div className="section-head">
         <div>
-          <p className="eyebrow">LIBRARY</p>
-          <h1>Every song across every room.</h1>
+          <p className="eyebrow">{smartView ? "SMART VIEW" : "LIBRARY"}</p>
+          <h1>{smartView ? smartView.name : "Every song across every room."}</h1>
         </div>
         <div className="metric-strip">
-          <Metric label="Songs" value={library.length} />
+          <Metric label={smartView ? "Match" : "Songs"} value={filtered.length} />
           <Metric label="Approved" value={library.filter((i) => i.song.status === "approved").length} />
           <Metric label="Rooms" value={new Set(library.map((i) => i.room?.room_id).filter(Boolean)).size} />
         </div>
       </div>
+
+      {smartView && onClearSmart && (
+        <div className="smart-banner">
+          <div>
+            <p className="eyebrow">SAVED QUERY</p>
+            <code className="smart-filter">{JSON.stringify(smartView.filter)}</code>
+          </div>
+          <button className="text-button" onClick={onClearSmart}>
+            Clear smart filter
+          </button>
+        </div>
+      )}
 
       <div className="library-toolbar">
         <input
@@ -540,9 +615,13 @@ function PlaylistView({
 }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.playlist>> | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [draggingID, setDraggingID] = useState<string | null>(null);
 
   useEffect(() => {
     void api.playlist(playlistID).then(setData);
+    setShareToken(null);
   }, [playlistID]);
 
   async function remove(itemID: string) {
@@ -557,12 +636,51 @@ function PlaylistView({
     }
   }
 
+  async function sharePlaylist() {
+    if (!data) return;
+    setSharing(true);
+    try {
+      const result = await api.createLink({
+        workspace_id: data.playlist.workspace_id,
+        target_type: "playlist",
+        target_id: data.playlist.playlist_id,
+        link_name: `${data.playlist.title} — share`,
+        access_mode: "identity_required",
+        version_policy: "latest_only",
+        download_policy: "none",
+        watermark_enabled: true,
+        allow_comments: true,
+        allow_approval: true,
+        allow_forwarding: false,
+      });
+      setShareToken(result.token);
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function reorderTo(targetItemID: string) {
+    if (!data || !draggingID || draggingID === targetItemID) return;
+    const ordered = data.items.map((it) => it.item.playlist_item_id);
+    const fromIdx = ordered.indexOf(draggingID);
+    const toIdx = ordered.indexOf(targetItemID);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = [...ordered];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setDraggingID(null);
+    await api.reorderPlaylistItems(playlistID, next);
+    setData(await api.playlist(playlistID));
+  }
+
   if (!data) {
     return <div className="view-stack"><p className="muted">Loading playlist…</p></div>;
   }
 
   const totalDuration = data.items.reduce((sum, it) => sum + (it.asset?.duration_ms ?? 0), 0);
   const cover = coverGradient(data.playlist.cover_seed);
+
+  const shareUrl = shareToken ? `${window.location.origin}/shared/${shareToken}` : null;
 
   return (
     <div className="view-stack">
@@ -576,6 +694,27 @@ function PlaylistView({
             <span>{data.items.length} {data.items.length === 1 ? "song" : "songs"}</span>
             <span>{formatTimestamp(totalDuration)}</span>
           </div>
+          <div className="playlist-actions">
+            <button
+              className="accent-button"
+              onClick={() => void sharePlaylist()}
+              disabled={sharing || data.items.length === 0}
+            >
+              <Link2 size={15} />
+              {sharing ? "Minting link…" : shareToken ? "Share again" : "Share as one link"}
+            </button>
+            {shareUrl && (
+              <div className="playlist-share-cue">
+                <code>{shareUrl}</code>
+                <button
+                  className="text-button"
+                  onClick={() => void navigator.clipboard.writeText(shareUrl)}
+                >
+                  Copy
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <ol className="playlist-list">
@@ -583,7 +722,19 @@ function PlaylistView({
           <li className="playlist-empty">Nothing here yet. Add songs from Library.</li>
         ) : (
           data.items.map(({ item, song, current_version, asset }) => (
-            <li key={item.playlist_item_id}>
+            <li
+              key={item.playlist_item_id}
+              draggable
+              className={draggingID === item.playlist_item_id ? "dragging" : ""}
+              onDragStart={(e) => {
+                setDraggingID(item.playlist_item_id);
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+              onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
+              onDragEnd={() => setDraggingID(null)}
+            >
+              <span className="playlist-handle" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
               <span className="playlist-index">{String(item.position).padStart(2, "0")}</span>
               <button
                 className="playlist-song"
@@ -2065,6 +2216,27 @@ function SharedListeningView({
       <TopBar roomTitle="Private link" error={null} />
       <div className="recipient-layout">
         <section className="recipient-listen">
+          {payload.playlist && (
+            <div className="recipient-playlist-strip">
+              <div
+                className="playlist-cover small"
+                aria-hidden="true"
+                style={{ backgroundImage: coverGradient(payload.playlist.cover_seed) }}
+              />
+              <div className="playlist-strip-info">
+                <p className="eyebrow">PLAYLIST · QUEUED FOR YOU</p>
+                <h2>{payload.playlist.title}</h2>
+                {payload.playlist.description && (
+                  <p className="muted">{payload.playlist.description}</p>
+                )}
+                <div className="playlist-strip-meta">
+                  <span>{payload.songs.length} {payload.songs.length === 1 ? "song" : "songs"}</span>
+                  <span>Currently playing: {song.title}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="recipient-crumb">
             <div className="left">
               <b>{catalogId} · {song.title}</b><br />

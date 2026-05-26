@@ -367,7 +367,7 @@ export class WorkspaceStore {
 
   createLink(auth: AuthContext, params: {
     workspace_id: string;
-    target_type: "song" | "room";
+    target_type: "song" | "room" | "playlist";
     target_id: string;
     link_name?: string;
     access_mode?: LinkAccess;
@@ -452,10 +452,17 @@ export class WorkspaceStore {
       links: this.snapshot.shareLinks,
       songs: this.snapshot.songs,
       versions: this.snapshot.versions,
+      playlistItems: this.snapshot.playlistItems,
     });
     const assets = this.snapshot.assets.filter((asset) => resolved.versions.some((version) => version.file_asset_id === asset.asset_id));
     const rooms = this.snapshot.rooms.filter((room) => resolved.songs.some((song) => song.primary_room_id === room.room_id));
-    return { ...resolved, assets, rooms };
+    // If this is a playlist link, attach the playlist meta so the recipient
+    // can render the playlist hero (cover + title + ordered queue).
+    const playlist =
+      resolved.link.target_type === "playlist"
+        ? this.snapshot.playlists.find((p) => p.playlist_id === resolved.link.target_id) ?? null
+        : null;
+    return { ...resolved, assets, rooms, playlist };
   }
 
   createUpload(workspaceID: string, params: { filename: string; size_bytes: number; checksum_sha256?: string }) {

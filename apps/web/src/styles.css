@@ -457,21 +457,19 @@ a:hover { color: var(--redline); }
 h1, h2, h3, p { margin: 0; }
 h1 {
   font-family: var(--font-display);
-  font-weight: 900;
-  font-size: clamp(40px, 6vw, 72px);
-  line-height: .95;
-  letter-spacing: -.03em;
-  text-transform: uppercase;
+  font-weight: 300;
+  font-size: clamp(34px, 4.4vw, 56px);
+  line-height: 1.08;
+  letter-spacing: 0.01em;
   color: var(--tape-oxide);
 }
 .shared-page h1 { color: var(--ink); }
 h2 {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 500;
   font-size: 22px;
-  line-height: 1.1;
-  letter-spacing: -.01em;
-  text-transform: uppercase;
+  line-height: 1.18;
+  letter-spacing: -0.005em;
   color: var(--tape-oxide);
 }
 .shared-page h2 { color: var(--ink); }
@@ -1689,20 +1687,29 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .library-filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .library-filter {
   appearance: none;
-  background: transparent;
+  background: var(--studio-panel);
   border: 1px solid var(--studio-hairline);
-  border-radius: 2px;
-  padding: 8px 12px;
+  border-radius: 999px;
+  padding: 9px 16px;
   font-family: var(--font-sans);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--pencil-warm);
+  font-size: 12px;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--tape-oxide);
   cursor: pointer;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
+              filter 160ms cubic-bezier(.2,.6,.2,1),
+              background 160ms cubic-bezier(.2,.6,.2,1),
+              border-color 160ms cubic-bezier(.2,.6,.2,1),
+              color 160ms cubic-bezier(.2,.6,.2,1);
 }
-.library-filter:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
-.library-filter.on { color: var(--redline); border-color: var(--redline); }
+.library-filter:hover { border-color: var(--pencil-warm); }
+.library-filter:active { transform: translateY(1px) scale(0.98); filter: brightness(0.975); }
+.library-filter.on {
+  color: #fff;
+  background: var(--redline);
+  border-color: var(--redline);
+}
 
 .library-grid {
   display: flex;
@@ -2582,6 +2589,54 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .link-activity .what { font-weight: 500; color: inherit; }
 .link-activity .when { font-weight: 400; opacity: .7; }
 
+
+/* =====================================================================
+   Pill buttons + pressed-in tactility — ported from Music Hub iOS.
+   Capsule fill, hairline stroke, real touch-down travel:
+     translateY(1px) + scale(0.98) + brightness(0.975) over 160ms ease-out.
+   Applies to .chrome-button, .accent-button, .btn, .icon-button.
+   ===================================================================== */
+.scope-chip,
+.chrome-button,
+.accent-button,
+.btn,
+.btn.red,
+.btn.ghost,
+.btn.primary {
+  border-radius: 999px !important;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
+              filter 160ms cubic-bezier(.2,.6,.2,1),
+              background 160ms cubic-bezier(.2,.6,.2,1),
+              border-color 160ms cubic-bezier(.2,.6,.2,1);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.chrome-button:active,
+.accent-button:active,
+.btn:active,
+.btn.red:active,
+.btn.primary:active,
+.scope-chip:active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.975);
+}
+.chrome-button:disabled,
+.accent-button:disabled,
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Circular icon buttons get the same pill / pressed treatment */
+.icon-button, .avatar-button {
+  border-radius: 999px !important;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
+              filter 160ms cubic-bezier(.2,.6,.2,1),
+              background 160ms cubic-bezier(.2,.6,.2,1),
+              border-color 160ms cubic-bezier(.2,.6,.2,1);
+}
+.icon-button:active, .avatar-button:active {
+  transform: translateY(1px) scale(0.96);
+  filter: brightness(0.975);
+}
 
 /* =====================================================================
    Instrument readouts — the ONLY mono usage. Time codes, LUFS,

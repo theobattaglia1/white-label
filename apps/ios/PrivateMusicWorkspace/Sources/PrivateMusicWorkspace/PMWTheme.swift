@@ -292,38 +292,49 @@ struct PMWCatalogId: View {
 
 // MARK: - Button styles ------------------------------------------------
 
+/// Circular icon button — used in the top bar (bell, search, avatar) and any
+/// stand-alone icon affordance. Borrowed from Music Hub iOS: capsule fill,
+/// hairline stroke, true pressed-in tactility (offset + scale + brightness).
 struct PMWIconButtonStyle: ButtonStyle {
     var active = false
+    var diameter: CGFloat = 44
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(PMWColors.ink)
-            .frame(width: 44, height: 44)
-            .background {
-                if active || configuration.isPressed {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(PMWColors.soft)
-                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.line, lineWidth: 1))
-                }
-            }
+            .frame(width: diameter, height: diameter)
+            .background(
+                Circle()
+                    .fill(active ? PMWColors.soft : PMWColors.paper)
+                    .overlay(Circle().stroke(PMWColors.lineStrong.opacity(0.45), lineWidth: 1))
+            )
             .offset(y: configuration.isPressed ? 1 : 0)
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? -0.025 : 0)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
+/// Pill-shaped action button. Three variants:
+///  - `.ghost` — paper fill, hairline stroke (default, secondary actions)
+///  - `.dark`  — ink fill (rare; "set as current"-style emphasis)
+///  - `.accent`— redline fill (one primary per surface)
+///
+/// All three share Music Hub's pressed-in feel: 1pt drop, 2% scale, slight
+/// brightness dip over 160ms ease-out. Borders are a soft `lineStrong @ 0.45`
+/// — not a hard 1px — so the buttons feel object-like, not boxy.
 struct PMWChromeButtonStyle: ButtonStyle {
     enum Variant { case ghost, dark, accent }
     var variant: Variant = .ghost
+    var compact: Bool = false
 
-    // back-compat: old code does `PMWChromeButtonStyle(accent: true)`
-    init(variant: Variant) { self.variant = variant }
+    init(variant: Variant, compact: Bool = false) { self.variant = variant; self.compact = compact }
     init(accent: Bool = false) { self.variant = accent ? .accent : .ghost }
 
     private var background: Color {
         switch variant {
-        case .ghost:  return .clear
+        case .ghost:  return PMWColors.paper
         case .dark:   return PMWColors.inkDeep
         case .accent: return PMWColors.redline
         }
@@ -334,28 +345,55 @@ struct PMWChromeButtonStyle: ButtonStyle {
         case .dark, .accent: return .white
         }
     }
-    private var border: Color {
+    private var stroke: Color {
         switch variant {
         case .ghost:  return PMWColors.lineStrong.opacity(0.45)
-        case .dark:   return PMWColors.inkDeep
-        case .accent: return PMWColors.redline
+        case .dark, .accent: return .clear
         }
     }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(PMWFont.sans(13, weight: .semibold))
+            .font(.system(size: compact ? 13 : 15, weight: .medium))
             .foregroundStyle(foreground)
-            .padding(.horizontal, 16)
-            .frame(height: 40)
+            .padding(.horizontal, compact ? 14 : 20)
+            .frame(height: compact ? 36 : 42)
             .background(
-                RoundedRectangle(cornerRadius: 2)
+                Capsule()
                     .fill(background)
-                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(border, lineWidth: 1))
+                    .overlay(Capsule().stroke(stroke, lineWidth: 1))
             )
             .offset(y: configuration.isPressed ? 1 : 0)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .brightness(configuration.isPressed ? -0.025 : 0)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+/// Full-row tap surface — gives any HStack the same pressed-in well treatment
+/// MH uses for typographic rows. Drop in via `.buttonStyle(PMWTactileButtonStyle())`.
+struct PMWTactileButtonStyle: ButtonStyle {
+    var pressedScale: CGFloat = 0.985
+    var pressedOpacity: Double = 0.78
+    var pressedWell = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                if pressedWell && configuration.isPressed {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(PMWColors.ink.opacity(0.038))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .inset(by: 0.55)
+                                .stroke(PMWColors.ink.opacity(0.12), lineWidth: 0.9)
+                        )
+                }
+            }
+            .offset(y: configuration.isPressed ? 1 : 0)
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
+            .opacity(configuration.isPressed ? pressedOpacity : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 

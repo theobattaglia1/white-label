@@ -483,7 +483,7 @@ function LibraryView({
       <div className="section-head">
         <div>
           <p className="eyebrow">{smartView ? "SMART VIEW" : "LIBRARY"}</p>
-          <h1>{smartView ? smartView.name : "Every song across every room."}</h1>
+          <h1>{smartView ? smartView.name : "All work in this workspace."}</h1>
         </div>
         <div className="metric-strip">
           <Metric label={smartView ? "Match" : "Songs"} value={filtered.length} />

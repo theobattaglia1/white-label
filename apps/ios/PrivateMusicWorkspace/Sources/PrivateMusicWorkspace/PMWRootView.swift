@@ -100,10 +100,10 @@ struct PMWRootView: View {
                             .frame(width: 28, height: 28)
                             .background(Circle().fill(PMWColors.ink))
 
-                        Text(store.room.title.uppercased())
-                            .font(PMWFont.t3(.bold))
-                            .tracking(1.2)
-                            .foregroundStyle(PMWColors.accent)
+                        Text(store.room.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .tracking(0.4)
+                            .foregroundStyle(PMWColors.ink)
                             .lineLimit(1)
 
                         Image(systemName: "chevron.down")
@@ -750,20 +750,21 @@ struct PMWSectionHeader<Trailing: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: PMWSpacing.compact) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(eyebrow)
-                    .font(PMWFont.t3(.bold))
-                    .tracking(2)
+                Text(eyebrow.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(2.4)
                     .foregroundStyle(PMWColors.accent)
                 Spacer()
                 trailing
             }
             Text(title)
-                .font(PMWFont.display(36, weight: .heavy))
-                .kerning(-0.6)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
+                .font(.custom("HelveticaNeue-Light", size: 38))
+                .tracking(0.8)
+                .lineSpacing(2)
+                .lineLimit(3)
+                .minimumScaleFactor(0.75)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(PMWColors.ink)
         }
@@ -1005,7 +1006,7 @@ struct PMWLibraryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PMWSpacing.stack) {
-            PMWSectionHeader(eyebrow: "LIBRARY", title: "Every song across every room.") {
+            PMWSectionHeader(eyebrow: "LIBRARY", title: "All work in this workspace.") {
                 HStack(spacing: 1) {
                     PMWMetric(value: "\(store.libraryItems.count)", label: "Songs")
                     PMWMetric(value: "\(store.libraryItems.filter { $0.song.status == "approved" }.count)", label: "Approved")
@@ -1019,17 +1020,26 @@ struct PMWLibraryView: View {
                 .overlay(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.line, lineWidth: 1))
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     ForEach(Filter.allCases) { f in
                         Button {
                             withAnimation(.easeOut(duration: 0.15)) { filter = f }
                         } label: {
-                            Text(f.label.uppercased())
-                                .font(PMWFont.sans(10, weight: .bold))
-                                .kerning(1.4)
-                                .foregroundStyle(filter == f ? PMWColors.redline : PMWColors.muted)
-                                .padding(.horizontal, 12).padding(.vertical, 8)
-                                .overlay(RoundedRectangle(cornerRadius: 2).stroke(filter == f ? PMWColors.redline : PMWColors.line, lineWidth: 1))
+                            Text(f.label)
+                                .font(.system(size: 12, weight: .medium))
+                                .tracking(0.2)
+                                .foregroundStyle(filter == f ? .white : PMWColors.ink)
+                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .background(
+                                    Capsule()
+                                        .fill(filter == f ? PMWColors.redline : PMWColors.paper)
+                                        .overlay(
+                                            Capsule().stroke(
+                                                filter == f ? .clear : PMWColors.lineStrong.opacity(0.45),
+                                                lineWidth: 1
+                                            )
+                                        )
+                                )
                         }
                         .buttonStyle(.plain)
                     }
@@ -1072,11 +1082,9 @@ struct PMWLibraryView: View {
                 .font(PMWFont.readout(11))
                 .foregroundStyle(PMWColors.muted)
             Button { pickerForSongID = item.song.song_id } label: {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(PMWColors.muted)
+                Image(systemName: "plus")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PMWIconButtonStyle(diameter: 32))
             .accessibilityLabel("Add \(item.song.title) to a playlist")
         }
         .padding(.vertical, 10)

@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import MediaPlayer
 
 /// Real AVPlayer-backed audio. Resolves each PMWAsset's `assetURLPath`
 /// against `PMWConfig.apiBaseURL`. Assets without a URL fall back to a
@@ -15,13 +16,18 @@ final class PMWAudioEngine: ObservableObject {
     @Published var loudnessMatched = false
 
     private let player = AVPlayer()
-    private var timeObserver: Any?
-    private var endObserver: NSObjectProtocol?
+    // Swift 6: deinit is nonisolated even on @MainActor types. These
+    // observers are touched only at init/deinit, and both AVPlayer's
+    // removeTimeObserver and NotificationCenter.removeObserver are
+    // thread-safe, so marking the storage nonisolated(unsafe) is fine.
+    private nonisolated(unsafe) var timeObserver: Any?
+    private nonisolated(unsafe) var endObserver: NSObjectProtocol?
 
     init() {
         configureSession()
         installTimeObserver()
         installEndObserver()
+        registerRemoteCommands()
     }
 
     deinit {
@@ -52,11 +58,13 @@ final class PMWAudioEngine: ObservableObject {
             // virtual playback: no audio file, but UI states still tick
             isPlaying = true
         }
+        updateNowPlayingMetadata()
     }
 
     func pause() {
         player.pause()
         isPlaying = false
+        updateNowPlayingPlaybackState()
     }
 
     func toggle() {
@@ -115,7 +123,77 @@ final class PMWAudioEngine: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.isPlaying = false
+                self?.updateNowPlayingPlaybackState()
             }
         }
+    }
+
+    // MARK: - Now Playing + remote commands ----------------------------
+
+    private func registerRemoteCommands() {
+        #if os(iOS)
+        let center = MPRemoteCommandCenter.shared()
+
+        center.playCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            self.player.play()
+            self.isPlaying = true
+            self.updateNowPlayingPlaybackState()
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            self.player.pause()
+            self.isPlaying = false
+            self.updateNowPlayingPlaybackState()
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            if self.isPlaying { self.player.pause(); self.isPlaying = false }
+            else { self.player.play(); self.isPlaying = true }
+            self.updateNowPlayingPlaybackState()
+            return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self,
+                  let positionEvent = event as? MPChangePlaybackPositionCommandEvent
+            else { return .commandFailed }
+            let ms = Int(positionEvent.positionTime * 1000)
+            self.seek(to: ms)
+            return .success
+        }
+        center.changePlaybackPositionCommand.isEnabled = true
+        #endif
+    }
+
+    private func updateNowPlayingMetadata() {
+        #if os(iOS)
+        guard let song, let version, let asset else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: song.artistName,
+            MPMediaItemPropertyAlbumTitle: "\(song.catalogId) · \(version.label)",
+            MPMediaItemPropertyPlaybackDuration: Double(asset.durationMS) / 1000,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: Double(positionMS) / 1000,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+        ]
+        if let key = song.songKey as String?, !key.isEmpty {
+            info[MPMediaItemPropertyComments] = "\(song.bpm) BPM · \(key)"
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        #endif
+    }
+
+    private func updateNowPlayingPlaybackState() {
+        #if os(iOS)
+        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(positionMS) / 1000
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        #endif
     }
 }

@@ -5,6 +5,7 @@ struct PMWRootView: View {
     @StateObject private var audio = PMWAudioEngine()
     @State private var noteComposerPresented = false
     @State private var noteDraft = ""
+    @State private var moreSheetPresented = false
 
     var body: some View {
         ZStack {
@@ -13,8 +14,10 @@ struct PMWRootView: View {
             VStack(spacing: 0) {
                 topBar
                 content
+                    .animation(.spring(response: 0.35, dampingFraction: 0.78), value: store.selectedTab)
             }
         }
+        .preferredColorScheme(.dark)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 if audio.song != nil {
@@ -27,9 +30,17 @@ struct PMWRootView: View {
         }
         .sheet(isPresented: $noteComposerPresented) {
             noteComposer
-                .presentationDetents([.height(220)])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $moreSheetPresented) {
+            moreSheet
+                .presentationDetents([.height(280)])
+                .presentationDragIndicator(.visible)
+        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: audio.isPlaying)
+        .sensoryFeedback(.selection, trigger: store.selectedTab)
+        .sensoryFeedback(.success, trigger: store.songs.count)
     }
 
     private var topBar: some View {
@@ -45,11 +56,13 @@ struct PMWRootView: View {
                     }
                 }
                 .buttonStyle(PMWIconButtonStyle(active: true))
+                .accessibilityLabel("Notifications, 1 unread")
 
                 Button {} label: {
                     Image(systemName: "magnifyingglass")
                 }
                 .buttonStyle(PMWIconButtonStyle())
+                .accessibilityLabel("Search workspace")
 
                 Button {} label: {
                     HStack(spacing: 8) {
@@ -84,6 +97,7 @@ struct PMWRootView: View {
                         .background(Circle().fill(PMWColors.ink))
                 }
                 .buttonStyle(PMWIconButtonStyle(active: true))
+                .accessibilityLabel("Theo Battaglia — account")
             }
             .padding(.horizontal, PMWSpacing.page)
             .padding(.vertical, 8)
@@ -121,25 +135,108 @@ struct PMWRootView: View {
 
     private var bottomTabs: some View {
         HStack(spacing: 0) {
-            ForEach(PMWTab.allCases) { tab in
+            ForEach(PMWTab.primary) { tab in
+                tabButton(tab)
+            }
+            // "More" — opens a sheet exposing Compare / Links / Ask.
+            Button {
+                moreSheetPresented = true
+            } label: {
+                VStack(spacing: 4) {
+                    let activeSecondary = !store.selectedTab.isPrimary
+                    Image(systemName: activeSecondary ? store.selectedTab.symbol : "ellipsis.circle")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(activeSecondary ? store.selectedTab.title.uppercased() : "MORE")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(1.1)
+                }
+                .foregroundStyle(store.selectedTab.isPrimary ? PMWColors.muted : PMWColors.accent)
+                .frame(maxWidth: .infinity)
+                .frame(height: 58)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("More — Compare, Links, Ask")
+        }
+        .overlay(alignment: .top) {
+            // Active-tab redline — picks up the underline-cursor language from the wordmark.
+            GeometryReader { geo in
+                let count = CGFloat(PMWTab.primary.count + 1)
+                let cellWidth = geo.size.width / count
+                let activeIndex: Int = {
+                    if let idx = PMWTab.primary.firstIndex(of: store.selectedTab) { return idx }
+                    return PMWTab.primary.count // More slot
+                }()
+                Rectangle()
+                    .fill(PMWColors.redline)
+                    .frame(width: 28, height: 2)
+                    .offset(x: CGFloat(activeIndex) * cellWidth + (cellWidth - 28) / 2)
+                    .animation(.spring(response: 0.28, dampingFraction: 0.75), value: store.selectedTab)
+            }
+            .frame(height: 2)
+        }
+    }
+
+    @ViewBuilder
+    private func tabButton(_ tab: PMWTab) -> some View {
+        Button {
+            store.selectedTab = tab
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: tab.symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(tab.title.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.1)
+            }
+            .foregroundStyle(store.selectedTab == tab ? PMWColors.accent : PMWColors.muted)
+            .frame(maxWidth: .infinity)
+            .frame(height: 58)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(store.selectedTab == tab ? .isSelected : [])
+    }
+
+    private var moreSheet: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("MORE")
+                .font(PMWFont.mono(11, weight: .bold))
+                .tracking(2)
+                .foregroundStyle(PMWColors.accent)
+                .padding(.bottom, 12)
+                .padding(.top, 12)
+            ForEach(PMWTab.secondary) { tab in
                 Button {
                     store.selectedTab = tab
+                    moreSheetPresented = false
                 } label: {
-                    VStack(spacing: 4) {
+                    HStack(spacing: 14) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 15, weight: .semibold))
-                        Text(tab.title.uppercased())
-                            .font(.system(size: 8, weight: .bold))
-                            .tracking(1.1)
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 28)
+                            .foregroundStyle(PMWColors.ink)
+                        Text(tab.title)
+                            .font(PMWFont.display(22, weight: .heavy))
+                            .foregroundStyle(PMWColors.ink)
+                        Spacer()
+                        if store.selectedTab == tab {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(PMWColors.accent)
+                        }
                     }
-                    .foregroundStyle(store.selectedTab == tab ? PMWColors.accent : PMWColors.muted)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 58)
+                    .padding(.vertical, 14)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                PMWRule()
             }
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, PMWSpacing.page)
+        .background(PMWColors.canvas)
+        .preferredColorScheme(.dark)
     }
 
     private var miniPlayer: some View {
@@ -235,7 +332,7 @@ struct PMWRoomView: View {
                         store.selectSong(song)
                     } label: {
                         HStack(spacing: PMWSpacing.compact) {
-                            PMWCoverMark(text: String(song.title.prefix(2)))
+                            PMWCoverMark(songID: song.id)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(song.title)
                                     .font(PMWFont.t2(.bold))
@@ -267,96 +364,72 @@ struct PMWSongView: View {
     let onAddNote: () -> Void
     @State private var activeVersionID: String?
 
-    private var activeVersion: PMWVersion {
-        store.selectedVersions.first { $0.id == (activeVersionID ?? store.currentVersion.id) } ?? store.currentVersion
+    private var activeVersion: PMWVersion? {
+        let candidate = activeVersionID ?? store.currentVersion?.id
+        return store.selectedVersions.first { $0.id == candidate } ?? store.currentVersion
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: PMWSpacing.stack) {
-            PMWSectionHeader(eyebrow: "CURRENT VERSION", title: store.selectedSong.title) {
-                Button {
-                    store.addDemoVersion()
-                } label: {
-                    Label("Add Version", systemImage: "square.and.arrow.up")
+        if let current = store.currentVersion {
+            VStack(alignment: .leading, spacing: PMWSpacing.stack) {
+                // ----- Editorial Song Card hero (cover + metadata + waveband + columns) -----
+                PMWSongCardHero(
+                    song: store.selectedSong,
+                    versions: store.selectedVersions,
+                    currentVersion: current,
+                    asset: store.currentAsset,
+                    notes: store.visibleNotes,
+                    isPlaying: audio.isPlaying,
+                    positionMs: audio.positionMS,
+                    onPlay: {
+                        if let asset = store.currentAsset {
+                            audio.play(song: store.selectedSong, version: current, asset: asset)
+                        }
+                    },
+                    onPause: { audio.pause() },
+                    onSelectVersion: { v in
+                        store.setCurrent(v)
+                        activeVersionID = v.id
+                        if let a = store.asset(for: v) {
+                            audio.play(song: store.selectedSong, version: v, asset: a)
+                        }
+                    },
+                    onAddNote: onAddNote,
+                    onUploadRevision: { store.addDemoVersion() }
+                )
+
+                // ----- Supplementary panels (still useful below the hero) -----
+                VStack(spacing: PMWSpacing.stack) {
+                    versionStack
+                    notesPanel
+                    deliverablesPanel
                 }
-                .buttonStyle(PMWChromeButtonStyle())
             }
-
-            HStack(spacing: 12) {
-                Text(store.selectedSong.artistName)
-                Text("\(store.selectedSong.bpm) BPM")
-                Text(store.selectedSong.songKey)
-                Text("\(store.currentAsset?.loudnessLUFS ?? 0, specifier: "%.1f") LUFS")
+            .onAppear {
+                activeVersionID = current.id
             }
-            .font(PMWFont.t3(.bold))
-            .tracking(1)
-            .foregroundStyle(PMWColors.muted)
-            .textCase(.uppercase)
-
-            playerPanel
-
-            VStack(spacing: PMWSpacing.stack) {
-                versionStack
-                notesPanel
-                deliverablesPanel
-            }
-        }
-        .onAppear {
-            activeVersionID = store.currentVersion.id
+        } else {
+            songEmptyState
         }
     }
 
-    private var playerPanel: some View {
-        VStack(alignment: .leading, spacing: PMWSpacing.compact) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(activeVersion.isCurrent ? "LIVE ON SHARE LINKS" : "HISTORY")
-                        .font(PMWFont.t3(.bold))
-                        .tracking(2)
-                        .foregroundStyle(PMWColors.accent)
-                    Text(activeVersion.label)
-                        .font(.title3.weight(.bold))
-                }
-
-                Spacer()
-
-                Button {
-                    onAddNote()
-                } label: {
-                    Image(systemName: "text.bubble")
-                }
-                .buttonStyle(PMWIconButtonStyle())
-
-                Button {
-                    if let asset = store.asset(for: activeVersion) {
-                        audio.play(song: store.selectedSong, version: activeVersion, asset: asset)
-                    }
-                } label: {
-                    Image(systemName: "play.fill")
-                }
-                .buttonStyle(PMWIconButtonStyle(active: true))
-            }
-
-            if let asset = store.asset(for: activeVersion) {
-                PMWWaveform(asset: asset, positionMS: audio.positionMS, compact: false) { nextPosition in
-                    audio.seek(to: nextPosition)
-                    onAddNote()
-                }
-                .frame(height: 112)
-
-                HStack {
-                    Text(pmwTimestamp(audio.positionMS))
-                    Spacer()
-                    Text(pmwTimestamp(asset.durationMS))
-                }
-                .font(PMWFont.t3(.bold))
-                .tracking(1)
+    private var songEmptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "waveform")
+                .font(.system(size: 36, weight: .light))
                 .foregroundStyle(PMWColors.muted)
-            }
+            Text("No versions yet")
+                .font(PMWFont.display(28, weight: .heavy))
+                .foregroundStyle(PMWColors.ink)
+            Text("Upload a mix to start the version stack for this song.")
+                .font(PMWFont.sans(14))
+                .foregroundStyle(PMWColors.muted)
+                .multilineTextAlignment(.center)
+            Button("Upload first mix") { store.addDemoVersion() }
+                .buttonStyle(PMWChromeButtonStyle(variant: .accent))
         }
-        .padding(.vertical, PMWSpacing.compact)
-        .overlay(alignment: .top) { PMWRule() }
-        .overlay(alignment: .bottom) { PMWRule() }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
     }
 
     private var versionStack: some View {
@@ -537,7 +610,7 @@ struct PMWInboxView: View {
                         store.selectSong(item.song)
                     } label: {
                         HStack(spacing: PMWSpacing.compact) {
-                            PMWCoverMark(text: String(item.song.title.prefix(2)))
+                            PMWCoverMark(songID: item.song.id)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(item.song.title)
                                     .font(PMWFont.t2(.bold))
@@ -641,20 +714,22 @@ struct PMWSectionHeader<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: PMWSpacing.compact) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: PMWSpacing.compact) {
+            HStack {
                 Text(eyebrow)
                     .font(PMWFont.t3(.bold))
                     .tracking(2)
                     .foregroundStyle(PMWColors.accent)
-                Text(title.uppercased())
-                    .font(PMWFont.t1(size: min(74, max(42, 70 - CGFloat(title.count / 3)))))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.64)
-                    .foregroundStyle(PMWColors.ink)
+                Spacer()
+                trailing
             }
-            Spacer(minLength: PMWSpacing.compact)
-            trailing
+            Text(title)
+                .font(PMWFont.display(36, weight: .heavy))
+                .kerning(-0.6)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(PMWColors.ink)
         }
     }
 }
@@ -724,14 +799,17 @@ struct PMWBadge: View {
     }
 
     var body: some View {
-        Text(title.uppercased())
-            .font(PMWFont.t3(.bold))
-            .tracking(1)
-            .foregroundStyle(accent ? PMWColors.accent : PMWColors.muted)
-            .padding(.horizontal, 9)
-            .frame(height: 25)
-            .background(Capsule().fill(accent ? PMWColors.accentSoft : PMWColors.soft))
-            .overlay(Capsule().stroke(PMWColors.line, lineWidth: 1))
+        HStack(spacing: 5) {
+            if accent {
+                Circle()
+                    .fill(PMWColors.redline)
+                    .frame(width: 7, height: 7)
+            }
+            Text(title.uppercased())
+                .font(PMWFont.mono(10, weight: .bold))
+                .kerning(1.4)
+                .foregroundStyle(accent ? PMWColors.redline : PMWColors.muted)
+        }
     }
 }
 
@@ -758,26 +836,22 @@ struct PMWChecklistBadge: View {
     }
 }
 
+/// Per-song cover swatch — replaces the two-letter initials placeholder.
+/// The hue is derived from the song id via `pmwCoverGradient`, matching
+/// the hero cover and the recipient page so a song has one visual identity
+/// across every surface it appears on.
 struct PMWCoverMark: View {
-    let text: String
+    let songID: String
+
+    init(songID: String) { self.songID = songID }
+    /// Back-compat: the old signature took two letters; we accept it and
+    /// ignore the text — the gradient is keyed off the song id passed in.
+    init(text: String, songID: String) { self.songID = songID }
 
     var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(PMWColors.soft)
-                .overlay(Rectangle().stroke(PMWColors.lineStrong.opacity(0.5), lineWidth: 1))
-            Rectangle()
-                .fill(PMWColors.line)
-                .frame(width: 1)
-            Rectangle()
-                .fill(PMWColors.line)
-                .frame(height: 1)
-            Text(text.uppercased())
-                .font(PMWFont.t3(.black))
-                .tracking(1)
-                .foregroundStyle(PMWColors.accent)
-        }
-        .frame(width: 52, height: 52)
+        pmwCoverGradient(for: songID)
+            .frame(width: 52, height: 52)
+            .overlay(Rectangle().stroke(PMWColors.lineStrong.opacity(0.35), lineWidth: 1))
     }
 }
 

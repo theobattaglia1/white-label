@@ -26,14 +26,18 @@ final class PMWStore: ObservableObject {
     var selectedVersions: [PMWVersion] {
         versions.filter { $0.songID == selectedSong.id }.sorted { $0.number < $1.number }
     }
-    var currentVersion: PMWVersion {
-        selectedVersions.first { $0.id == selectedSong.currentVersionID } ?? selectedVersions.last!
+    /// Returns the active version for the selected song, or nil if the song
+    /// has no versions yet. Views must handle the empty case.
+    var currentVersion: PMWVersion? {
+        let versions = selectedVersions
+        return versions.first { $0.id == selectedSong.currentVersionID } ?? versions.last
     }
     var currentAsset: PMWAsset? { asset(for: currentVersion) }
 
     var visibleNotes: [PMWVisibleNote] {
-        pmwVisibleNotes(songID: selectedSong.id, viewingVersion: currentVersion,
-                        versions: selectedVersions, assets: assets, notes: notes)
+        guard let current = currentVersion else { return [] }
+        return pmwVisibleNotes(songID: selectedSong.id, viewingVersion: current,
+                               versions: selectedVersions, assets: assets, notes: notes)
     }
 
     var inboxItems: [PMWInboxItem] {
@@ -98,7 +102,7 @@ final class PMWStore: ObservableObject {
             number: nextNumber,
             label: "Mix v\(nextNumber)",
             type: .mix,
-            parentVersionID: currentVersion.id,
+            parentVersionID: currentVersion?.id,
             isCurrent: true,
             isApproved: false,
             assetID: assetID,
@@ -116,12 +120,13 @@ final class PMWStore: ObservableObject {
 
     func addNote(body: String, timestampMS: Int?) {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let current = currentVersion else { return }
 
         // Local optimistic note
         let local = PMWNote(
             id: UUID().uuidString,
             songID: selectedSong.id,
-            anchorVersionID: currentVersion.id,
+            anchorVersionID: current.id,
             author: "Theo Battaglia",
             body: body,
             scope: .song,
@@ -138,7 +143,7 @@ final class PMWStore: ObservableObject {
             do {
                 _ = try await PMWAPIClient.shared.createNote(
                     songID: selectedSong.id,
-                    versionID: currentVersion.id,
+                    versionID: current.id,
                     body: body,
                     timestampMS: timestampMS,
                     author: "Theo Battaglia"
@@ -150,13 +155,14 @@ final class PMWStore: ObservableObject {
     }
 
     func resolve(_ visibleNote: PMWVisibleNote) {
+        let resolvedOn = currentVersion?.id
         notes = notes.map { note in
             guard note.id == visibleNote.note.id else { return note }
             var next = note
             next.status = .resolved
             next.resolvedBy = "Theo Battaglia"
             next.resolvedAt = Date()
-            next.resolvedOnVersionID = currentVersion.id
+            next.resolvedOnVersionID = resolvedOn
             return next
         }
     }
@@ -285,6 +291,10 @@ enum PMWTab: String, CaseIterable, Identifiable {
     case room, song, compare, inbox, links, ask
     var id: String { rawValue }
 
+    /// HIG-compliant primary tabs (max 5). The remaining cases live in a More sheet.
+    static let primary: [PMWTab] = [.room, .song, .inbox]
+    static let secondary: [PMWTab] = [.compare, .links, .ask]
+
     var title: String {
         switch self {
         case .room: "Room"
@@ -306,4 +316,7 @@ enum PMWTab: String, CaseIterable, Identifiable {
         case .ask: "message"
         }
     }
+
+    /// True if this tab appears directly in the bottom bar.
+    var isPrimary: Bool { Self.primary.contains(self) }
 }

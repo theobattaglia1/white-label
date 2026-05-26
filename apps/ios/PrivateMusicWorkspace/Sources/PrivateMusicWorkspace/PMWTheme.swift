@@ -58,18 +58,52 @@ enum PMWColors {
     static let notesBlue = hex(0x2D5DB8)
 
     // ----- Back-compat aliases (old names, repointed to brand) -----
-    /// Default canvas = studio black (workspace defaults dark, matches web).
-    static let canvas    = adaptive(light: 0xF2EDE2, dark: 0x0B0A09)
-    static let paper     = adaptive(light: 0xFAF5E8, dark: 0x15130F)
-    static let soft      = adaptive(light: 0xFAF5E8, dark: 0x1B1814)
-    static let ink       = adaptive(light: 0x0B0A09, dark: 0xF2EDE2)
-    static let muted     = adaptive(light: 0x6E685D, dark: 0x8C8473)
-    static let line      = adaptive(light: 0xC8C0AE, dark: 0x2A2620)
-    static let lineStrong = adaptive(light: 0x6E685D, dark: 0x8C8473)
+    /// Producer workspace canvas — always studio black. Producer surfaces force
+    /// `.preferredColorScheme(.dark)` at the root so this stays consistent.
+    /// Recipient surfaces explicitly use `sleeveCream` instead.
+    static let canvas    = studioBlack
+    static let paper     = studioPanel
+    static let soft      = studioElevated
+    static let ink       = tapeOxide
+    static let muted     = pencilWarm
+    static let line      = studioHairline
+    static let lineStrong = pencilWarm
     static let accent    = redline
-    static let accentSoft = adaptive(light: 0xFAEEEC, dark: 0x2A0F0D)
-    static let success   = adaptive(light: 0x0B0A09, dark: 0xF2EDE2) // approved = ink, per brand
+    static let accentSoft = hex(0x2A0F0D)
+    static let success   = tapeOxide
     static let warning   = hex(0xBB7A16)
+}
+
+// MARK: - Per-song cover gradient ---------------------------------------
+
+/// Derive a stable hue (0–360) from a string id so every song gets a face.
+private func pmwHashHue(_ id: String) -> Int {
+    var hash: UInt64 = 14695981039346656037
+    for byte in id.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
+    return Int(hash % 360)
+}
+
+/// Build a sleeve-mode-toned gradient keyed to the song id.
+/// Mirrors the web's `coverGradient(songId)` helper so iOS and web song
+/// covers feel like the same object across platforms.
+func pmwCoverGradient(for songId: String) -> LinearGradient {
+    let hue = pmwHashHue(songId)
+    let angle = 130 + (pmwHashHue(songId + "a") % 40)
+    let rad = Angle.degrees(Double(angle)).radians
+    let startX = 0.5 - 0.5 * cos(rad)
+    let startY = 0.5 - 0.5 * sin(rad)
+    let endX = 0.5 + 0.5 * cos(rad)
+    let endY = 0.5 + 0.5 * sin(rad)
+    return LinearGradient(
+        colors: [
+            Color(hue: Double((hue + 200) % 360) / 360, saturation: 0.08, brightness: 0.14),
+            Color(hue: Double((hue + 30) % 360) / 360, saturation: 0.20, brightness: 0.32),
+            Color(hue: Double(hue) / 360, saturation: 0.30, brightness: 0.56),
+            Color(hue: Double((hue + 25) % 360) / 360, saturation: 0.42, brightness: 0.78),
+        ],
+        startPoint: UnitPoint(x: startX, y: startY),
+        endPoint: UnitPoint(x: endX, y: endY)
+    )
 }
 
 // MARK: - Spacing -------------------------------------------------------

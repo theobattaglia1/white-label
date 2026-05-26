@@ -111,6 +111,9 @@ struct PMWAPIClient {
         let access_mode: String?
         let version_policy: String
         let watermark_enabled: Bool
+        let allow_approval: Bool?
+        let allow_comments: Bool?
+        let download_policy: String?
     }
 
     // MARK: - Calls -------------------------------------------------------
@@ -148,6 +151,15 @@ struct PMWAPIClient {
                        body: ["state": state], as: APIApproval.self)
     }
 
+    /// Recipient-side approval — POST /shared/:token/approve.
+    @discardableResult
+    func approve(token: String, versionID: String,
+                 state: String = "approved", note: String? = nil) async throws -> APIApproval {
+        var body: [String: Any] = ["version_id": versionID, "state": state]
+        if let note { body["note"] = note }
+        return try await post("/shared/\(token)/approve", body: body, as: APIApproval.self)
+    }
+
     // MARK: - Internals ---------------------------------------------------
 
     private func get<T: Decodable>(_ path: String, as: T.Type) async throws -> T {
@@ -159,7 +171,7 @@ struct PMWAPIClient {
     }
 
     private func send<T: Decodable>(method: String, path: String, body: [String: Any]?, as: T.Type) async throws -> T {
-        var components = URLComponents(url: PMWConfig.apiBaseURL.appendingPathComponent(path),
+        let components = URLComponents(url: PMWConfig.apiBaseURL.appendingPathComponent(path),
                                        resolvingAgainstBaseURL: false)
         var request = URLRequest(url: components?.url ?? PMWConfig.apiBaseURL)
         request.httpMethod = method

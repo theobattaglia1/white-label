@@ -1489,6 +1489,178 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   border: 0;
 }
 
+/* Inbox triage filter (Open / Saved / Passed) */
+.inbox-filter {
+  display: flex;
+  gap: 8px;
+  margin: -8px 0 12px;
+}
+.inbox-filter-chip {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.inbox-filter-chip:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
+.inbox-filter-chip.on {
+  color: var(--redline);
+  border-color: var(--redline);
+}
+.inbox-filter-chip .count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: .65;
+}
+.inbox-empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--pencil-warm);
+  padding: 28px 0;
+}
+.status-pill.saved {
+  color: var(--tape-oxide);
+  border-color: var(--studio-hairline);
+}
+.status-pill.saved::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--tape-oxide);
+  display: inline-block;
+  margin-right: 4px;
+}
+.status-pill.passed {
+  color: var(--pencil-warm);
+  border-color: transparent;
+  text-decoration: line-through;
+}
+
+/* Carry-forward triage modal — fires on Set current with open carried notes */
+.carry-triage-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.62);
+  z-index: 200;
+  display: grid; place-items: center;
+  padding: 24px;
+  animation: triage-fade var(--motion-mid) var(--easing);
+}
+@keyframes triage-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.carry-triage {
+  background: var(--studio-elevated);
+  color: var(--tape-oxide);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 4px;
+  width: min(640px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: triage-rise var(--motion-mid) var(--easing);
+}
+@keyframes triage-rise {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+.carry-triage header {
+  padding: 22px 24px 14px;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+.carry-triage header .eyebrow { color: var(--redline); }
+.carry-triage header h2 {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin: 4px 0 8px;
+}
+.carry-triage header p.muted {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--pencil-warm);
+  margin: 0;
+  line-height: 1.55;
+}
+.triage-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+.triage-list li {
+  display: flex;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--studio-hairline);
+  align-items: flex-start;
+}
+.triage-list li:last-child { border-bottom: 0; }
+.triage-toggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.triage-toggle .box {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid var(--pencil-warm);
+  border-radius: 2px;
+  transition: all var(--motion-fast) var(--easing);
+  color: transparent;
+}
+.triage-toggle.on .box {
+  border-color: var(--redline);
+  background: var(--redline);
+  color: var(--tape-oxide);
+}
+.triage-body { flex: 1; min-width: 0; }
+.triage-body .note-line {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.4;
+  margin: 0 0 6px;
+}
+.triage-body .cue {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+  line-height: 1.4;
+}
+.triage-body .cue .approx { color: var(--warning); }
+.carry-triage footer {
+  border-top: 1px solid var(--studio-hairline);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.carry-triage .footer-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--pencil-warm);
+  letter-spacing: .06em;
+}
+.carry-triage .footer-actions { display: flex; gap: 10px; }
+
 /* Compare mode — active deck indicator + version pill row */
 .compare-deck {
   position: relative;

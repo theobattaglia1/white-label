@@ -76,11 +76,17 @@ struct PMWSong: Identifiable, Equatable {
     var songKey: String
     var explicit: Bool
 
-    /// e.g. "WL · 0142" — pencil-tone catalog label.
-    var catalogId: String {
-        let suffix = id.split(separator: "-").last.map(String.init) ?? id
-        return "WL · " + String(suffix.uppercased().prefix(4))
+    /// Catalog number — a stable 4-digit identifier derived from the song id.
+    /// Treated as the canonical reference (e.g. "0142") and surfaced as
+    /// "WL · 0142" everywhere a catalog id appears.
+    var catalogNumber: String {
+        var hash: UInt64 = 14695981039346656037
+        for byte in id.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
+        return String(format: "%04d", hash % 9000 + 1000)
     }
+
+    /// Brand-visible catalog id — `WL · 0142` style.
+    var catalogId: String { "WL · \(catalogNumber)" }
 }
 
 struct PMWNote: Identifiable, Equatable {

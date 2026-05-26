@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.allmyfriends.whitelabel</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wl</string>
+			</array>
+		</dict>
+	</array>
+	<!--
+	  Without UILaunchScreen, iOS 13+ runs the app in pre-iPhone-6
+	  compatibility mode (320x480 letterboxed) — which is why the app
+	  looked like an iPhone 4 app on an iPhone 17 Pro. The empty dict
+	  is enough to opt into modern full-screen sizing; we can add
+	  UIColorName / UIImageName here later to brand the launch flash.
+	-->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<!-- Background audio so the lock-screen Now Playing surface keeps playing
+	     while the app is backgrounded. Combined with MPRemoteCommandCenter
+	     wiring in PMWAudioEngine, this enables AirPods + control-center
+	     play/pause/scrub. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+</dict>
+</plist>

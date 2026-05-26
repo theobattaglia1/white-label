@@ -26,7 +26,12 @@ struct PMWRecipientView: View {
     @State private var posting = false
     @State private var notes: [PMWAPIClient.APINote] = []
     @State private var loadError: String?
+    @State private var noteError: String?
+    @State private var approveState: ApproveState = .idle
+    @State private var noteJustPosted = false
     @FocusState private var composerFocused: Bool
+
+    private enum ApproveState { case idle, pending, done }
 
     var body: some View {
         ZStack {
@@ -52,19 +57,37 @@ struct PMWRecipientView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            composer
+            VStack(spacing: 0) {
+                if let noteError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                        Text(noteError)
+                            .font(PMWFont.mono(11))
+                        Spacer()
+                        Button("Dismiss") { self.noteError = nil }
+                            .font(PMWFont.mono(11, weight: .bold))
+                    }
+                    .foregroundStyle(PMWColors.redline)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(PMWColors.sleeveElevated)
+                }
+                composer
+            }
         }
+        .sensoryFeedback(.success, trigger: noteJustPosted)
+        .sensoryFeedback(.success, trigger: approveState == .done)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: token) { await load() }
         .overlay(alignment: .topTrailing) {
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(PMWColors.inkDeep)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .background(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.sleeveHairline, lineWidth: 1))
             }
-            .padding(.top, 12).padding(.trailing, 12)
+            .padding(.top, 8).padding(.trailing, 12)
+            .accessibilityLabel("Close private link")
         }
         .overlay(alignment: .top) {
             HStack {
@@ -90,16 +113,64 @@ struct PMWRecipientView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear.frame(height: 56) // wordmark + close room
                 crumb(payload: payload, song: song, current: current)
-                cover
                 title(song: song, current: current)
                 metaRow(asset: asset, song: song)
+                cover(song: song)
                 transport(asset: asset, song: song, current: current)
+                if payload.link.allow_approval == true {
+                    approveSection(current: current)
+                }
                 versions(payload: payload, current: current)
                 notesList(songNotes: songNotes)
                 if payload.songs.count > 1 { otherSongs(payload: payload) }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 32)
+        }
+    }
+
+    private func approveSection(current: PMWAPIClient.APIVersion) -> some View {
+        VStack(spacing: 8) {
+            switch approveState {
+            case .idle where current.is_approved == false:
+                Button { Task { await submitApproval(current) } } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("APPROVE \(current.version_label?.uppercased() ?? "VERSION")")
+                            .font(PMWFont.mono(13, weight: .bold))
+                            .kerning(1.4)
+                    }
+                    .foregroundStyle(PMWColors.sleeveCream)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(RoundedRectangle(cornerRadius: 2).fill(PMWColors.inkDeep))
+                }
+                .accessibilityLabel("Approve \(current.version_label ?? "current version")")
+            case .pending:
+                Text("SENDING APPROVAL…")
+                    .font(PMWFont.mono(12, weight: .bold))
+                    .kerning(1.6)
+                    .foregroundStyle(PMWColors.pencilCool)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+            case .done, .idle:
+                PMWStamp(text: current.is_approved || approveState == .done ?
+                          "Approved · \(current.version_label ?? "")" : "Already approved",
+                         kind: .approved, straight: true)
+            }
+        }
+        .padding(.top, 20)
+    }
+
+    private func submitApproval(_ v: PMWAPIClient.APIVersion) async {
+        approveState = .pending
+        do {
+            _ = try await PMWAPIClient.shared.approve(token: token, versionID: v.version_id)
+            approveState = .done
+        } catch {
+            approveState = .idle
+            noteError = "Approval didn't send: \(error.localizedDescription)"
         }
     }
 
@@ -130,20 +201,14 @@ struct PMWRecipientView: View {
         .padding(.top, 6)
     }
 
-    private var cover: some View {
+    private func cover(song: PMWAPIClient.APISong) -> some View {
         ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: [Color(red: 0.24, green: 0.23, blue: 0.20),
-                         Color(red: 0.48, green: 0.44, blue: 0.40),
-                         Color(red: 0.66, green: 0.62, blue: 0.55),
-                         Color(red: 0.84, green: 0.79, blue: 0.65)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            .aspectRatio(16/9, contentMode: .fit)
+            pmwCoverGradient(for: song.song_id)
+                .aspectRatio(2.2, contentMode: .fit)
             PMWMonoMark(size: 22, tint: .white)
                 .padding(.leading, 14).padding(.bottom, 10)
         }
-        .padding(.top, 8)
+        .padding(.top, 14)
     }
 
     private func title(song: PMWAPIClient.APISong, current: PMWAPIClient.APIVersion) -> some View {
@@ -342,13 +407,7 @@ struct PMWRecipientView: View {
                     .overlay(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.sleeveHairline, lineWidth: 1))
             )
 
-            Button { /* TODO: voice memo */ } label: {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 14, weight: .semibold))
-            }
-            .frame(width: 42, height: 42)
-            .foregroundStyle(PMWColors.inkDeep)
-            .overlay(Circle().stroke(PMWColors.inkDeep, lineWidth: 1))
+            // Voice memo button removed — feature not yet shipped.
 
             Button {
                 Task { await submitNote() }
@@ -403,8 +462,9 @@ struct PMWRecipientView: View {
             notes.append(posted)
             noteBody = ""
             composerFocused = false
+            noteJustPosted.toggle()
         } catch {
-            loadError = "Note didn't send: \(error.localizedDescription)"
+            noteError = "Note didn't send: \(error.localizedDescription)"
         }
     }
 
@@ -434,7 +494,10 @@ struct PMWRecipientView: View {
     }
 
     private func catalogLabel(songId: String) -> String {
-        "WL · " + String(songId.split(separator: "-").last.map(String.init)?.uppercased().prefix(4) ?? "0000")
+        // Stable 4-digit number derived from the song id — matches PMWSong.catalogNumber
+        var hash: UInt64 = 14695981039346656037
+        for byte in songId.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
+        return "WL · \(String(format: "%04d", hash % 9000 + 1000))"
     }
 
     private func formatMs(_ ms: Int) -> String {

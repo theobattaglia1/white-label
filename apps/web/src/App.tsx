@@ -266,6 +266,7 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(undefined);
   const [uploadingPct, setUploadingPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pendingPromote, setPendingPromote] = useState<Version | null>(null);
   const fileInputRef = useMemo(() => ({ current: null as HTMLInputElement | null }), []);
   const player = usePlayer();
 
@@ -464,13 +465,131 @@ function SongWorkspace({ payload, onRefresh }: { payload: SongPayload; onRefresh
             setActiveVersionID(version.version_id);
             if (asset) player.play(payload.song, version, asset);
           }}
-          onSetCurrent={async (versionID) => {
-            await api.setCurrent(versionID);
-            onRefresh();
+          onSetCurrent={(versionID) => {
+            const v = payload.versions.find((x) => x.version_id === versionID);
+            if (!v) return;
+            const carriedOpenNotes = payload.notes.filter(
+              (n) => n.status === "open" && n.is_carried,
+            );
+            if (carriedOpenNotes.length > 0) {
+              setPendingPromote(v);
+            } else {
+              void (async () => {
+                await api.setCurrent(versionID);
+                onRefresh();
+              })();
+            }
           }}
         />
+        {pendingPromote && (
+          <CarryForwardTriage
+            payload={payload}
+            targetVersion={pendingPromote}
+            onCancel={() => setPendingPromote(null)}
+            onPromote={async (resolvedIDs) => {
+              await api.setCurrent(pendingPromote.version_id);
+              await Promise.all(
+                resolvedIDs.map((noteID) => api.patchNote(noteID, { status: "resolved" })),
+              );
+              setPendingPromote(null);
+              onRefresh();
+            }}
+          />
+        )}
         <NotesPanel notes={payload.notes} onRefresh={onRefresh} />
         <DeliverablesPanel payload={payload} />
+      </div>
+    </div>
+  );
+}
+
+function CarryForwardTriage({
+  payload,
+  targetVersion,
+  onCancel,
+  onPromote,
+}: {
+  payload: SongPayload;
+  targetVersion: Version;
+  onCancel: () => void;
+  onPromote: (resolvedNoteIDs: string[]) => Promise<void>;
+}) {
+  const carriedOpenNotes = payload.notes.filter((n) => n.status === "open" && n.is_carried);
+  const [resolved, setResolved] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+
+  function toggle(id: string) {
+    setResolved((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function submit() {
+    setSubmitting(true);
+    try {
+      await onPromote(Array.from(resolved));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="carry-triage-backdrop" role="dialog" aria-modal="true" aria-labelledby="carry-triage-title">
+      <div className="carry-triage">
+        <header>
+          <p className="eyebrow">PROMOTE TO CURRENT</p>
+          <h2 id="carry-triage-title">{targetVersion.version_label}</h2>
+          <p className="muted">
+            {carriedOpenNotes.length} carry-forward {carriedOpenNotes.length === 1 ? "note is" : "notes are"} still open.
+            Tick anything this revision addresses — those will be resolved on promote.
+          </p>
+        </header>
+        <ul className="triage-list">
+          {carriedOpenNotes.map((note) => {
+            const checked = resolved.has(note.note_id);
+            return (
+              <li key={note.note_id}>
+                <button
+                  type="button"
+                  className={`triage-toggle ${checked ? "on" : ""}`}
+                  onClick={() => toggle(note.note_id)}
+                  aria-pressed={checked}
+                  aria-label={`Mark resolved: ${note.body}`}
+                >
+                  <span className="box">{checked ? <CheckCircle2 size={16} /> : null}</span>
+                </button>
+                <div className="triage-body">
+                  <p className="note-line">{note.body}</p>
+                  <div className="cue">
+                    <span>{note.author_guest_label ?? "Workspace"}</span>
+                    <span> · from {note.anchor_version_label}</span>
+                    {note.approximate_timestamp && (
+                      <span className="approx"> · ≈ {formatTimestamp(note.timestamp_start_ms)}, position may have shifted</span>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <footer>
+          <div className="footer-meta">
+            {resolved.size === 0
+              ? "No notes marked resolved"
+              : `${resolved.size} of ${carriedOpenNotes.length} will be resolved`}
+          </div>
+          <div className="footer-actions">
+            <button type="button" className="chrome-button" onClick={onCancel} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="button" className="accent-button" onClick={submit} disabled={submitting}>
+              {submitting ? "Promoting…" : `Promote ${targetVersion.version_label}`}
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
@@ -804,6 +923,8 @@ function NoteComposer({
   );
 }
 
+type InboxFilter = "open" | "saved" | "passed";
+
 function InboxView({
   items,
   onOpenSong,
@@ -811,40 +932,105 @@ function InboxView({
   items: Awaited<ReturnType<typeof api.inbox>>;
   onOpenSong: (songID: string) => void;
 }) {
+  const [savedIDs, setSavedIDs] = useState<Set<string>>(new Set());
+  const [passedIDs, setPassedIDs] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<InboxFilter>("open");
+
+  function save(songID: string) {
+    setSavedIDs((s) => { const n = new Set(s); n.add(songID); return n; });
+    setPassedIDs((s) => { const n = new Set(s); n.delete(songID); return n; });
+  }
+  function pass(songID: string) {
+    setPassedIDs((s) => { const n = new Set(s); n.add(songID); return n; });
+    setSavedIDs((s) => { const n = new Set(s); n.delete(songID); return n; });
+  }
+  function reopen(songID: string) {
+    setPassedIDs((s) => { const n = new Set(s); n.delete(songID); return n; });
+    setSavedIDs((s) => { const n = new Set(s); n.delete(songID); return n; });
+  }
+
+  const filteredItems = items.filter((item) => {
+    switch (filter) {
+      case "saved": return savedIDs.has(item.song.song_id);
+      case "passed": return passedIDs.has(item.song.song_id);
+      case "open": return !savedIDs.has(item.song.song_id) && !passedIDs.has(item.song.song_id);
+    }
+  });
+
+  const counts = {
+    open: items.filter((i) => !savedIDs.has(i.song.song_id) && !passedIDs.has(i.song.song_id)).length,
+    saved: savedIDs.size,
+    passed: passedIDs.size,
+  };
+
   return (
     <div className="view-stack">
       <div className="section-head">
         <div>
           <p className="eyebrow">EXECUTIVE INBOX</p>
-          <h1>Received Music</h1>
+          <h1>Submissions</h1>
         </div>
         <div className="metric-strip">
           <Metric label="New" value={items.filter((item) => item.new_since_last_listen).length} />
           <Metric label="Offline" value={2} />
         </div>
       </div>
-      <div className="song-table">
-        {items.map((item) => (
-          <article key={item.song.song_id} className="song-row">
-            <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.song.song_id) }} />
-            <button className="row-main row-open" onClick={() => onOpenSong(item.song.song_id)}>
-              <span className="row-title">{item.song.title}</span>
-              <span className="row-subtitle">Shared by {item.shared_by} · {item.room.title}</span>
-            </button>
-            <span className={`status-pill ${item.new_since_last_listen ? "red" : ""}`}>{item.new_since_last_listen ? "New" : "Heard"}</span>
-            <div className="row-actions">
-              <button className="icon-button" title="Save">
-                <CheckCircle2 size={16} />
-              </button>
-              <button className="icon-button" title="Pass">
-                <X size={16} />
-              </button>
-              <button className="icon-button" title="Route">
-                <Send size={16} />
-              </button>
-            </div>
-          </article>
+      <div className="inbox-filter">
+        {(["open", "saved", "passed"] as const).map((f) => (
+          <button
+            key={f}
+            className={`inbox-filter-chip ${filter === f ? "on" : ""}`}
+            onClick={() => setFilter(f)}
+            aria-pressed={filter === f}
+          >
+            {f.toUpperCase()} <span className="count">{counts[f]}</span>
+          </button>
         ))}
+      </div>
+      <div className="song-table">
+        {filteredItems.length === 0 ? (
+          <div className="inbox-empty">
+            {filter === "open" && "Inbox zero. Everything's been triaged."}
+            {filter === "saved" && "Nothing saved yet. Hit ✓ on a row to keep it for a listening session."}
+            {filter === "passed" && "Nothing passed. Hit × to dismiss a submission."}
+          </div>
+        ) : (
+          filteredItems.map((item) => {
+            const isSaved = savedIDs.has(item.song.song_id);
+            const isPassed = passedIDs.has(item.song.song_id);
+            return (
+              <article key={item.song.song_id} className="song-row">
+                <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.song.song_id) }} />
+                <button className="row-main row-open" onClick={() => onOpenSong(item.song.song_id)}>
+                  <span className="row-title">{item.song.title}</span>
+                  <span className="row-subtitle">Shared by {item.shared_by} · {item.room.title}</span>
+                </button>
+                <span className={`status-pill ${isSaved ? "saved" : isPassed ? "passed" : item.new_since_last_listen ? "red" : ""}`}>
+                  {isSaved ? "Saved" : isPassed ? "Passed" : item.new_since_last_listen ? "New" : "Heard"}
+                </span>
+                <div className="row-actions">
+                  {filter === "open" ? (
+                    <>
+                      <button className="icon-button" title="Save for a listening session" onClick={() => save(item.song.song_id)}>
+                        <CheckCircle2 size={16} />
+                      </button>
+                      <button className="icon-button" title="Pass — dismiss without keeping" onClick={() => pass(item.song.song_id)}>
+                        <X size={16} />
+                      </button>
+                      <button className="icon-button" title="Route to a collaborator (coming soon)" disabled>
+                        <Send size={16} />
+                      </button>
+                    </>
+                  ) : (
+                    <button className="text-button" onClick={() => reopen(item.song.song_id)}>
+                      Reopen
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })
+        )}
       </div>
     </div>
   );

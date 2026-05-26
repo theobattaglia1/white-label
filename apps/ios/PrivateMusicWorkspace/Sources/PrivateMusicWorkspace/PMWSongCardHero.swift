@@ -47,49 +47,50 @@ struct PMWSongCardHero: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            // CARD background
             VStack(alignment: .leading, spacing: 0) {
-                // ----- Cover + Info row -----
                 VStack(alignment: .leading, spacing: 0) {
                     coverPanel
                     infoPanel
                 }
-                // ----- Waveform band -----
                 wavebandPanel
-                // ----- Below: notes / listeners / version stack -----
-                belowColumns
+                belowSegments
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Rectangle().fill(PMWColors.sleeveCard)
                     .overlay(Rectangle().stroke(PMWColors.sleeveHairline, lineWidth: 1))
             )
 
-            // NOTES DUE stamp overlapping top edge
-            if hasNotesDue {
-                PMWStamp(text: "Notes Due · \(openNotes.count)", kind: .notesDue, tight: false)
-                    .padding(EdgeInsets(top: -14, leading: 0, bottom: 0, trailing: 28))
-                    .background(PMWColors.sleeveCream)
+            // Stamp row — Approved + Notes Due stacked horizontally if both apply
+            HStack(spacing: 8) {
+                if song.approvedVersionID != nil,
+                   let approvedLabel = versions.first(where: { $0.id == song.approvedVersionID })?.label {
+                    PMWStamp(text: "Approved · \(approvedLabel)", kind: .approved, straight: true)
+                        .background(PMWColors.sleeveCream)
+                }
+                if hasNotesDue {
+                    PMWStamp(text: "Notes Due · \(openNotes.count)", kind: .notesDue)
+                        .background(PMWColors.sleeveCream)
+                }
             }
+            .padding(EdgeInsets(top: -14, leading: 0, bottom: 0, trailing: 28))
         }
-        .padding(.horizontal, 20)
         .padding(.top, 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(PMWColors.sleeveCream)
+        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: song.id)
     }
 
     // MARK: - Cover ----------------------------------------------------
 
     private var coverPanel: some View {
         ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.17, green: 0.16, blue: 0.14),
-                    Color(red: 0.37, green: 0.34, blue: 0.28),
-                    Color(red: 0.66, green: 0.62, blue: 0.55),
-                    Color(red: 0.87, green: 0.79, blue: 0.64),
-                ],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            .aspectRatio(2.2, contentMode: .fit)
+            // Per-song hue derived from song.id — every song gets its own face.
+            pmwCoverGradient(for: song.id)
+                .frame(maxWidth: .infinity)
+                .aspectRatio(2.2, contentMode: .fit)
+                .id(song.id) // forces fresh gradient layer for smooth crossfade
+                .transition(.opacity)
 
             // grain
             Canvas { ctx, size in
@@ -193,42 +194,78 @@ struct PMWSongCardHero: View {
                 .font(PMWFont.mono(10, weight: .semibold))
                 .kerning(1.4)
                 .foregroundStyle(PMWColors.pencilCool)
-            ForEach(versions) { v in
-                let isCur = v.id == currentVersion.id
-                Button { onSelectVersion(v) } label: {
-                    Text("\(v.label)\(isCur ? " · current" : "")".uppercased())
-                        .font(PMWFont.mono(10, weight: .semibold))
-                        .kerning(0.6)
-                        .foregroundStyle(isCur ? PMWColors.inkDeep : PMWColors.pencilCool)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 1)
-                                .stroke(isCur ? PMWColors.inkDeep : PMWColors.sleeveHairline, lineWidth: isCur ? 1.5 : 1)
-                                .background(RoundedRectangle(cornerRadius: 1).fill(isCur ? Color.white : Color.clear))
-                        )
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(versions) { v in
+                        versionPill(v)
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.top, 4)
     }
 
+    @ViewBuilder
+    private func versionPill(_ v: PMWVersion) -> some View {
+        let isCur = v.id == currentVersion.id
+        let isApproved = v.id == song.approvedVersionID
+        Button { onSelectVersion(v) } label: {
+            HStack(spacing: 6) {
+                if isCur {
+                    Circle()
+                        .fill(PMWColors.redline)
+                        .frame(width: 5, height: 5)
+                }
+                Text(v.label.uppercased())
+                    .font(PMWFont.mono(10, weight: .semibold))
+                    .kerning(0.6)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(isCur ? PMWColors.inkDeep : PMWColors.pencilCool)
+                if isApproved && !isCur {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(PMWColors.inkDeep)
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 1)
+                    .stroke(isCur ? PMWColors.inkDeep : PMWColors.sleeveHairline, lineWidth: isCur ? 1.5 : 1)
+                    .background(RoundedRectangle(cornerRadius: 1).fill(isCur ? Color.white : Color.clear))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(v.label)\(isCur ? ", current" : "")\(isApproved ? ", approved" : "")")
+    }
+
     private var actionRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button(action: onPlay) {
                 Label("Play", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(PMWChromeButtonStyle(variant: .accent))
+            .accessibilityLabel("Play \(currentVersion.label)")
 
             Button(action: onUploadRevision) {
-                Label("Upload revision", systemImage: "arrow.up.circle")
-            }
-            .buttonStyle(PMWChromeButtonStyle(variant: .dark))
-
-            Button(action: onAddNote) {
-                Label("Add note", systemImage: "text.bubble")
+                Label("Revision", systemImage: "plus.circle")
             }
             .buttonStyle(PMWChromeButtonStyle(variant: .ghost))
+            .accessibilityLabel("Upload new revision")
+
+            Button(action: onAddNote) {
+                HStack(spacing: 5) {
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Note")
+                        .font(PMWFont.sans(13, weight: .semibold))
+                }
+                .foregroundStyle(PMWColors.inkDeep)
+                .frame(height: 40)
+                .padding(.horizontal, 4)
+            }
+            .accessibilityLabel("Add note")
         }
         .padding(.top, 6)
     }
@@ -242,8 +279,9 @@ struct PMWSongCardHero: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 44, height: 44)
             .background(Circle().fill(PMWColors.inkDeep))
+            .accessibilityLabel(isPlaying ? "Pause" : "Play")
 
             waveformView
 
@@ -251,6 +289,7 @@ struct PMWSongCardHero: View {
                 .font(PMWFont.mono(12))
                 .foregroundStyle(PMWColors.pencilCool)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18).padding(.vertical, 14)
         .background(PMWColors.sleeveElevated)
         .overlay(alignment: .top) { PMWRule() }
@@ -272,86 +311,194 @@ struct PMWSongCardHero: View {
                     Rectangle()
                         .fill(isCue ? PMWColors.redline
                               : (isPassed ? PMWColors.inkDeep : PMWColors.inkDeep.opacity(0.5)))
-                        .frame(width: barWidth, height: max(4, geo.size.height * CGFloat(p)))
+                        .frame(width: barWidth, height: max(4, 36 * CGFloat(p)))
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .center)
         }
-        .frame(height: 36)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityElement()
+        .accessibilityLabel("Playback waveform, \(formatMs(positionMs)) of \(formatMs(asset?.durationMS ?? 0))")
+        .accessibilityAdjustableAction { _ in /* future: scrub via VoiceOver swipe */ }
     }
 
-    // MARK: - Below columns -------------------------------------------
+    // MARK: - Below: segmented Notes / Stack / Readiness panel ---------
 
-    private var belowColumns: some View {
-        HStack(alignment: .top, spacing: 0) {
-            column(title: "NOTES · \(openNotes.count) OPEN") {
-                ForEach(openNotes.prefix(3)) { vn in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(vn.note.body)
-                            .font(PMWFont.sans(13))
-                            .foregroundStyle(PMWColors.inkDeep)
-                            .lineLimit(2)
-                        Text("\(vn.note.author) · \(formatMs(vn.note.timestampStartMS ?? 0))")
-                            .font(PMWFont.mono(10))
-                            .foregroundStyle(PMWColors.pencilCool)
-                    }
-                    .padding(.vertical, 6)
-                    if vn.id != openNotes.prefix(3).last?.id { Divider().background(PMWColors.sleeveHairline) }
-                }
-                if openNotes.isEmpty {
-                    Text("No open notes.")
-                        .font(PMWFont.sans(13))
-                        .foregroundStyle(PMWColors.pencilCool)
-                }
-            }
-            verticalRule
-            column(title: "LISTENERS · \(versions.count)") {
-                ForEach(versions.prefix(4)) { v in
-                    HStack {
-                        Text(v.label)
-                            .font(PMWFont.sans(12, weight: .semibold))
-                            .foregroundStyle(PMWColors.inkDeep)
-                        Spacer()
-                        Text(v.isCurrent ? "current" : "history")
-                            .font(PMWFont.mono(10))
-                            .foregroundStyle(PMWColors.pencilCool)
-                    }
-                    .padding(.vertical, 5)
-                }
-            }
-            verticalRule
-            column(title: "VERSION STACK · \(versions.count)") {
-                ForEach(versions) { v in
-                    HStack {
-                        Text(v.label)
-                            .font(PMWFont.sans(12, weight: .semibold))
-                            .foregroundStyle(PMWColors.inkDeep)
-                        Spacer()
-                        Text(formatMs((asset?.durationMS ?? 0)))
-                            .font(PMWFont.mono(10))
-                            .foregroundStyle(PMWColors.pencilCool)
-                    }
-                    .padding(.vertical, 5)
-                }
+    private enum BelowSection: String, CaseIterable, Identifiable {
+        case notes, stack, readiness
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .notes: return "Notes"
+            case .stack: return "Stack"
+            case .readiness: return "Ready"
             }
         }
     }
+    @State private var belowSection: BelowSection = .notes
 
-    private var verticalRule: some View {
-        Rectangle().fill(PMWColors.sleeveHairline).frame(width: 1)
+    private var belowSegments: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Custom segmented control — brand consistent (no native .segmented chrome)
+            HStack(spacing: 0) {
+                ForEach(BelowSection.allCases) { section in
+                    let isActive = belowSection == section
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                            belowSection = section
+                        }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(section.label.uppercased())
+                                .font(PMWFont.mono(10, weight: .semibold))
+                                .kerning(1.4)
+                                .foregroundStyle(isActive ? PMWColors.inkDeep : PMWColors.pencilCool)
+                            Rectangle()
+                                .fill(isActive ? PMWColors.redline : Color.clear)
+                                .frame(height: 2)
+                        }
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .overlay(alignment: .bottom) { PMWRule() }
+
+            Group {
+                switch belowSection {
+                case .notes: notesSection
+                case .stack: stackSection
+                case .readiness: readinessSection
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 18)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        .padding(.top, 6)
     }
 
-    @ViewBuilder
-    private func column<C: View>(title: String, @ViewBuilder content: () -> C) -> some View {
+    private var notesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(PMWFont.mono(10, weight: .semibold))
-                .kerning(1.5)
-                .foregroundStyle(PMWColors.pencilCool)
-                .padding(.bottom, 10)
-            content()
+            if openNotes.isEmpty {
+                Text("No open notes.")
+                    .font(PMWFont.sans(14))
+                    .foregroundStyle(PMWColors.pencilCool)
+            } else {
+                ForEach(openNotes) { vn in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(vn.note.author.uppercased())
+                                .font(PMWFont.mono(10, weight: .bold))
+                                .kerning(1.2)
+                                .foregroundStyle(PMWColors.pencilCool)
+                            Spacer()
+                            Text("\(vn.isCarried ? "≈ " : "")\(formatMs(vn.note.timestampStartMS ?? 0))")
+                                .font(PMWFont.mono(10))
+                                .foregroundStyle(vn.approximateTimestamp ? PMWColors.warning : PMWColors.pencilCool)
+                        }
+                        Text(vn.note.body)
+                            .font(PMWFont.sans(14))
+                            .foregroundStyle(PMWColors.inkDeep)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 10)
+                    if vn.id != openNotes.last?.id { Divider().background(PMWColors.sleeveHairline) }
+                }
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var stackSection: some View {
+        VStack(spacing: 0) {
+            ForEach(versions) { v in
+                let isCur = v.id == currentVersion.id
+                let isApproved = v.id == song.approvedVersionID
+                let assetForVersion = v.assetID
+                let durationLabel: String = {
+                    // Per-version duration if we can find its asset; fallback to current asset's duration only when nil
+                    if let a = asset, a.id == assetForVersion { return formatMs(a.durationMS) }
+                    return "—"
+                }()
+                HStack(spacing: 12) {
+                    Text(String(format: "%02d", v.number))
+                        .font(PMWFont.mono(11, weight: .bold))
+                        .foregroundStyle(PMWColors.redline)
+                        .frame(width: 24, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(v.label)
+                            .font(PMWFont.sans(14, weight: .semibold))
+                            .foregroundStyle(PMWColors.inkDeep)
+                        Text(v.type.title.uppercased())
+                            .font(PMWFont.mono(10))
+                            .kerning(0.8)
+                            .foregroundStyle(PMWColors.pencilCool)
+                    }
+                    Spacer()
+                    if isApproved {
+                        PMWStamp(text: "Approved", kind: .approved, tight: true, straight: true)
+                    }
+                    if isCur {
+                        HStack(spacing: 5) {
+                            Circle().fill(PMWColors.redline).frame(width: 6, height: 6)
+                            Text("CURRENT")
+                                .font(PMWFont.mono(10, weight: .bold))
+                                .kerning(1.2)
+                                .foregroundStyle(PMWColors.redline)
+                        }
+                    } else {
+                        Text(durationLabel)
+                            .font(PMWFont.mono(10))
+                            .foregroundStyle(PMWColors.pencilCool)
+                    }
+                }
+                .padding(.vertical, 10)
+                if v.id != versions.last?.id { Divider().background(PMWColors.sleeveHairline) }
+            }
+        }
+    }
+
+    /// Release readiness — derives presence/missing from the song's data.
+    /// Mirrors `PMWStore.deliverables(for:)` so the hero can render without
+    /// needing the store passed in.
+    private var readinessSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            let types = Set(versions.map(\.type))
+            let hasStems = false // not derivable from PMWVisibleNote slice; conservatively false
+            let rows: [(String, Bool)] = [
+                ("BPM", song.bpm > 0),
+                ("Key", !song.songKey.isEmpty),
+                ("Clean", types.contains(.clean)),
+                ("Explicit", types.contains(.explicit) || !song.explicit),
+                ("Instrumental", types.contains(.instrumental)),
+                ("Acapella", types.contains(.acapella)),
+                ("Stems", hasStems),
+            ]
+            HStack(spacing: 8) {
+                Image(systemName: rows.allSatisfy(\.1) ? "checkmark.circle.fill" : "circle.dashed")
+                    .foregroundStyle(rows.allSatisfy(\.1) ? PMWColors.inkDeep : PMWColors.pencilCool)
+                Text(rows.allSatisfy(\.1) ? "Ready to ship" : "Not ready")
+                    .font(PMWFont.display(20, weight: .heavy))
+                    .foregroundStyle(PMWColors.inkDeep)
+            }
+            FlowLayout(spacing: 8) {
+                ForEach(rows, id: \.0) { row in
+                    HStack(spacing: 5) {
+                        Image(systemName: row.1 ? "checkmark.circle" : "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(row.1 ? PMWColors.redline : PMWColors.pencilCool.opacity(0.6))
+                        Text(row.0.uppercased())
+                            .font(PMWFont.mono(10, weight: .semibold))
+                            .kerning(1.0)
+                            .strikethrough(!row.1, color: PMWColors.pencilCool.opacity(0.55))
+                            .foregroundStyle(row.1 ? PMWColors.inkDeep : PMWColors.pencilCool)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Helpers ---------------------------------------------

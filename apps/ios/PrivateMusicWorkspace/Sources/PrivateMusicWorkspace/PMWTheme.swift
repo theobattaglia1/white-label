@@ -292,27 +292,76 @@ struct PMWCatalogId: View {
 
 // MARK: - Button styles ------------------------------------------------
 
-/// Circular icon button — used in the top bar (bell, search, avatar) and any
-/// stand-alone icon affordance. Borrowed from Music Hub iOS: capsule fill,
-/// hairline stroke, true pressed-in tactility (offset + scale + brightness).
+/// Circular icon button. Dark-mode neumorphic — RESTING reads as raised
+/// (top highlight + bottom shadow + soft drop shadow), PRESSED reads as
+/// recessed (inner-top shadow + bottom highlight + no drop shadow).
+/// Built specifically for dark canvas where MH's light-mode flat circles
+/// would just look like discs.
 struct PMWIconButtonStyle: ButtonStyle {
     var active = false
     var diameter: CGFloat = 44
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let pressed = configuration.isPressed
+        return configuration.label
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(PMWColors.ink)
             .frame(width: diameter, height: diameter)
             .background(
-                Circle()
-                    .fill(active ? PMWColors.soft : PMWColors.paper)
-                    .overlay(Circle().stroke(PMWColors.lineStrong.opacity(0.45), lineWidth: 1))
+                ZStack {
+                    Circle()
+                        .fill(pressed ? Color.black.opacity(0.45) : PMWColors.studioElevated)
+                    // Resting: top highlight + bottom-edge dark
+                    if !pressed {
+                        Circle()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.08),
+                                        Color.white.opacity(0.0),
+                                        Color.black.opacity(0.45),
+                                    ],
+                                    startPoint: .top, endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                    } else {
+                        // Pressed: top-edge inner shadow + faint bottom highlight
+                        Circle()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.black.opacity(0.7),
+                                        Color.black.opacity(0.25),
+                                        Color.white.opacity(0.04),
+                                    ],
+                                    startPoint: .top, endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                            // Soft inner shadow at the top of the well
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.black.opacity(0.4), lineWidth: 1.4)
+                                    .blur(radius: 1.2)
+                                    .mask(
+                                        Circle()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [.black, .clear],
+                                                    startPoint: .top,
+                                                    endPoint: .center
+                                                )
+                                            )
+                                    )
+                            )
+                    }
+                }
             )
-            .offset(y: configuration.isPressed ? 1 : 0)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .brightness(configuration.isPressed ? -0.025 : 0)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+            // Drop shadow only while resting (raised)
+            .shadow(color: pressed ? .clear : Color.black.opacity(0.5), radius: 2, x: 0, y: 1.5)
+            .scaleEffect(pressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.14), value: pressed)
     }
 }
 
@@ -334,7 +383,7 @@ struct PMWChromeButtonStyle: ButtonStyle {
 
     private var background: Color {
         switch variant {
-        case .ghost:  return PMWColors.paper
+        case .ghost:  return PMWColors.studioElevated
         case .dark:   return PMWColors.inkDeep
         case .accent: return PMWColors.redline
         }
@@ -345,28 +394,50 @@ struct PMWChromeButtonStyle: ButtonStyle {
         case .dark, .accent: return .white
         }
     }
-    private var stroke: Color {
-        switch variant {
-        case .ghost:  return PMWColors.lineStrong.opacity(0.45)
-        case .dark, .accent: return .clear
+
+    @ViewBuilder
+    private func edge(pressed: Bool) -> some View {
+        // Ghost variant gets the full raised/recessed neumorphic edge;
+        // dark + accent stay flat-filled but still respect the press.
+        if variant == .ghost {
+            Capsule()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: pressed
+                            ? [Color.black.opacity(0.7), Color.black.opacity(0.18), Color.white.opacity(0.04)]
+                            : [Color.white.opacity(0.08), Color.white.opacity(0.0), Color.black.opacity(0.45)],
+                        startPoint: .top, endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
+        } else {
+            Capsule().stroke(.clear, lineWidth: 0)
         }
     }
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let pressed = configuration.isPressed
+        return configuration.label
             .font(.system(size: compact ? 13 : 15, weight: .medium))
             .foregroundStyle(foreground)
             .padding(.horizontal, compact ? 14 : 20)
             .frame(height: compact ? 36 : 42)
             .background(
-                Capsule()
-                    .fill(background)
-                    .overlay(Capsule().stroke(stroke, lineWidth: 1))
+                ZStack {
+                    Capsule().fill(pressed
+                        ? (variant == .ghost ? Color.black.opacity(0.45) : background)
+                        : background
+                    )
+                    edge(pressed: pressed)
+                }
             )
-            .offset(y: configuration.isPressed ? 1 : 0)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .brightness(configuration.isPressed ? -0.025 : 0)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+            .shadow(
+                color: (variant == .ghost && !pressed) ? Color.black.opacity(0.5) : .clear,
+                radius: 2, x: 0, y: 1.5
+            )
+            .scaleEffect(pressed ? 0.98 : 1)
+            .brightness(pressed && variant != .ghost ? -0.04 : 0)
+            .animation(.easeOut(duration: 0.16), value: pressed)
     }
 }
 

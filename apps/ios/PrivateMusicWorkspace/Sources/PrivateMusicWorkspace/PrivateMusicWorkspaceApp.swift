@@ -102,8 +102,19 @@ struct PMWBiometricGate<Content: View>: View {
         }
     }
 
+    /// Gate behaviour:
+    ///  - DEBUG builds default to OFF so daily Xcode runs / simulator sessions
+    ///    don't hit the Face ID prompt on every relaunch. You can still
+    ///    force-test the lock by setting `WL_FORCE_LOCK=1` on the scheme.
+    ///  - Release builds default to ON. Set `WL_DISABLE_LOCK=1` to override.
     private var disabled: Bool {
-        ProcessInfo.processInfo.environment["WL_DISABLE_LOCK"] == "1"
+        let env = ProcessInfo.processInfo.environment
+        #if DEBUG
+        if env["WL_FORCE_LOCK"] == "1" { return false }
+        return true
+        #else
+        return env["WL_DISABLE_LOCK"] == "1"
+        #endif
     }
 
     private var lockScreen: some View {

@@ -520,8 +520,13 @@ server.post("/uploads/grouping-proposals", async (request) => {
 });
 
 server.post("/assistant/ask", async (request) => {
-  const body = request.body as { question?: string };
-  return ok(store.ask(body.question ?? ""));
+  const body = request.body as { question?: string; song_id?: string; version_id?: string };
+  const question = body.question ?? "";
+  // Hard cap the free-text input before it drives an Opus call — cheap guard
+  // against oversized / cost-abusive prompts. (Rate-limiting + auth on this
+  // route is a documented prerequisite before enabling the API key in prod.)
+  if (question.length > 2000) throw new Error("Question is too long (2000 character max).");
+  return ok(await store.askLlm(question, { song_id: body.song_id, version_id: body.version_id }));
 });
 
 server.get("/shared/:token", async (request) => {

@@ -676,10 +676,10 @@ h2 {
 .song-card-info .cat { font-size: 11px; }
 .song-card-info .title {
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(36px, 5vw, 56px);
-  line-height: .92;
-  letter-spacing: -.025em;
+  font-weight: 300;
+  font-size: clamp(34px, 4.4vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
   color: var(--ink);
   margin: 0;
 }
@@ -727,10 +727,12 @@ h2 {
     transform 220ms cubic-bezier(.34, 1.56, .64, 1);
 }
 .song-card-info .versions .v:hover { border-color: var(--pencil-cool); color: var(--ink); }
+/* Mono-caps treatment on .v pills is intentional — instrument-readout register,
+   distinct from the sans .pill-button filter chips. */
 .song-card-info .versions .v.cur {
   border-color: var(--ink);
   color: var(--ink);
-  background: #fff;
+  background: var(--sleeve-elevated);
   font-weight: 700;
   /* Brief overshoot when a new version is selected — drops the needle. */
   animation: version-pill-needle 320ms cubic-bezier(.34, 1.56, .64, 1);
@@ -1184,10 +1186,10 @@ h2 {
 
 .recipient-title {
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(40px, 6vw, 60px);
-  line-height: .95;
-  letter-spacing: -.025em;
+  font-weight: 300;
+  font-size: clamp(34px, 4.4vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
   color: var(--ink);
   margin: 4px 0 4px;
   text-transform: none;
@@ -1241,7 +1243,7 @@ h2 {
   border-color: var(--ink);
   color: var(--ink);
   font-weight: 700;
-  background: #fff;
+  background: var(--sleeve-elevated);
 }
 
 .recipient-notes {
@@ -1685,31 +1687,77 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   border-color: var(--notes-blue);
 }
 .library-filters { display: flex; gap: 6px; flex-wrap: wrap; }
-.library-filter {
+
+/* =====================================================================
+   CANONICAL PILL-BUTTON ATOM
+   Single source of truth for all filter/chip/version-selector pills.
+   Modifiers:
+     .on      — active/selected state (filled redline)
+     .compact — smaller variant (10px, tight padding) for inline chips
+   ===================================================================== */
+.pill-button {
   appearance: none;
   background: var(--studio-panel);
   border: 1px solid var(--studio-hairline);
   border-radius: 999px;
-  padding: 9px 16px;
+  padding: 8px 16px;
   font-family: var(--font-sans);
   font-size: 12px;
-  letter-spacing: 0;
   font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--tape-oxide);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
   transition: transform 160ms cubic-bezier(.2,.6,.2,1),
               filter 160ms cubic-bezier(.2,.6,.2,1),
               background 160ms cubic-bezier(.2,.6,.2,1),
               border-color 160ms cubic-bezier(.2,.6,.2,1),
               color 160ms cubic-bezier(.2,.6,.2,1);
 }
-.library-filter:hover { border-color: var(--pencil-warm); }
-.library-filter:active { transform: translateY(1px) scale(0.98); filter: brightness(0.975); }
-.library-filter.on {
-  color: #fff;
-  background: var(--redline);
+.pill-button:hover { border-color: var(--pencil-warm); }
+.pill-button:active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.975);
+}
+/* Count badge inside a pill — dimmed at rest, full opacity when active */
+.pill-button .count { opacity: .65; }
+.pill-button.on .count { opacity: 1; }
+
+/* Active filter state: subtle accent, not full redline fill.
+   Keeps selected filters visually distinct from primary CTA buttons. */
+.pill-button.on {
+  color: var(--redline);
+  background: var(--accent-soft);
   border-color: var(--redline);
 }
+.pill-button.on:hover { filter: brightness(1.06); }
+
+/* Compact modifier — inbox chips, ask chips, version pills */
+.pill-button.compact {
+  font-size: 11px;
+  padding: 6px 13px;
+}
+
+/* Sleeve (cream/light) surface overrides */
+.shared-page .pill-button {
+  background: var(--sleeve-card);
+  border-color: var(--sleeve-hairline);
+  color: var(--ink);
+}
+.shared-page .pill-button:hover { border-color: var(--pencil-cool); }
+.shared-page .pill-button.on {
+  color: var(--redline);
+  background: var(--accent-soft);
+  border-color: var(--redline);
+}
+
+/* .library-filter was a full duplicate of .pill-button — now dead.
+   Nothing renders it as a button (App.tsx uses .pill-button).
+   Collapsed to avoid silent drift. Use .pill-button instead. */
 
 .library-grid {
   display: flex;
@@ -1727,7 +1775,7 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .library-row {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 18px;
   align-items: center;
   padding: 14px 0;
@@ -1897,10 +1945,10 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .playlist-info .eyebrow { color: var(--redline); margin-bottom: 8px; }
 .playlist-info h1 {
   font-family: var(--font-display);
-  font-size: clamp(36px, 5vw, 72px);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-  line-height: 0.95;
+  font-size: clamp(34px, 4.4vw, 56px);
+  font-weight: 300;
+  letter-spacing: -0.015em;
+  line-height: 1.08;
   margin: 0;
   color: var(--tape-oxide);
 }
@@ -1958,8 +2006,8 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .playlist-strip-info h2 {
   font-family: var(--font-display);
   font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.015em;
+  font-weight: 300;
+  letter-spacing: -0.01em;
   margin: 4px 0;
   color: var(--ink);
 }
@@ -2171,30 +2219,39 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   gap: 8px;
   margin: -8px 0 12px;
 }
+/* .inbox-filter-chip now uses the canonical pill-button atom (compact modifier).
+   Class kept as alias in case legacy markup references it. */
 .inbox-filter-chip {
   appearance: none;
-  background: transparent;
+  background: var(--studio-panel);
   border: 1px solid var(--studio-hairline);
   border-radius: 999px;
-  padding: 6px 14px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--pencil-warm);
+  padding: 6px 13px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tape-oxide);
   cursor: pointer;
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
+              filter 160ms cubic-bezier(.2,.6,.2,1),
+              background 160ms cubic-bezier(.2,.6,.2,1),
+              border-color 160ms cubic-bezier(.2,.6,.2,1),
+              color 160ms cubic-bezier(.2,.6,.2,1);
 }
-.inbox-filter-chip:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
+.inbox-filter-chip:hover { border-color: var(--pencil-warm); }
+.inbox-filter-chip:active { transform: translateY(1px) scale(0.98); filter: brightness(0.975); }
 .inbox-filter-chip.on {
-  color: var(--redline);
+  color: #fff;
+  background: var(--redline);
   border-color: var(--redline);
 }
 .inbox-filter-chip .count {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   opacity: .65;
 }
 .inbox-empty {
@@ -2365,25 +2422,34 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   gap: 4px;
   margin: 8px 0 12px;
 }
+/* Version selector pills now use the canonical pill-button atom (compact) */
 .compare-deck .deck-version-pills .v {
   appearance: none;
-  background: transparent;
+  background: var(--studio-panel);
   border: 1px solid var(--studio-hairline);
-  color: var(--pencil-warm);
-  padding: 4px 10px 3px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  border-radius: 1px;
-  cursor: pointer;
-  transition: all var(--motion-fast) var(--easing);
-}
-.compare-deck .deck-version-pills .v:hover { color: var(--tape-oxide); border-color: var(--pencil-warm); }
-.compare-deck .deck-version-pills .v.cur {
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--tape-oxide);
-  border-color: var(--tape-oxide);
-  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
+              filter 160ms cubic-bezier(.2,.6,.2,1),
+              background 160ms cubic-bezier(.2,.6,.2,1),
+              border-color 160ms cubic-bezier(.2,.6,.2,1),
+              color 160ms cubic-bezier(.2,.6,.2,1);
+}
+.compare-deck .deck-version-pills .v:hover { border-color: var(--pencil-warm); }
+.compare-deck .deck-version-pills .v:active { transform: translateY(1px) scale(0.98); filter: brightness(0.975); }
+.compare-deck .deck-version-pills .v.cur {
+  color: #fff;
+  background: var(--redline);
+  border-color: var(--redline);
 }
 
 /* Link analytics — listener log per share link */
@@ -2490,7 +2556,8 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .shared-page .toggle-switch .toggle-label { color: var(--pencil-cool); }
 .shared-page .toggle-switch.on .toggle-label { color: var(--ink); }
 
-/* Ask panel — suggested-query chips */
+/* Ask panel — suggested-query chips.
+   Now uses pill-button atom (compact). Class kept as alias. */
 .ask-chips {
   display: flex;
   flex-wrap: wrap;
@@ -2499,23 +2566,33 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 }
 .ask-chip {
   appearance: none;
-  background: transparent;
+  background: var(--studio-panel);
   border: 1px solid var(--studio-hairline);
   border-radius: 999px;
-  padding: 6px 14px;
-  font-family: var(--font-mono);
+  padding: 6px 13px;
+  font-family: var(--font-sans);
   font-size: 11px;
-  letter-spacing: .04em;
-  color: var(--pencil-warm);
-  cursor: pointer;
-  transition: all var(--motion-fast) var(--easing);
-}
-.ask-chip:hover {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--tape-oxide);
-  border-color: var(--pencil-warm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1),
+              filter 160ms cubic-bezier(.2,.6,.2,1),
+              background 160ms cubic-bezier(.2,.6,.2,1),
+              border-color 160ms cubic-bezier(.2,.6,.2,1),
+              color 160ms cubic-bezier(.2,.6,.2,1);
 }
-.shared-page .ask-chip { border-color: var(--sleeve-hairline); color: var(--pencil-cool); }
-.shared-page .ask-chip:hover { color: var(--ink); border-color: var(--pencil-cool); }
+.ask-chip:hover { border-color: var(--pencil-warm); }
+.ask-chip:active { transform: translateY(1px) scale(0.98); filter: brightness(0.975); }
+.shared-page .ask-chip {
+  background: var(--sleeve-card);
+  border-color: var(--sleeve-hairline);
+  color: var(--ink);
+}
+.shared-page .ask-chip:hover { border-color: var(--pencil-cool); }
 
 /* Recipient page — approval button */
 .recipient-approve {
@@ -2874,15 +2951,21 @@ button.row-main, .row-main.row-open {
   display: inline-block;
 }
 
-/* Keyboard focus — every interactive element. The --focus token was
-   defined but never applied; this restores keyboard navigability. */
+/* Keyboard focus — every interactive element.
+   Dual-tone technique: white inner ring + redline outer ring clears 3:1 on
+   both the dark studio panel (#15130F) and the cream sleeve surface.
+   --notes-blue (#2D5DB8) alone was ~2.98:1 on studio-panel, failing WCAG 2.2. */
 *:focus { outline: none; }
 *:focus-visible {
-  outline: 2px solid var(--notes-blue);
+  outline: 2px solid var(--redline);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
   border-radius: 2px;
 }
-.shared-page *:focus-visible { outline-color: var(--notes-blue); }
+.shared-page *:focus-visible {
+  outline-color: var(--redline);
+  box-shadow: 0 0 0 4px rgba(11, 10, 9, 0.12);
+}
 /* Inputs already manage their own focus border — give them outline-offset 0 */
 input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline-offset: 0;
@@ -2895,4 +2978,632 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   body, .app-shell, .shared-page { background: #fff; color: #000; }
   .top-bar, .sidebar, .mini-player, .sticky-composer { display: none !important; }
   .workspace-main, .shared-main { padding: 0; }
+}
+
+/* =====================================================================
+   HomeView + shared paper-surface (lib) tokens — Piece 6
+   ===================================================================== */
+
+/* Paper canvas — cream editorial surface. Both HomeView and the future
+   LibraryView rebuild share this surface. */
+.home-canvas, .library-canvas {
+  background: var(--sleeve-cream);
+  color: var(--ink);
+  min-height: 100%;
+}
+
+/* === Paper ink tokens (used only on cream surfaces) ================ */
+.home-canvas, .library-canvas {
+  --paper-ink: var(--ink);
+  --paper-ink-muted: var(--pencil-cool);
+  --paper-line: var(--sleeve-hairline);
+  --paper-surface: var(--sleeve-card);
+  --paper-elevated: var(--sleeve-elevated);
+}
+
+/* === Hero band ====================================================== */
+.lib-hero {
+  padding: 48px clamp(24px, 5vw, 72px) 40px;
+  border-bottom: 1px solid var(--sleeve-hairline);
+  position: relative;
+}
+
+/* Single kicker eyebrow — HOME / ALL SONGS / etc. */
+.lib-kicker {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0 0 14px;
+}
+
+/* Fraunces editorial headline — the centrepiece of the hero */
+.lib-headline {
+  font-family: "Fraunces", "Georgia", serif;
+  font-weight: 400;
+  font-size: clamp(56px, 8vw, 92px);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+  letter-spacing: -0.01em;
+  line-height: 0.95;
+  color: var(--ink);
+  margin: 0 0 0;
+}
+
+/* Slot for the Piece-7 AMF Gallery — leave present, empty for now */
+.home-hero-gallery-slot {
+  min-height: 0;
+  /* Piece 7 will set a real height and inject gallery tiles here */
+}
+
+/* === Sections ======================================================= */
+.home-section {
+  padding: 48px clamp(24px, 5vw, 72px) 0;
+}
+.home-section:last-of-type {
+  padding-bottom: 48px;
+}
+
+/* Section head — Fraunces serif at a smaller scale ("Pinned" / "Recent") */
+.home-section-head {
+  font-family: "Fraunces", "Georgia", serif;
+  font-weight: 400;
+  font-size: clamp(28px, 3.4vw, 44px);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+  letter-spacing: -0.005em;
+  line-height: 1.05;
+  color: var(--ink);
+  margin: 0 0 28px;
+}
+
+/* === Pin groups (Songs / Playlists / Projects sub-sections) ========= */
+.home-pin-group {
+  margin-top: 32px;
+}
+.home-pin-group:first-child {
+  margin-top: 0;
+}
+
+.home-pin-sublabel {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0 0 10px;
+}
+
+/* === lib-row — the universal cream-surface row ====================== */
+/* Used for pinned songs, recent items — mirrors .library-row but on the
+   paper (cream) surface and with the extended column anatomy. */
+.lib-grid {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--sleeve-hairline);
+}
+
+.lib-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sleeve-hairline);
+}
+
+/* Main clickable area: cover + title + meta */
+.lib-row-main {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+}
+.lib-row-main:hover .lib-title { color: var(--redline); }
+
+.lib-row-main .cover-art {
+  width: 48px; height: 48px;
+  border-radius: 2px;
+  flex: 0 0 48px;
+}
+
+.lib-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lib-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--motion-fast) var(--easing);
+}
+
+.lib-meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Right-column cells */
+.lib-catalog {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+}
+
+.lib-when {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+  min-width: 52px;
+  text-align: right;
+}
+
+/* === Empty state (shared) =========================================== */
+.lib-empty {
+  padding: 48px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lib-empty-label {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+.lib-empty-hint {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--pencil-cool);
+  max-width: 42ch;
+  line-height: 1.5;
+}
+
+/* === Footer metrics bar ============================================= */
+.lib-footer-metrics {
+  padding: 20px clamp(24px, 5vw, 72px);
+  border-top: 1px solid var(--sleeve-hairline);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--pencil-cool);
+  display: flex;
+  gap: 6px;
+}
+
+/* === Pin button ====================================================== */
+/* 28px square icon button. Lives alongside .library-add on lib-rows and
+   .side-list-item entries. */
+.pin-button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  width: 28px; height: 28px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--pencil-cool);
+  flex: 0 0 auto;
+  transition: color var(--motion-fast) var(--easing),
+              border-color var(--motion-fast) var(--easing);
+}
+.pin-button:hover {
+  color: var(--ink);
+  border-color: var(--sleeve-hairline);
+}
+.pin-button.pinned {
+  color: var(--redline);
+  border-color: transparent;
+}
+
+/* Pin button inside the dark studio library rows */
+.library-row .pin-button {
+  color: var(--pencil-warm);
+  border-color: transparent;
+}
+.library-row .pin-button:hover {
+  color: var(--tape-oxide);
+  border-color: var(--studio-hairline);
+}
+.library-row .pin-button.pinned {
+  color: var(--redline);
+}
+
+/* Pin button inside dark sidebar list items */
+.side-list-item .pin-button {
+  color: var(--pencil-warm);
+}
+.side-list-item .pin-button:hover {
+  color: var(--tape-oxide);
+}
+.side-list-item .pin-button.pinned {
+  color: var(--redline);
+}
+
+/* Sidebar list items that have a pin button need row layout.
+   Only apply when .side-info is present (playlists/projects with pin affordance).
+   Smart-view items keep the original column layout via .side-title/.side-meta. */
+.side-list-item:has(.side-info) {
+  flex-direction: row;
+  align-items: center;
+}
+.side-list-item .side-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* workspace-main animation — extend to home-canvas too */
+.workspace-main > .home-canvas {
+  animation: view-enter var(--motion-mid) var(--easing);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-main > .home-canvas { animation: none; }
+}
+
+/* =====================================================================
+   Feature 1 — NotesPanel: sectioned open / carried / resolved
+   ===================================================================== */
+.note-section { margin-top: 8px; }
+.note-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  font-weight: 600;
+  margin: 0 0 4px;
+  padding: 6px 0 4px;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+/* Left accent border on carried-from-earlier notes */
+.note-section--carried .note-item {
+  padding-left: 10px;
+  border-left: 2px solid var(--studio-hairline);
+}
+.note-section--carried .note-section-label {
+  color: var(--pencil-warm);
+  padding-left: 10px;
+}
+
+/* =====================================================================
+   Feature 2 — VersionStack delta line
+   ===================================================================== */
+.version-delta {
+  display: block;
+  font-family: var(--font-readout);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+  margin-top: 2px;
+  opacity: .75;
+}
+
+/* =====================================================================
+   Feature 3 — "Heard by N of M" badge
+   ===================================================================== */
+.link-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.heard-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 20px;
+  border: 1px solid var(--studio-hairline);
+  /* D3: match .status-pill radius (999px) for visual consistency */
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  white-space: nowrap;
+}
+.heard-summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--pencil-warm);
+  margin: 0;
+}
+
+/* =====================================================================
+   Feature 4 — AssistantPanel context line
+   ===================================================================== */
+.ask-context-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--pencil-warm);
+  margin: -16px 0 0;
+}
+
+/* =====================================================================
+   Feature 5 — Upload type picker (modelled on carry-triage)
+   ===================================================================== */
+.upload-picker .upload-picker-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 24px;
+}
+.upload-picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.upload-picker-field-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+}
+.upload-picker-field input,
+.upload-picker-field select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--studio-black);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 2px;
+  color: var(--tape-oxide);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+.upload-picker-field input:focus,
+.upload-picker-field select:focus {
+  outline: 2px solid var(--notes-blue);
+  outline-offset: 1px;
+}
+.upload-picker-field select option {
+  background: var(--studio-panel);
+}
+
+/* =====================================================================
+   Ceremony Moment 1 — First-upload acknowledgment flash
+   D1: Changed from --redline to a cream/warm accent so it doesn't read
+   as an error state. --tape-oxide at 14% reads as a warm highlight on
+   the dark studio panel without triggering "something went wrong."
+   ===================================================================== */
+@keyframes first-upload-flash {
+  0%   { background: rgba(242, 237, 226, 0.0); }
+  18%  { background: rgba(242, 237, 226, 0.14); }
+  55%  { background: rgba(242, 237, 226, 0.07); }
+  100% { background: rgba(242, 237, 226, 0.0); }
+}
+.version-row--first-flash {
+  animation: first-upload-flash 2.2s cubic-bezier(.2, .6, .2, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* A3: under reduced-motion the text stays briefly visible rather than
+     starting at opacity:0 — use a static display so AT can announce it. */
+  .version-row--first-flash { animation: none; }
+}
+
+/* Inline confirmation line inside the flashing row.
+   D1: color changed from --redline to --pencil-warm (less shouty). */
+@keyframes first-upload-cue-fade {
+  0%, 20% { opacity: 1; }
+  80%      { opacity: 0.4; }
+  100%     { opacity: 0; }
+}
+.version-first-cue {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  /* D1: --pencil-warm instead of --redline */
+  color: var(--pencil-warm);
+  margin-top: 3px;
+  animation: first-upload-cue-fade 2.2s cubic-bezier(.2, .6, .2, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* A3: stay visible (opacity:1) under reduced-motion so AT can read it */
+  .version-first-cue { animation: none; opacity: 1; }
+}
+
+/* =====================================================================
+   Ceremony Moment 2 — Approve stamp arrival ("ink hitting paper")
+   D2: The rebuilt stamp system is flat (transform: none). The keyframe
+   previously ended at rotate(-1.2deg) leaving a permanent rotation
+   artifact. Fixed to end at transform: none to match the resting state.
+   ===================================================================== */
+@keyframes stamp-arrive {
+  0%   { opacity: 0; transform: scale(0.88); }
+  60%  { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: none; }
+}
+.stamp-arrive-wrap {
+  display: inline-block;
+  animation: stamp-arrive 280ms cubic-bezier(.2, .6, .2, 1) both;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stamp-arrive-wrap { animation: none; }
+}
+
+/* The new stamp in recipient-approve uses the dot style (no border/rotate),
+   so stamp-arrive gives it a subtle scale pop instead. */
+.recipient-approve-ceremony {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.recipient-approve-confirm {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0;
+}
+
+/* =====================================================================
+   Ceremony Moment 3 — Sleeve loading skeleton
+   Matches the sleeve palette. Low-contrast shimmer, intentionally slow.
+   ===================================================================== */
+@keyframes sleeve-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.sleeve-skeleton {
+  padding: 36px clamp(20px, 4vw, 56px) 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+}
+.sleeve-skeleton-cover {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--sleeve-card) 0%,
+    var(--sleeve-elevated) 40%,
+    var(--sleeve-card) 100%
+  );
+  background-size: 400% 100%;
+  animation: sleeve-shimmer 2.4s ease-in-out infinite;
+}
+.sleeve-skeleton-title-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sleeve-skeleton-line {
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--sleeve-card) 0%,
+    var(--sleeve-elevated) 40%,
+    var(--sleeve-card) 100%
+  );
+  background-size: 400% 100%;
+  animation: sleeve-shimmer 2.4s ease-in-out infinite;
+  /* stagger so lines don't pulse in perfect sync */
+}
+.sleeve-skeleton-line--title {
+  height: 36px;
+  width: 62%;
+  animation-delay: 0.15s;
+}
+.sleeve-skeleton-line--artist {
+  height: 16px;
+  width: 38%;
+  animation-delay: 0.3s;
+}
+.sleeve-skeleton-waveform {
+  height: 64px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--sleeve-card) 0%,
+    var(--sleeve-elevated) 40%,
+    var(--sleeve-card) 100%
+  );
+  background-size: 400% 100%;
+  animation: sleeve-shimmer 2.4s ease-in-out infinite;
+  animation-delay: 0.45s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sleeve-skeleton-cover,
+  .sleeve-skeleton-line,
+  .sleeve-skeleton-waveform {
+    animation: none;
+    background: var(--sleeve-card);
+  }
+}
+
+/* =====================================================================
+   Ceremony Moment 4 — Up-next hint (sleeve, multi-song playlist)
+   Quiet persistent affordance. On-brand cream surface.
+   ===================================================================== */
+.recipient-up-next {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--sleeve-hairline);
+  margin-top: 16px;
+  /* D4: smooth appearance/disappearance (song navigation) */
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+.recipient-up-next-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.recipient-up-next-title {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--motion-fast) var(--easing), color var(--motion-fast) var(--easing);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recipient-up-next-title:hover {
+  color: var(--redline);
+  border-bottom-color: rgba(217, 40, 29, 0.4);
 }

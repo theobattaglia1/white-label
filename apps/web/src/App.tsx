@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Bell,
+  Bookmark,
+  BookmarkCheck,
   CheckCircle2,
   CircleDashed,
   GitCompare,
   History,
+  Home,
   Inbox,
   Link2,
   ListMusic,
@@ -22,14 +25,15 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VisibleNote } from "@pmw/shared";
-import { api, assetForVersion, uploadAudio, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
+import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VersionType, type VisibleNote } from "@pmw/shared";
+import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
+import { catalogIdFor, catalogNumber, computeVersionDelta, coverGradient, formatHeardDisplay, formatVersionDelta, hashHue, heardByCount, humanizeVersionType, matchesSmart } from "./utils";
 import { usePlayer } from "./player";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import type { Session } from "@supabase/supabase-js";
 
-type ViewMode = "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist";
+type ViewMode = "home" | "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
@@ -68,7 +72,7 @@ function AuthenticatedApp() {
 function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [roomPayload, setRoomPayload] = useState<RoomPayload | null>(null);
   const [songPayload, setSongPayload] = useState<SongPayload | null>(null);
-  const [mode, setMode] = useState<ViewMode>("library");
+  const [mode, setMode] = useState<ViewMode>("home");
   const [selectedSongID, setSelectedSongID] = useState("song-midnight");
   const [activeRoomID, setActiveRoomID] = useState("room-hudson-ingram-lp");
   const [activePlaylistID, setActivePlaylistID] = useState<string | null>(null);
@@ -78,6 +82,93 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [savedViews, setSavedViews] = useState<Awaited<ReturnType<typeof api.savedViews>>>([]);
   const [activeSmartViewID, setActiveSmartViewID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // === Pin state — global so all surfaces stay in sync =================
+  const [pinnedSongIDs, setPinnedSongIDs] = useState<Set<string>>(new Set());
+  const [pinnedPlaylistIDs, setPinnedPlaylistIDs] = useState<Set<string>>(new Set());
+  const [pinnedProjectIDs, setPinnedProjectIDs] = useState<Set<string>>(new Set());
+
+  async function refreshPins() {
+    try {
+      const p = await api.getMyPins();
+      setPinnedSongIDs(new Set(p.songs.map((s) => s.song_id)));
+      setPinnedPlaylistIDs(new Set(p.playlists.map((pl) => pl.playlist_id)));
+      setPinnedProjectIDs(new Set(p.projects.map((pr) => pr.project_id)));
+    } catch {
+      // Pin endpoint not yet deployed — ignore gracefully
+    }
+  }
+
+  async function toggleSongPin(songID: string) {
+    const wasPinned = pinnedSongIDs.has(songID);
+    // Optimistic update
+    setPinnedSongIDs((prev) => {
+      const next = new Set(prev);
+      if (wasPinned) next.delete(songID); else next.add(songID);
+      return next;
+    });
+    try {
+      if (wasPinned) {
+        await api.unpinSong("wsp-amf-private", songID);
+      } else {
+        await api.pinSong("wsp-amf-private", songID);
+      }
+      void refreshPins();
+    } catch {
+      // Revert optimistic update on failure
+      setPinnedSongIDs((prev) => {
+        const next = new Set(prev);
+        if (wasPinned) next.add(songID); else next.delete(songID);
+        return next;
+      });
+    }
+  }
+
+  async function togglePlaylistPin(playlistID: string) {
+    const wasPinned = pinnedPlaylistIDs.has(playlistID);
+    setPinnedPlaylistIDs((prev) => {
+      const next = new Set(prev);
+      if (wasPinned) next.delete(playlistID); else next.add(playlistID);
+      return next;
+    });
+    try {
+      if (wasPinned) {
+        await api.unpinPlaylist("wsp-amf-private", playlistID);
+      } else {
+        await api.pinPlaylist("wsp-amf-private", playlistID);
+      }
+      void refreshPins();
+    } catch {
+      setPinnedPlaylistIDs((prev) => {
+        const next = new Set(prev);
+        if (wasPinned) next.add(playlistID); else next.delete(playlistID);
+        return next;
+      });
+    }
+  }
+
+  async function toggleProjectPin(projectID: string) {
+    const wasPinned = pinnedProjectIDs.has(projectID);
+    setPinnedProjectIDs((prev) => {
+      const next = new Set(prev);
+      if (wasPinned) next.delete(projectID); else next.add(projectID);
+      return next;
+    });
+    try {
+      if (wasPinned) {
+        await api.unpinProject("wsp-amf-private", projectID);
+      } else {
+        await api.pinProject("wsp-amf-private", projectID);
+      }
+      void refreshPins();
+    } catch {
+      setPinnedProjectIDs((prev) => {
+        const next = new Set(prev);
+        if (wasPinned) next.add(projectID); else next.delete(projectID);
+        return next;
+      });
+    }
+  }
 
   async function refresh(nextSongID = selectedSongID, nextRoomID = activeRoomID) {
     try {
@@ -105,6 +196,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
 
   useEffect(() => {
     void refresh(selectedSongID, activeRoomID);
+    void refreshPins();
   }, []);
 
   const selectedSong = roomPayload?.songs.find((song) => song.song_id === selectedSongID) ?? songPayload?.song;
@@ -160,8 +252,24 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           onSelectSmartView={openSmartView}
           selectedSongID={selectedSongID}
           onSelectSong={openSong}
+          pinnedPlaylistIDs={pinnedPlaylistIDs}
+          onTogglePlaylistPin={togglePlaylistPin}
         />
         <section className="workspace-main">
+          {mode === "home" && (
+            <HomeView
+              onOpenSong={openSong}
+              onOpenProject={(id) => { setSelectedSongID(id); setMode("song"); }}
+              onOpenPlaylist={openPlaylist}
+              onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
+              pinnedSongIDs={pinnedSongIDs}
+              pinnedPlaylistIDs={pinnedPlaylistIDs}
+              pinnedProjectIDs={pinnedProjectIDs}
+              onToggleSongPin={toggleSongPin}
+              onTogglePlaylistPin={togglePlaylistPin}
+              onToggleProjectPin={toggleProjectPin}
+            />
+          )}
           {mode === "library" && (
             <LibraryView
               onOpenSong={openSong}
@@ -169,6 +277,8 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
               smartView={savedViews.find((v) => v.view_id === activeSmartViewID) ?? null}
               onClearSmart={() => setActiveSmartViewID(null)}
+              pinnedSongIDs={pinnedSongIDs}
+              onToggleSongPin={toggleSongPin}
             />
           )}
           {mode === "room" && roomPayload && (
@@ -180,7 +290,14 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           {mode === "links" && roomPayload && selectedSong && (
             <LinkManager room={roomPayload} song={selectedSong} onRefresh={() => refresh(selectedSong.song_id)} />
           )}
-          {mode === "assistant" && <AssistantPanel />}
+          {mode === "assistant" && (
+            <AssistantPanel
+              songID={selectedSongID}
+              songTitle={selectedSong?.title}
+              versionID={songPayload?.currentVersion?.version_id}
+              versionLabel={songPayload?.currentVersion?.version_label}
+            />
+          )}
           {mode === "playlist" && activePlaylistID && (
             <PlaylistView
               playlistID={activePlaylistID}
@@ -291,6 +408,8 @@ function Sidebar({
   onSelectSmartView,
   selectedSongID,
   onSelectSong,
+  pinnedPlaylistIDs = new Set(),
+  onTogglePlaylistPin,
 }: {
   mode: ViewMode;
   setMode: (mode: ViewMode) => void;
@@ -306,9 +425,12 @@ function Sidebar({
   onSelectSmartView?: (viewID: string) => void;
   selectedSongID: string;
   onSelectSong: (songID: string) => void;
+  pinnedPlaylistIDs?: Set<string>;
+  onTogglePlaylistPin?: (id: string) => void;
 }) {
   const nav = [
-    ["library", "Library", ListMusic],
+    ["home", "Home", Home],
+    ["library", "All Songs", ListMusic],
     ["inbox", "Inbox", Inbox],
     ["compare", "Compare", GitCompare],
     ["links", "Links", Link2],
@@ -350,16 +472,34 @@ function Sidebar({
           <div className="side-rule" />
           <div className="side-label">Playlists</div>
           <div className="side-list">
-            {playlists.map((p) => (
-              <button
-                key={p.playlist_id}
-                className={`side-list-item ${mode === "playlist" && activePlaylistID === p.playlist_id ? "selected" : ""}`}
-                onClick={() => onSelectPlaylist(p.playlist_id)}
-              >
-                <span className="side-title">{p.title}</span>
-                <span className="side-meta">{p.item_count} {p.item_count === 1 ? "song" : "songs"}</span>
-              </button>
-            ))}
+            {playlists.map((p) => {
+              const isPinned = pinnedPlaylistIDs.has(p.playlist_id);
+              return (
+                <button
+                  key={p.playlist_id}
+                  className={`side-list-item ${mode === "playlist" && activePlaylistID === p.playlist_id ? "selected" : ""}`}
+                  onClick={() => onSelectPlaylist(p.playlist_id)}
+                >
+                  <span className="side-info">
+                    <span className="side-title">{p.title}</span>
+                    <span className="side-meta">{p.item_count} {p.item_count === 1 ? "song" : "songs"}</span>
+                  </span>
+                  {onTogglePlaylistPin && (
+                    <span
+                      className={`pin-button ${isPinned ? "pinned" : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={isPinned ? `Unpin ${p.title}` : `Pin ${p.title}`}
+                      aria-pressed={isPinned}
+                      onClick={(e) => { e.stopPropagation(); onTogglePlaylistPin(p.playlist_id); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onTogglePlaylistPin(p.playlist_id); } }}
+                    >
+                      {isPinned ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -376,7 +516,7 @@ function Sidebar({
                 onClick={() => onSelectSmartView(v.view_id)}
               >
                 <span className="side-title">{v.name}</span>
-                <span className="side-meta">Saved query</span>
+                <span className="side-meta">saved query</span>
               </button>
             ))}
           </div>
@@ -409,18 +549,263 @@ function Sidebar({
   );
 }
 
+// =====================================================================
+//  HomeView — default landing: Pinned + Recent
+// =====================================================================
+
+function LibEmptyState({ label, hint }: { label: string; hint: string }) {
+  return (
+    <div className="lib-empty">
+      <span className="lib-empty-label">{label}</span>
+      <p className="lib-empty-hint">{hint}</p>
+    </div>
+  );
+}
+
+function HomeView({
+  onOpenSong,
+  onOpenPlaylist,
+  onToggleSongPin,
+  onTogglePlaylistPin,
+  onToggleProjectPin,
+  pinnedSongIDs,
+  pinnedPlaylistIDs,
+  pinnedProjectIDs,
+}: {
+  onOpenSong: (id: string) => void;
+  onOpenProject: (id: string) => void;
+  onOpenPlaylist: (id: string) => void;
+  onRefreshPlaylists: () => void;
+  pinnedSongIDs: Set<string>;
+  pinnedPlaylistIDs: Set<string>;
+  pinnedProjectIDs: Set<string>;
+  onToggleSongPin: (id: string) => void;
+  onTogglePlaylistPin: (id: string) => void;
+  onToggleProjectPin: (id: string) => void;
+}) {
+  const [pins, setPins] = useState<MyPinsPayload | null>(null);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.getMyPins().catch((): MyPinsPayload => ({ songs: [], playlists: [], projects: [] })),
+      api.recent("wsp-amf-private", 20).catch((): RecentItem[] => []),
+    ]).then(([p, r]) => {
+      setPins(p);
+      setRecentItems(r);
+    }).finally(() => setIsLoading(false));
+  }, []);
+
+  const totalPinned = pins ? pins.songs.length + pins.playlists.length + pins.projects.length : 0;
+
+  return (
+    <div className="home-canvas">
+      <header className="lib-hero">
+        <span className="lib-kicker">HOME</span>
+        <h1 className="lib-headline">Workspace</h1>
+        {/* Piece 7 inserts the AMF Gallery here — do not remove this div */}
+        <div className="home-hero-gallery-slot" />
+      </header>
+
+      {/* PINNED section */}
+      <section className="home-section">
+        <h2 className="home-section-head">Pinned</h2>
+        {isLoading ? (
+          <LibEmptyState label="Loading" hint="Checking what you've pinned…" />
+        ) : totalPinned === 0 ? (
+          <LibEmptyState
+            label="Nothing pinned yet"
+            hint="Pin a song, playlist, or project to keep it within reach."
+          />
+        ) : (
+          <>
+            {pins && pins.songs.length > 0 && (
+              <div className="home-pin-group">
+                <p className="home-pin-sublabel">Songs</p>
+                <div className="lib-grid">
+                  {pins.songs.map((s) => {
+                    const isPinned = pinnedSongIDs.has(s.song_id);
+                    return (
+                      <article key={s.song_id} className="lib-row">
+                        <button
+                          className="lib-row-main"
+                          onClick={() => onOpenSong(s.song_id)}
+                        >
+                          <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(s.song_id) }} />
+                          <div className="lib-row-text">
+                            <span className="lib-title">{s.title}</span>
+                            <span className="lib-meta">
+                              {s.artist_display_name}
+                              {s.project_name && <> · {s.project_name}</>}
+                            </span>
+                          </div>
+                        </button>
+                        <span className={`status-pill ${s.status === "approved" ? "saved" : ""}`}>
+                          {s.status.replace(/_/g, " ")}
+                        </span>
+                        <button
+                          className={`pin-button ${isPinned ? "pinned" : ""}`}
+                          onClick={() => onToggleSongPin(s.song_id)}
+                          title="Unpin from Home"
+                          aria-label={`Unpin ${s.title}`}
+                          aria-pressed={isPinned}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {pins && pins.playlists.length > 0 && (
+              <div className="home-pin-group">
+                <p className="home-pin-sublabel">Playlists</p>
+                <div className="lib-grid">
+                  {pins.playlists.map((pl) => {
+                    const isPinned = pinnedPlaylistIDs.has(pl.playlist_id);
+                    return (
+                      <article key={pl.playlist_id} className="lib-row">
+                        <button
+                          className="lib-row-main"
+                          onClick={() => onOpenPlaylist(pl.playlist_id)}
+                        >
+                          <div
+                            className="cover-art"
+                            aria-hidden="true"
+                            style={{ backgroundImage: coverGradient(pl.cover_seed), borderRadius: 2, width: 48, height: 48 }}
+                          />
+                          <div className="lib-row-text">
+                            <span className="lib-title">{pl.title}</span>
+                            <span className="lib-meta">{pl.item_count} {pl.item_count === 1 ? "song" : "songs"}</span>
+                          </div>
+                        </button>
+                        <button
+                          className={`pin-button ${isPinned ? "pinned" : ""}`}
+                          onClick={() => onTogglePlaylistPin(pl.playlist_id)}
+                          title="Unpin from Home"
+                          aria-label={`Unpin ${pl.title}`}
+                          aria-pressed={isPinned}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {pins && pins.projects.length > 0 && (
+              <div className="home-pin-group">
+                <p className="home-pin-sublabel">Projects</p>
+                <div className="lib-grid">
+                  {pins.projects.map((pr) => {
+                    const isPinned = pinnedProjectIDs.has(pr.project_id);
+                    return (
+                      <article key={pr.project_id} className="lib-row">
+                        <div className="lib-row-main" style={{ cursor: "default" }}>
+                          <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(pr.project_id) }} />
+                          <div className="lib-row-text">
+                            <span className="lib-title">{pr.title}</span>
+                            <span className="lib-meta">{pr.project_type} · {pr.song_count} {pr.song_count === 1 ? "song" : "songs"}</span>
+                          </div>
+                        </div>
+                        <button
+                          className={`pin-button ${isPinned ? "pinned" : ""}`}
+                          onClick={() => onToggleProjectPin(pr.project_id)}
+                          title="Unpin from Home"
+                          aria-label={`Unpin ${pr.title}`}
+                          aria-pressed={isPinned}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* RECENT section */}
+      <section className="home-section">
+        <h2 className="home-section-head">Recent</h2>
+        {isLoading ? (
+          <LibEmptyState label="Loading" hint="Fetching recent activity…" />
+        ) : recentItems.length === 0 ? (
+          <LibEmptyState label="Nothing recent" hint="Open a song, playlist, or project and it will appear here." />
+        ) : (
+          <div className="lib-grid">
+            {recentItems.slice(0, 12).map((item) => (
+              <article key={`${item.entity_type}-${item.entity_id}`} className="lib-row">
+                <button
+                  className="lib-row-main"
+                  onClick={() => {
+                    if (item.entity_type === "song") onOpenSong(item.entity_id);
+                    else if (item.entity_type === "playlist") onOpenPlaylist(item.entity_id);
+                  }}
+                >
+                  <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.entity_id) }} />
+                  <div className="lib-row-text">
+                    <span className="lib-title">{item.title}</span>
+                    <span className="lib-meta">
+                      {item.artist_display_name}
+                      {item.project_name && <> · {item.project_name}</>}
+                      {item.version_label && <> · {item.version_label}</>}
+                    </span>
+                  </div>
+                </button>
+                <span className="lib-when">{formatRelative(item.last_activity_at)}</span>
+                {item.status && (
+                  <span className={`status-pill ${item.status === "approved" ? "saved" : ""}`}>
+                    {item.status.replace(/_/g, " ")}
+                  </span>
+                )}
+                {item.entity_type === "song" && (
+                  <button
+                    className={`pin-button ${pinnedSongIDs.has(item.entity_id) ? "pinned" : ""}`}
+                    onClick={() => onToggleSongPin(item.entity_id)}
+                    title={pinnedSongIDs.has(item.entity_id) ? "Unpin" : "Pin to Home"}
+                    aria-label={pinnedSongIDs.has(item.entity_id) ? `Unpin ${item.title}` : `Pin ${item.title} to Home`}
+                    aria-pressed={pinnedSongIDs.has(item.entity_id)}
+                  >
+                    {pinnedSongIDs.has(item.entity_id) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <footer className="lib-footer-metrics">
+        {totalPinned} pinned · {recentItems.length} recent
+      </footer>
+    </div>
+  );
+}
+
 function LibraryView({
   onOpenSong,
   playlists,
   onRefreshPlaylists,
   smartView = null,
   onClearSmart,
+  pinnedSongIDs = new Set(),
+  onToggleSongPin,
 }: {
   onOpenSong: (songID: string) => void;
   playlists: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists: () => void;
   smartView?: { view_id: string; name: string; filter: Record<string, unknown> } | null;
   onClearSmart?: () => void;
+  pinnedSongIDs?: Set<string>;
+  onToggleSongPin?: (songID: string) => void;
 }) {
   const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
   const [filter, setFilter] = useState<"all" | "approved" | "in-review" | "ready">("all");
@@ -431,22 +816,9 @@ function LibraryView({
 
   useEffect(() => { void api.workspaceLibrary().then(setLibrary); }, []);
 
-  function matchesSmart(item: Awaited<ReturnType<typeof api.workspaceLibrary>>[number]): boolean {
-    if (!smartView) return true;
-    const f = smartView.filter;
-    if (typeof f.status === "string" && item.song.status !== f.status) return false;
-    if (typeof f.release_readiness === "string" && item.song.release_readiness_status !== f.release_readiness) return false;
-    // For now, "missing": ["instrumental", "stems"] is interpreted as
-    // "show me songs whose release_readiness_status is not 'ready'" since
-    // we don't have a deliverables computation here in the client.
-    // Sufficient signal for the demo of the SavedView surfacing.
-    if (Array.isArray(f.missing) && item.song.release_readiness_status === "ready") return false;
-    return true;
-  }
-
   const lowerSearch = search.trim().toLowerCase();
   const filtered = library
-    .filter(matchesSmart)
+    .filter((item) => !smartView || matchesSmart(item, smartView.filter))
     .filter((item) => {
       if (filter === "approved") return item.song.status === "approved";
       if (filter === "in-review") return item.song.status === "in_review" || item.song.status === "revision_requested";
@@ -486,9 +858,9 @@ function LibraryView({
           <h1>{smartView ? smartView.name : "All work in this workspace."}</h1>
         </div>
         <div className="metric-strip">
-          <Metric label={smartView ? "Match" : "Songs"} value={filtered.length} />
-          <Metric label="Approved" value={library.filter((i) => i.song.status === "approved").length} />
-          <Metric label="Rooms" value={new Set(library.map((i) => i.room?.room_id).filter(Boolean)).size} />
+          <Metric label={smartView ? "match" : "songs"} value={filtered.length} />
+          <Metric label="approved" value={library.filter((i) => i.song.status === "approved").length} />
+          <Metric label="rooms" value={new Set(library.map((i) => i.room?.room_id).filter(Boolean)).size} />
         </div>
       </div>
 
@@ -521,7 +893,7 @@ function LibraryView({
           ] as const).map(([id, label]) => (
             <button
               key={id}
-              className={`library-filter ${filter === id ? "on" : ""}`}
+              className={`pill-button ${filter === id ? "on" : ""}`}
               onClick={() => setFilter(id)}
               aria-pressed={filter === id}
             >
@@ -564,6 +936,20 @@ function LibraryView({
               >
                 <Plus size={16} />
               </button>
+              {onToggleSongPin && (() => {
+                const isPinned = pinnedSongIDs.has(song.song_id);
+                return (
+                  <button
+                    className={`pin-button ${isPinned ? "pinned" : ""}`}
+                    onClick={() => onToggleSongPin(song.song_id)}
+                    title={isPinned ? "Unpin" : "Pin to Home"}
+                    aria-label={isPinned ? `Unpin ${song.title}` : `Pin ${song.title} to Home`}
+                    aria-pressed={isPinned}
+                  >
+                    {isPinned ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                  </button>
+                );
+              })()}
               {addingFor === song.song_id && (
                 <div className="library-add-menu" role="menu">
                   <p className="eyebrow">ADD TO PLAYLIST</p>
@@ -783,7 +1169,7 @@ function RoomView({ payload, onOpenSong }: { payload: RoomPayload; onOpenSong: (
         <div className="metric-strip">
           <Metric label="Songs" value={payload.songs.length} />
           <Metric label="Versions" value={payload.versions.length} />
-          <Metric label="Open Notes" value={payload.notes.filter((note) => note.status === "open").length} />
+          <Metric label="open notes" value={payload.notes.filter((note) => note.status === "open").length} />
         </div>
       </div>
       <div className="song-table">
@@ -828,6 +1214,11 @@ function SongWorkspace({
   const [uploadingPct, setUploadingPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingPromote, setPendingPromote] = useState<Version | null>(null);
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  // Moment 1: track the ID of the first-ever version after upload so VersionStack
+  // can briefly flash that row. Cleared after ~2 s.
+  const [firstUploadFlashID, setFirstUploadFlashID] = useState<string | null>(null);
+  const firstUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useMemo(() => ({ current: null as HTMLInputElement | null }), []);
   const player = usePlayer();
 
@@ -847,26 +1238,36 @@ function SongWorkspace({
   async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Reset input so re-selecting the same file fires onChange next time
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    // Show the type picker before committing the upload
+    setPendingUploadFile(file);
+  }
+
+  async function commitUpload(file: File, label: string, type: VersionType) {
+    const wasFirst = payload.versions.length === 0;
     setUploadingPct(0);
     setUploadError(null);
     try {
       await uploadAudio(
         file,
-        {
-          songExternalId: payload.song.song_id,
-          versionLabel: `Mix v${payload.versions.length + 1}`,
-          versionType: "mix",
-        },
+        { songExternalId: payload.song.song_id, versionLabel: label, versionType: type },
         (pct) => setUploadingPct(pct)
       );
       setUploadingPct(null);
+      // Moment 1: if this was the very first version, schedule a flash on that row
+      // after the refresh brings back the new version list.
+      if (wasFirst) {
+        // Set the sentinel; the effect watching resolvedFlashID will start the
+        // 2.2 s timer only once the real version id resolves (C2).
+        setFirstUploadFlashID("__pending_first__");
+      }
       onRefresh();
     } catch (err) {
       setUploadingPct(null);
-      setUploadError(err instanceof Error ? err.message : String(err));
-    } finally {
-      // reset input so re-selecting the same file fires onChange
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      const raw = err instanceof Error ? err.message : String(err);
+      console.error("Upload failed:", raw);
+      setUploadError("Couldn't upload that file. Check the format and try again.");
     }
   }
 
@@ -875,6 +1276,23 @@ function SongWorkspace({
   const approvedVersion = payload.versions.find((v) => v.version_id === payload.song.approved_version_id);
   const catalogId = catalogIdFor(payload.song.song_id);
   const versionLabel = activeVersion?.version_label ?? "v1";
+
+  // Moment 1: resolve sentinel to actual first-version ID once it's available.
+  // C2: only start the 2.2s flash window AFTER the real id resolves from the
+  // effect that watches payload.versions — not immediately after the upload call.
+  const resolvedFlashID = firstUploadFlashID === "__pending_first__"
+    ? (payload.versions.length === 1 ? payload.versions[0].version_id : null)
+    : firstUploadFlashID;
+
+  // C2: drive the timer off the resolved ID, not the sentinel.
+  useEffect(() => {
+    if (!resolvedFlashID || resolvedFlashID === "__pending_first__") return;
+    if (firstUploadTimerRef.current) clearTimeout(firstUploadTimerRef.current);
+    firstUploadTimerRef.current = setTimeout(() => setFirstUploadFlashID(null), 2200);
+    return () => {
+      if (firstUploadTimerRef.current) clearTimeout(firstUploadTimerRef.current);
+    };
+  }, [resolvedFlashID]);
 
   return (
     <div className="view-stack">
@@ -918,22 +1336,26 @@ function SongWorkspace({
                 {activeAsset?.loudness_lufs && <span>{activeAsset.loudness_lufs} LUFS</span>}
                 {activeAsset?.mime_type && <span>{activeAsset.mime_type.replace("audio/", "").toUpperCase()}</span>}
               </div>
-              <div className="versions">
+              <div className="versions" role="group" aria-label="Version stack">
                 <h6>Stack</h6>
-                {payload.versions.map((v) => (
-                  <button
-                    key={v.version_id}
-                    className={`v ${v.version_id === activeVersion?.version_id ? "cur" : ""}`}
-                    onClick={() => {
-                      setActiveVersionID(v.version_id);
-                      const a = assetForVersion(payload.assets, v);
-                      if (a) player.play(payload.song, v, a);
-                    }}
-                  >
-                    {v.version_label ?? `v${v.version_number}`}
-                    {v.is_current ? " · current" : ""}
-                  </button>
-                ))}
+                {payload.versions.map((v) => {
+                  const isCur = v.version_id === activeVersion?.version_id;
+                  return (
+                    <button
+                      key={v.version_id}
+                      className={`v ${isCur ? "cur" : ""}`}
+                      aria-current={isCur ? "true" : undefined}
+                      onClick={() => {
+                        setActiveVersionID(v.version_id);
+                        const a = assetForVersion(payload.assets, v);
+                        if (a) player.play(payload.song, v, a);
+                      }}
+                    >
+                      {v.version_label ?? `v${v.version_number}`}
+                      {v.is_current ? " · current" : ""}
+                    </button>
+                  );
+                })}
               </div>
               <div className="actions">
                 <button
@@ -1028,6 +1450,7 @@ function SongWorkspace({
         <VersionStack
           payload={payload}
           activeVersionID={activeVersion?.version_id}
+          flashVersionID={resolvedFlashID ?? undefined}
           onSelect={(version) => {
             const asset = assetForVersion(payload.assets, version);
             setActiveVersionID(version.version_id);
@@ -1062,6 +1485,18 @@ function SongWorkspace({
               setPendingPromote(null);
               onRefresh();
             }}
+          />
+        )}
+        {pendingUploadFile && (
+          <UploadTypePicker
+            file={pendingUploadFile}
+            defaultLabel={`${humanizeVersionType(payload.versions.at(-1)?.type ?? "mix")} v${payload.versions.length + 1}`}
+            defaultType={payload.versions.at(-1)?.type ?? "mix"}
+            onConfirm={(label, type) => {
+              setPendingUploadFile(null);
+              void commitUpload(pendingUploadFile, label, type);
+            }}
+            onCancel={() => setPendingUploadFile(null)}
           />
         )}
         <NotesPanel notes={payload.notes} onRefresh={onRefresh} />
@@ -1141,6 +1576,139 @@ function AddToPlaylistMenu({
   );
 }
 
+const VERSION_TYPES: VersionType[] = [
+  "mix", "master", "demo", "rough", "clean", "explicit", "instrumental",
+  "acapella", "tv_track", "sped_up", "slowed", "alt_arrangement", "reference", "stem_derived",
+];
+
+function filenameStem(name: string): string {
+  return name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+}
+
+function UploadTypePicker({
+  file,
+  defaultLabel,
+  defaultType = "mix",
+  onConfirm,
+  onCancel,
+}: {
+  file: File;
+  defaultLabel: string;
+  /** P2: default type = most-recent existing version's type, caller supplies it. */
+  defaultType?: VersionType;
+  onConfirm: (label: string, type: VersionType) => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState(defaultLabel);
+  const [type, setType] = useState<VersionType>(defaultType);
+  // A2: show inline feedback on cancel
+  const [cancelled, setCancelled] = useState(false);
+
+  // A1: focus trap + Escape handler
+  const firstFieldRef = useRef<HTMLInputElement>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    // Remember what had focus before the dialog opened so we can restore it.
+    triggerRef.current = document.activeElement as HTMLElement | null;
+    firstFieldRef.current?.focus();
+    return () => { triggerRef.current?.focus(); };
+  }, []);
+
+  function handleBackdropKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") { e.preventDefault(); handleCancel(); }
+    // Tab trap
+    if (e.key === "Tab") {
+      const focusable = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(
+        'input, select, button:not([disabled])'
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first?.focus();
+      }
+    }
+  }
+
+  function handleCancel() {
+    // A2: show the cancel message briefly before unmounting.
+    // We call onCancel() immediately but setCancelled so if the component
+    // isn't unmounted synchronously the message appears. Parent controls timing.
+    setCancelled(true);
+    // Give React one paint to show the cancelled state before the parent
+    // removes this component. If the parent unmounts immediately this is
+    // a no-op (React handles it safely).
+    setTimeout(onCancel, 40);
+  }
+
+  return (
+    <div
+      className="carry-triage-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="upload-picker-title"
+      onKeyDown={handleBackdropKeyDown}
+      onClick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}
+    >
+      <div className="carry-triage upload-picker">
+        <header>
+          <p className="eyebrow">NEW REVISION</p>
+          <h2 id="upload-picker-title">{filenameStem(file.name)}</h2>
+          {/* Copy: updated instruction text */}
+          <p className="muted">Name this version and choose its type.</p>
+        </header>
+        <div className="upload-picker-fields">
+          <label className="upload-picker-field">
+            <span className="upload-picker-field-label">Label</span>
+            <input
+              ref={firstFieldRef}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && label.trim()) onConfirm(label.trim(), type); }}
+              placeholder="e.g. Mix v3"
+              autoFocus
+            />
+          </label>
+          <label className="upload-picker-field">
+            <span className="upload-picker-field-label">Type</span>
+            <select value={type} onChange={(e) => setType(e.target.value as VersionType)}>
+              {/* Copy: use humanizeVersionType */}
+              {VERSION_TYPES.map((t) => (
+                <option key={t} value={t}>{humanizeVersionType(t)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <footer>
+          <div className="footer-meta">{file.name}</div>
+          <div className="footer-actions">
+            {/* A2: inline note on cancel — visible for the brief 40ms before unmount */}
+            {cancelled && (
+              <span className="muted" style={{ fontSize: 11 }}>
+                Upload cancelled — choose a file to try again.
+              </span>
+            )}
+            <button ref={cancelBtnRef} type="button" className="chrome-button" onClick={handleCancel}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="accent-button"
+              onClick={() => { if (label.trim()) onConfirm(label.trim(), type); }}
+              disabled={!label.trim()}
+            >
+              Upload
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 function CarryForwardTriage({
   payload,
   targetVersion,
@@ -1174,9 +1742,43 @@ function CarryForwardTriage({
     }
   }
 
+  // A1: Escape + focus trap for CarryForwardTriage
+  const triageRef = useRef<HTMLDivElement>(null);
+  const triageTriggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    triageTriggerRef.current = document.activeElement as HTMLElement | null;
+    const firstBtn = triageRef.current?.querySelector<HTMLElement>("button:not([disabled])");
+    firstBtn?.focus();
+    return () => { triageTriggerRef.current?.focus(); };
+  }, []);
+
+  function handleTriageKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape" && !submitting) { e.preventDefault(); onCancel(); }
+    if (e.key === "Tab") {
+      const focusable = triageRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled])'
+      ) ?? [];
+      const arr = Array.from(focusable);
+      const first = arr[0];
+      const last = arr[arr.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first?.focus();
+      }
+    }
+  }
+
   return (
-    <div className="carry-triage-backdrop" role="dialog" aria-modal="true" aria-labelledby="carry-triage-title">
-      <div className="carry-triage">
+    <div
+      className="carry-triage-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="carry-triage-title"
+      onKeyDown={handleTriageKeyDown}
+      onClick={(e) => { if (e.target === e.currentTarget && !submitting) onCancel(); }}
+    >
+      <div className="carry-triage" ref={triageRef}>
         <header>
           <p className="eyebrow">PROMOTE TO CURRENT</p>
           <h2 id="carry-triage-title">{targetVersion.version_label}</h2>
@@ -1236,14 +1838,26 @@ function CarryForwardTriage({
 function VersionStack({
   payload,
   activeVersionID,
+  flashVersionID,
   onSelect,
   onSetCurrent,
 }: {
   payload: SongPayload;
   activeVersionID?: string;
+  flashVersionID?: string;
   onSelect: (version: Version) => void;
   onSetCurrent: (versionID: string) => void;
 }) {
+  // PF1: sort once and build the asset Map once — not per row.
+  const sortedVersions = useMemo(
+    () => [...payload.versions].sort((a, b) => a.version_number - b.version_number),
+    [payload.versions]
+  );
+  const assetMap = useMemo(
+    () => new Map(payload.assets.map((a) => [a.asset_id, a])),
+    [payload.assets]
+  );
+
   return (
     <section className="rail-panel">
       <div className="panel-topline">
@@ -1253,14 +1867,23 @@ function VersionStack({
         </div>
         <History size={18} />
       </div>
-      {payload.versions.map((version) => {
-        const asset = assetForVersion(payload.assets, version);
+      {/* Copy: empty state */}
+      {payload.versions.length === 0 && (
+        <p className="muted" style={{ padding: "12px 0" }}>No versions yet.</p>
+      )}
+      {sortedVersions.map((version) => {
+        const asset = assetMap.get(version.file_asset_id);
+        // PF1: pass pre-sorted list + pre-built Map
+        const delta = computeVersionDelta(version, sortedVersions, assetMap);
+        const deltaStr = formatVersionDelta(delta);
+        const isFlashing = version.version_id === flashVersionID;
+        // A11Y A3: flash cue needs aria-live
         return (
           <div
             key={version.version_id}
             role="button"
             tabIndex={0}
-            className={`version-row ${version.version_id === activeVersionID ? "selected" : ""}`}
+            className={`version-row ${version.version_id === activeVersionID ? "selected" : ""} ${isFlashing ? "version-row--first-flash" : ""}`}
             onClick={() => onSelect(version)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") onSelect(version);
@@ -1269,7 +1892,18 @@ function VersionStack({
             <div className="ver-num">{String(version.version_number).padStart(2, "0")}</div>
             <div className="version-body">
               <span>{version.version_label}</span>
-              <small>{version.type} · {asset?.loudness_lufs} LUFS · {formatTimestamp(asset?.duration_ms)}</small>
+              {/* Copy: humanizeVersionType; null-guard loudness (no "undefined LUFS") */}
+              <small>
+                {humanizeVersionType(version.type)}
+                {asset?.loudness_lufs != null ? ` · ${asset.loudness_lufs} LUFS` : ""}
+                {asset?.duration_ms != null ? ` · ${formatTimestamp(asset.duration_ms)}` : ""}
+              </small>
+              {deltaStr && <span className="version-delta">{deltaStr}</span>}
+              {isFlashing && (
+                <span className="version-first-cue" role="status" aria-live="polite">
+                  v1 is in the stack.
+                </span>
+              )}
             </div>
             <div className="version-state">
               {version.version_id === payload.song.approved_version_id && (
@@ -1294,48 +1928,74 @@ function VersionStack({
 }
 
 function NotesPanel({ notes, onRefresh }: { notes: VisibleNote[]; onRefresh: () => void }) {
+  const openCurrent = notes.filter((n) => n.status === "open" && !n.is_carried);
+  const openCarried = notes.filter((n) => n.status === "open" && n.is_carried);
+  const resolved = notes.filter((n) => n.status === "resolved");
+
+  function renderNote(note: VisibleNote) {
+    return (
+      <article key={note.note_id} className={`note-item ${note.is_collapsed ? "collapsed" : ""}`}>
+        <div className="note-head">
+          <span>{note.author_guest_label ?? "Workspace"}</span>
+          <span>{note.is_carried ? `carried from ${note.anchor_version_label}` : `from ${note.anchor_version_label}`}</span>
+        </div>
+        <p>{note.body}</p>
+        <div className="note-foot">
+          <span className={note.approximate_timestamp ? "approx" : ""}>
+            {note.approximate_timestamp ? "≈ " : ""}
+            {formatTimestamp(note.timestamp_start_ms)}
+            {note.approximate_timestamp ? ", position may have shifted" : ""}
+          </span>
+          {note.status === "open" ? (
+            <button className="text-button" onClick={async () => {
+              await api.patchNote(note.note_id, { status: "resolved" });
+              onRefresh();
+            }}>
+              Resolve
+            </button>
+          ) : (
+            <button className="text-button" onClick={async () => {
+              await api.patchNote(note.note_id, { status: "open" });
+              onRefresh();
+            }}>
+              Reopen
+            </button>
+          )}
+        </div>
+      </article>
+    );
+  }
+
   return (
     <section className="rail-panel">
       <div className="panel-topline">
         <div>
           <p className="eyebrow">NOTES</p>
-          <h2>{notes.filter((note) => note.status === "open").length} Open</h2>
+          <h2>{openCurrent.length + openCarried.length} Open</h2>
         </div>
         <MessageSquare size={18} />
       </div>
-      <div className="note-list">
-        {notes.map((note) => (
-          <article key={note.note_id} className={`note-item ${note.is_collapsed ? "collapsed" : ""}`}>
-            <div className="note-head">
-              <span>{note.author_guest_label ?? "Workspace"}</span>
-              <span>{note.is_carried ? `carried from ${note.anchor_version_label}` : `from ${note.anchor_version_label}`}</span>
-            </div>
-            <p>{note.body}</p>
-            <div className="note-foot">
-              <span className={note.approximate_timestamp ? "approx" : ""}>
-                {note.approximate_timestamp ? "≈ " : ""}
-                {formatTimestamp(note.timestamp_start_ms)}
-                {note.approximate_timestamp ? ", position may have shifted" : ""}
-              </span>
-              {note.status === "open" ? (
-                <button className="text-button" onClick={async () => {
-                  await api.patchNote(note.note_id, { status: "resolved" });
-                  onRefresh();
-                }}>
-                  Resolve
-                </button>
-              ) : (
-                <button className="text-button" onClick={async () => {
-                  await api.patchNote(note.note_id, { status: "open" });
-                  onRefresh();
-                }}>
-                  Reopen
-                </button>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
+      {openCurrent.length > 0 && (
+        <div className="note-section">
+          <p className="note-section-label">Open on this version</p>
+          <div className="note-list">{openCurrent.map(renderNote)}</div>
+        </div>
+      )}
+      {openCarried.length > 0 && (
+        <div className="note-section note-section--carried">
+          <p className="note-section-label">Carried from earlier</p>
+          <div className="note-list">{openCarried.map(renderNote)}</div>
+        </div>
+      )}
+      {resolved.length > 0 && (
+        <div className="note-section">
+          <p className="note-section-label">Resolved</p>
+          <div className="note-list">{resolved.map(renderNote)}</div>
+        </div>
+      )}
+      {notes.length === 0 && (
+        <p className="muted" style={{ padding: "12px 0" }}>No notes yet.</p>
+      )}
     </section>
   );
 }
@@ -1471,16 +2131,20 @@ function CompareDeck({
           {isPlayingThis ? <Pause size={17} /> : <Play size={17} />}
         </button>
       </div>
-      <div className="deck-version-pills">
-        {versions.map((item) => (
-          <button
-            key={item.version_id}
-            className={`v ${item.version_id === selectedID ? "cur" : ""}`}
-            onClick={() => { onActivate(); onSelect(item.version_id); }}
-          >
-            {item.version_label}
-          </button>
-        ))}
+      <div className="deck-version-pills" role="group" aria-label={`Deck ${title} versions`}>
+        {versions.map((item) => {
+          const isCur = item.version_id === selectedID;
+          return (
+            <button
+              key={item.version_id}
+              className={`v ${isCur ? "cur" : ""}`}
+              aria-current={isCur ? "true" : undefined}
+              onClick={() => { onActivate(); onSelect(item.version_id); }}
+            >
+              {item.version_label}
+            </button>
+          );
+        })}
       </div>
       <Waveform peaks={asset?.waveform_peaks ?? []} positionMs={player.positionMs} durationMs={asset?.duration_ms ?? 1} onSeek={player.seek} />
       <div className="time-row">
@@ -1565,6 +2229,36 @@ type InboxFilter = "open" | "saved" | "passed";
 
 type RoutedLink = { songID: string; memberName: string; token: string };
 
+const INBOX_STORAGE_KEY = "pmw-inbox-triage-wsp-amf-private";
+
+function readInboxStorage(): { saved: string[]; passed: string[] } {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return { saved: [], passed: [] };
+    const raw = localStorage.getItem(INBOX_STORAGE_KEY);
+    if (!raw) return { saved: [], passed: [] };
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== "object" || parsed === null) return { saved: [], passed: [] };
+    const p = parsed as Record<string, unknown>;
+    const saved = Array.isArray(p.saved) ? (p.saved as unknown[]).filter((v) => typeof v === "string") as string[] : [];
+    const passed = Array.isArray(p.passed) ? (p.passed as unknown[]).filter((v) => typeof v === "string") as string[] : [];
+    return { saved, passed };
+  } catch {
+    return { saved: [], passed: [] };
+  }
+}
+
+function writeInboxStorage(saved: Set<string>, passed: Set<string>) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    localStorage.setItem(INBOX_STORAGE_KEY, JSON.stringify({
+      saved: Array.from(saved),
+      passed: Array.from(passed),
+    }));
+  } catch {
+    // Storage full or unavailable — fail silently
+  }
+}
+
 function InboxView({
   items,
   onOpenSong,
@@ -1572,8 +2266,8 @@ function InboxView({
   items: Awaited<ReturnType<typeof api.inbox>>;
   onOpenSong: (songID: string) => void;
 }) {
-  const [savedIDs, setSavedIDs] = useState<Set<string>>(new Set());
-  const [passedIDs, setPassedIDs] = useState<Set<string>>(new Set());
+  const [savedIDs, setSavedIDs] = useState<Set<string>>(() => new Set(readInboxStorage().saved));
+  const [passedIDs, setPassedIDs] = useState<Set<string>>(() => new Set(readInboxStorage().passed));
   const [filter, setFilter] = useState<InboxFilter>("open");
   const [routingSong, setRoutingSong] = useState<Awaited<ReturnType<typeof api.inbox>>[number] | null>(null);
   const [routedLinks, setRoutedLinks] = useState<RoutedLink[]>([]);
@@ -1582,6 +2276,11 @@ function InboxView({
   useEffect(() => {
     void api.workspaceMembers().then(setMembers).catch(() => setMembers([]));
   }, []);
+
+  // Sync triage decisions to localStorage whenever either set changes
+  useEffect(() => {
+    writeInboxStorage(savedIDs, passedIDs);
+  }, [savedIDs, passedIDs]);
 
   function save(songID: string) {
     setSavedIDs((s) => { const n = new Set(s); n.add(songID); return n; });
@@ -1619,18 +2318,17 @@ function InboxView({
         </div>
         <div className="metric-strip">
           <Metric label="New" value={items.filter((item) => item.new_since_last_listen).length} />
-          <Metric label="Offline" value={2} />
         </div>
       </div>
       <div className="inbox-filter">
         {(["open", "saved", "passed"] as const).map((f) => (
           <button
             key={f}
-            className={`inbox-filter-chip ${filter === f ? "on" : ""}`}
+            className={`pill-button compact ${filter === f ? "on" : ""}`}
             onClick={() => setFilter(f)}
             aria-pressed={filter === f}
           >
-            {f.toUpperCase()} <span className="count">{counts[f]}</span>
+            {f.charAt(0).toUpperCase() + f.slice(1)} <span className="count">{counts[f]}</span>
           </button>
         ))}
       </div>
@@ -1638,8 +2336,8 @@ function InboxView({
         {filteredItems.length === 0 ? (
           <div className="inbox-empty">
             {filter === "open" && "Inbox zero. Everything's been triaged."}
-            {filter === "saved" && "Nothing saved yet. Hit ✓ on a row to keep it for a listening session."}
-            {filter === "passed" && "Nothing passed. Hit × to dismiss a submission."}
+            {filter === "saved" && "Nothing saved. Mark a row to keep it for later."}
+            {filter === "passed" && "Nothing passed. Dismiss a submission to move it here."}
           </div>
         ) : (
           filteredItems.map((item) => {
@@ -1777,7 +2475,7 @@ function RouteMemberPicker({
         </header>
         <ul className="triage-list route-list">
           {members.length === 0 ? (
-            <li className="route-empty">No workspace members loaded.</li>
+            <li className="route-empty">Couldn't load collaborators. Check your connection and try again.</li>
           ) : members.map((m) => (
             <li key={m.user_id}>
               <button
@@ -1822,6 +2520,19 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
     void api.roomAnalytics(room.room.room_id).then(setAnalytics).catch(() => setAnalytics([]));
   }, [room.room.room_id]);
 
+  // PF2: build analytics Map once, not per link
+  const analyticsByLink = useMemo(() => {
+    type AnalyticsEvent = (typeof analytics)[number];
+    const map = new Map<string, AnalyticsEvent[]>();
+    for (const ev of analytics) {
+      if (!ev.link_id) continue;
+      const bucket = map.get(ev.link_id) ?? [];
+      bucket.push(ev);
+      map.set(ev.link_id, bucket);
+    }
+    return map;
+  }, [analytics]);
+
   async function createRoomLink() {
     const result = await api.createLink({
       workspace_id: room.room.workspace_id,
@@ -1840,47 +2551,70 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
     onRefresh();
   }
 
+  // PF2: memoize overall heard count across all links
+  const overallHeard = useMemo(() => heardByCount(analytics), [analytics]);
+
   return (
     <div className="view-stack">
       <div className="section-head">
         <div>
           <p className="eyebrow">SHARE LINKS</p>
-          <h1>Policy Engine</h1>
+          <h1>Share links</h1>
         </div>
         <button className="accent-button" onClick={createRoomLink}>
           <Plus size={16} />
           Create Link
         </button>
       </div>
+      {overallHeard.heard > 0 && (
+        <p className="heard-summary">
+          {overallHeard.heard} of {overallHeard.total} {overallHeard.total === 1 ? "recipient" : "recipients"} listened
+        </p>
+      )}
       {latestToken && <div className="notice-line">/shared/{latestToken}</div>}
       <div className="link-list">
-        {links.map((link) => (
-          <article key={link.link_id} className="link-row">
-            <div className="link-body">
-              <p className="eyebrow">{link.target_type.toUpperCase()}</p>
-              <h2>{link.link_name ?? link.link_id}</h2>
-              <div className="hero-meta">
-                <span>{link.access_mode.replace("_", " ")}</span>
-                <span>{link.version_policy.replace("_", " ")}</span>
-                <span>{link.download_policy}</span>
-                <span>{link.watermark_enabled ? "watermark tracing" : "watermark off"}</span>
+        {links.map((link) => {
+          // PF2: use pre-built Map instead of filtering analytics per link
+          const linkEvents = analyticsByLink.get(link.link_id) ?? [];
+          const heard = heardByCount(linkEvents);
+          // T2: honest display — identity-required gets ratio, public gets play count
+          const heardDisplay = formatHeardDisplay(heard, link.requires_identity);
+          return (
+            <article key={link.link_id} className="link-row">
+              <div className="link-body">
+                <div className="link-title-row">
+                  <p className="eyebrow">{link.target_type.toUpperCase()}</p>
+                  {/* T2: use honest display form, never a false denominator on public links */}
+                  {heardDisplay && (
+                    <span className="heard-badge" title={heardDisplay}>
+                      {heardDisplay}
+                    </span>
+                  )}
+                </div>
+                <h2>{link.link_name ?? link.link_id}</h2>
+                <div className="hero-meta">
+                  <span>{link.access_mode.replace("_", " ")}</span>
+                  <span>{link.version_policy.replace("_", " ")}</span>
+                  <span>{link.download_policy}</span>
+                  <span>{link.watermark_enabled ? "watermark tracing" : "watermark off"}</span>
+                </div>
+                <LinkActivity events={linkEvents} versions={room.versions} songs={room.songs} />
               </div>
-              <LinkActivity events={analytics.filter((e) => e.link_id === link.link_id)} versions={room.versions} songs={room.songs} />
-            </div>
-            <div className="row-actions">
-              <a className="chrome-button" href={`/shared/${link.demo_token ?? ""}`}>
-                <Link2 size={15} />
-                Open
-              </a>
-              <button className="icon-button" title="Revoke" onClick={async () => {
-                await api.revokeLink(link.link_id);
-                onRefresh();
-              }}>
-                <LockKeyhole size={16} />
-              </button>
-            </div>
-          </article>
-        ))}
+              <div className="row-actions">
+                <a className="chrome-button" href={`/shared/${link.demo_token ?? ""}`}>
+                  <Link2 size={15} />
+                  Open
+                </a>
+                <button className="icon-button" title="Revoke" onClick={async () => {
+                  await api.revokeLink(link.link_id);
+                  onRefresh();
+                }}>
+                  <LockKeyhole size={16} />
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </div>
   );
@@ -1962,43 +2696,7 @@ function formatRelative(iso: string): string {
   return `${weeks}w ago`;
 }
 
-/** Derive a stable hue (0–360) from a string id so every song has a distinct face. */
-function hashHue(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 360;
-}
-
-/** Derive a stable 4-digit catalog number from a song id. FNV-1a 64-bit,
- *  bit-for-bit matching iOS's `PMWSong.catalogNumber` so the same song
- *  reads as the same catalog number on both surfaces. Uses BigInt to
- *  avoid JS's 53-bit precision limit. */
-function catalogNumber(id: string): string {
-  let hash = 0xcbf29ce484222325n; // FNV-1a 64-bit offset basis
-  const prime = 0x100000001b3n; // FNV-1a 64-bit prime
-  const mask = 0xffffffffffffffffn; // 64-bit unsigned wrap
-  const bytes = new TextEncoder().encode(id);
-  for (const byte of bytes) {
-    hash = ((hash ^ BigInt(byte)) * prime) & mask;
-  }
-  const n = Number(hash % 9000n) + 1000;
-  return String(n);
-}
-
-function catalogIdFor(songId: string): string {
-  return `WL · ${catalogNumber(songId)}`;
-}
-
-/** Build a sleeve-mode gradient string keyed off the song id. */
-function coverGradient(id: string): string {
-  const hue = hashHue(id);
-  const angle = 130 + (hashHue(id + "a") % 40);
-  return `linear-gradient(${angle}deg,
-    hsl(${(hue + 200) % 360} 8% 14%) 0%,
-    hsl(${(hue + 30) % 360} 18% 32%) 32%,
-    hsl(${hue} 28% 56%) 66%,
-    hsl(${(hue + 25) % 360} 38% 78%) 100%)`;
-}
+// hashHue, catalogNumber, catalogIdFor, coverGradient imported from ./utils
 
 /** Simple on-brand toggle switch — used in place of native checkboxes. */
 function ToggleSwitch({
@@ -2030,41 +2728,70 @@ function roomPayloadSongLinks(room: RoomPayload, songID: string): ShareLink[] {
   return room.links.filter((link) => link.target_type === "song" && link.target_id === songID);
 }
 
-const SUGGESTED_QUERIES = [
-  "Who hasn't heard v2?",
-  "What notes are still open from v1?",
+// T1: Generic queries only — the backend is a stub keyword-matcher that ignores
+// song_id/version_id, so song-specific queries would mislead the user.
+// "v2" replaced with "the latest version" per copy spec.
+const GENERIC_SUGGESTED_QUERIES = [
+  "Who hasn't heard the latest version?",
+  "What notes are still open?",
   "Who has approved what?",
   "What's blocking release readiness?",
 ] as const;
 
-function AssistantPanel() {
-  const [question, setQuestion] = useState<string>(SUGGESTED_QUERIES[0]);
+function AssistantPanel({
+  songID,
+  songTitle,
+  versionID,
+  versionLabel: _versionLabel,
+}: {
+  songID?: string;
+  songTitle?: string;
+  versionID?: string;
+  versionLabel?: string;
+} = {}) {
+  // T1: always use generic queries — no interpolated song/version
+  const suggestedQueries = [...GENERIC_SUGGESTED_QUERIES];
+  const [question, setQuestion] = useState<string>(suggestedQueries[0]);
   const [answer, setAnswer] = useState<Awaited<ReturnType<typeof api.ask>> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // C3: error state
+  const [askError, setAskError] = useState<string | null>(null);
 
   async function submit(text = question) {
     setIsLoading(true);
+    setAskError(null);
     setQuestion(text);
+    // Keep sending song_id/version_id — harmless, forward-compat (T1).
     try {
-      setAnswer(await api.ask(text));
+      const result = await api.ask(text, { song_id: songID, version_id: versionID });
+      setAnswer(result);
+    } catch {
+      // C3: catch network/server failures
+      setAskError("Couldn't reach the workspace. Check your connection and try again.");
     } finally {
       setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    void submit();
-  }, []);
+    void submit(suggestedQueries[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [songID, versionID]);
 
   return (
     <div className="view-stack">
       <div className="section-head">
         <div>
-          <p className="eyebrow">READ-ONLY ASK</p>
-          <h1>Workspace Questions</h1>
+          <p className="eyebrow">READ-ONLY</p>
+          <h1>Ask</h1>
         </div>
         <Shield size={22} aria-label="Read-only — Ask cannot modify workspace state" />
       </div>
+      {/* T1: honest disclaimer — no false per-song scope implied */}
+      <p className="ask-context-line" style={{ color: "var(--pencil-warm)", fontStyle: "italic" }}>
+        Answers cover the whole workspace for now.
+        {songTitle ? ` (Viewing: ${songTitle})` : ""}
+      </p>
       <div className="ask-box">
         <input
           aria-label="Ask a question about the workspace"
@@ -2078,12 +2805,21 @@ function AssistantPanel() {
         </button>
       </div>
       <div className="ask-chips">
-        {SUGGESTED_QUERIES.map((q) => (
-          <button key={q} className="ask-chip" onClick={() => void submit(q)}>{q}</button>
+        {suggestedQueries.map((q) => (
+          <button key={q} className="pill-button compact" onClick={() => void submit(q)}>{q}</button>
         ))}
       </div>
       <section className="answer-panel">
-        <p>{isLoading ? "Checking the session…" : answer?.answer}</p>
+        {/* C3: error state */}
+        {askError ? (
+          <p style={{ color: "var(--redline)", fontSize: 13 }}>{askError}</p>
+        ) : (
+          <p>
+            {isLoading
+              ? "Checking…"
+              : (answer?.answer || (!isLoading && answer !== null ? "No matching data found." : ""))}
+          </p>
+        )}
         <div className="citation-row">
           {answer?.citations.map((citation) => (
             <span key={`${citation.type}-${citation.id}`} className="status-pill">
@@ -2155,11 +2891,17 @@ function SharedListeningView({
   const [activeVersionID, setActiveVersionID] = useState<string | null>(current?.version_id ?? null);
   const [noteBody, setNoteBody] = useState("");
   const [posting, setPosting] = useState(false);
-  const [approveState, setApproveState] = useState<"idle" | "pending" | "done">("idle");
+
+  // C1: key approveState by version_id so approval survives song switching and
+  // returning to the same song without looking like it didn't happen.
+  const [approveStates, setApproveStates] = useState<Record<string, "idle" | "pending" | "done">>({});
 
   useEffect(() => {
     setActiveVersionID(current?.version_id ?? null);
-    setApproveState("idle");
+    // T3(b): reset noteBody when active song changes so a pending note can't
+    // accidentally post against the wrong song after auto-advance.
+    setNoteBody("");
+    // Note: we do NOT reset approveState here (C1 fix).
   }, [current?.version_id]);
 
   const activeVersion = versions.find((v) => v.version_id === activeVersionID) ?? current;
@@ -2167,15 +2909,57 @@ function SharedListeningView({
   const allowApproval = payload?.link.allow_approval ?? false;
   const alreadyApproved = !!activeVersion?.is_approved;
 
+  // C1: look up approve state for the current version (defaults to "idle")
+  const approveState = activeVersion ? (approveStates[activeVersion.version_id] ?? "idle") : "idle";
+  function setApproveState(versionID: string, state: "idle" | "pending" | "done") {
+    setApproveStates((prev) => ({ ...prev, [versionID]: state }));
+  }
+
+  // Moment 4: auto-advance / up-next for multi-song playlists.
+  // PF3: read positionMs via a ref to avoid stale closure without adding it to deps.
+  const positionMsRef = useRef(player.positionMs);
+  positionMsRef.current = player.positionMs;
+
+  const prevIsPlayingRef = useRef(false);
+  const isMultiSong = (payload?.songs.length ?? 0) > 1;
+
+  const currentSongIndex = isMultiSong && payload
+    ? payload.songs.findIndex((s) => s.song_id === selectedSongID)
+    : -1;
+  const nextSong = isMultiSong && payload && currentSongIndex >= 0 && currentSongIndex < payload.songs.length - 1
+    ? payload.songs[currentSongIndex + 1]
+    : null;
+
+  useEffect(() => {
+    const wasPlaying = prevIsPlayingRef.current;
+    prevIsPlayingRef.current = player.isPlaying;
+
+    if (!isMultiSong || !nextSong) return;
+    if (!payload || !activeAsset) return;
+    // Only trigger when transitioning from playing → not playing
+    if (!wasPlaying || player.isPlaying) return;
+    // T3(a): do NOT auto-advance when there is a note being composed —
+    // let the user finish posting before moving to the next song.
+    if (noteBody.trim()) return;
+    // T3(c): respect reduced motion / autoplay sensitivity
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Only auto-advance when position is near end (within 400 ms of duration)
+    const durationMs = activeAsset.duration_ms ?? 0;
+    // PF3: read via ref, not from closure
+    if (durationMs > 0 && positionMsRef.current >= durationMs - 400) {
+      onSelectSong(nextSong.song_id);
+    }
+  }, [player.isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function approve() {
     if (!activeVersion || approveState !== "idle") return;
-    setApproveState("pending");
+    setApproveState(activeVersion.version_id, "pending");
     try {
       await api.sharedApprove(token, activeVersion.version_id);
-      setApproveState("done");
+      setApproveState(activeVersion.version_id, "done");
       onNotePosted();
     } catch {
-      setApproveState("idle");
+      setApproveState(activeVersion.version_id, "idle");
     }
   }
 
@@ -2203,8 +2987,20 @@ function SharedListeningView({
   if (!payload || !song || !current) {
     return (
       <div className="shared-page">
-        <TopBar roomTitle="Loading…" error={null} />
-        <main className="shared-main"><p className="muted">Opening private link…</p></main>
+        <TopBar roomTitle="Private link" error={null} />
+        {/* C4: skeleton order matches loaded layout — crumb→title→artist→cover→waveform */}
+        <div className="sleeve-skeleton" aria-busy="true" aria-label="Loading private link…">
+          {/* crumb placeholder */}
+          <div className="sleeve-skeleton-line" style={{ height: 14, width: "55%", animationDelay: "0s" }} />
+          {/* title block — sized to match h1 clamp */}
+          <div className="sleeve-skeleton-line sleeve-skeleton-line--title" />
+          {/* artist line */}
+          <div className="sleeve-skeleton-line sleeve-skeleton-line--artist" />
+          {/* cover art placeholder */}
+          <div className="sleeve-skeleton-cover" />
+          {/* waveform */}
+          <div className="sleeve-skeleton-waveform" />
+        </div>
       </div>
     );
   }
@@ -2224,7 +3020,7 @@ function SharedListeningView({
                 style={{ backgroundImage: coverGradient(payload.playlist.cover_seed) }}
               />
               <div className="playlist-strip-info">
-                <p className="eyebrow">PLAYLIST · QUEUED FOR YOU</p>
+                <p className="eyebrow">PLAYLIST</p>
                 <h2>{payload.playlist.title}</h2>
                 {payload.playlist.description && (
                   <p className="muted">{payload.playlist.description}</p>
@@ -2246,7 +3042,7 @@ function SharedListeningView({
               {payload.link.version_policy === "latest_only" && (
                 <Stamp kind="latest" tight straight>v{current.version_number} · Latest</Stamp>
               )}
-              {!current.is_approved && <Stamp kind="notes-due" tight>Notes Welcome</Stamp>}
+              {!current.is_approved && <Stamp kind="notes-due" tight>Notes open</Stamp>}
               {current.is_approved && <Stamp kind="approved" tight straight>Approved</Stamp>}
             </div>
           </div>
@@ -2298,7 +3094,14 @@ function SharedListeningView({
               {alreadyApproved ? (
                 <Stamp kind="approved" straight>Approved · {activeVersion?.version_label}</Stamp>
               ) : approveState === "done" ? (
-                <Stamp kind="approved" straight>Approved · just now</Stamp>
+                /* A3: aria-live so AT announces the confirmation */
+                <div className="recipient-approve-ceremony" role="status" aria-live="polite">
+                  <span className="stamp-arrive-wrap">
+                    <Stamp kind="approved" straight>Approved · just now</Stamp>
+                  </span>
+                  {/* Copy: "Approval sent." */}
+                  <p className="recipient-approve-confirm">Approval sent.</p>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -2314,22 +3117,39 @@ function SharedListeningView({
           )}
 
           {payload.link.version_policy === "full_history" && versions.length > 1 && (
-            <div className="recipient-versions">
-              {versions.map((v) => (
-                <span
-                  key={v.version_id}
-                  className={v.version_id === activeVersion?.version_id ? "cur" : ""}
-                  onClick={() => {
-                    setActiveVersionID(v.version_id);
-                    const a = assetForVersion(payload.assets, v);
-                    if (a) player.play(song, v, a);
-                  }}
-                  style={{ cursor: "pointer" }}
-                >
-                  {v.version_label ?? `v${v.version_number}`}
-                  {v.version_id === current.version_id ? " · current" : ""}
-                </span>
-              ))}
+            <div className="recipient-versions" role="group" aria-label="Available versions">
+              {versions.map((v) => {
+                const isCur = v.version_id === activeVersion?.version_id;
+                return (
+                  <span
+                    key={v.version_id}
+                    className={isCur ? "cur" : ""}
+                    aria-current={isCur ? "true" : undefined}
+                    onClick={() => {
+                      setActiveVersionID(v.version_id);
+                      const a = assetForVersion(payload.assets, v);
+                      if (a) player.play(song, v, a);
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    {v.version_label ?? `v${v.version_number}`}
+                    {v.version_id === current.version_id ? " · current" : ""}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {/* D4: show up-next whenever nextSong exists, not only when playing */}
+          {nextSong && (
+            <div className="recipient-up-next" aria-live="polite">
+              <span className="recipient-up-next-label">Up next</span>
+              <button
+                className="recipient-up-next-title"
+                onClick={() => onSelectSong(nextSong.song_id)}
+              >
+                {nextSong.title}
+              </button>
             </div>
           )}
 
@@ -2360,9 +3180,9 @@ function SharedListeningView({
           <h4>Notes · pinned to cue</h4>
           {songNotes.length === 0 ? (
             <div className="note" style={{ borderBottom: 0 }}>
-              <div className="who"><span>Be the first.</span></div>
+              <div className="who"><span>No notes yet.</span></div>
               <div className="what" style={{ color: "var(--pencil-cool)", marginTop: 8, fontSize: 13 }}>
-                Tap a moment in the waveform, type a note, hit ↩.
+                Scrub to a moment, type, press return.
               </div>
             </div>
           ) : (
@@ -2400,7 +3220,6 @@ function SharedListeningView({
             disabled={posting}
           />
         </div>
-        <button type="button" className="mic" title="Voice memo (coming soon)" aria-label="Record voice memo">●</button>
         <button type="submit" className="send" disabled={posting || !noteBody.trim()}>
           {posting ? "…" : "Note"}
         </button>

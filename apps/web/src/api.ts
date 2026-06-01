@@ -1,6 +1,52 @@
 import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Room, SavedView, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
 import { supabase } from "./auth";
 
+// =====================================================================
+// Pin / Recent types  (Pieces 4 & 5 — defined here for the client layer)
+// =====================================================================
+
+export type PinnedSong = {
+  song_id: string;
+  title: string;
+  artist_display_name?: string;
+  project_name?: string;
+  status: string;
+  pinned_at: string;
+};
+
+export type PinnedPlaylist = {
+  playlist_id: string;
+  title: string;
+  item_count: number;
+  cover_seed: string;
+  pinned_at: string;
+};
+
+export type PinnedProject = {
+  project_id: string;
+  title: string;
+  project_type: string;
+  song_count: number;
+  pinned_at: string;
+};
+
+export type MyPinsPayload = {
+  songs: PinnedSong[];
+  playlists: PinnedPlaylist[];
+  projects: PinnedProject[];
+};
+
+export type RecentItem = {
+  entity_type: "song" | "playlist" | "project";
+  entity_id: string;
+  title: string;
+  artist_display_name?: string;
+  project_name?: string;
+  version_label?: string;
+  status?: string;
+  last_activity_at: string;
+};
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -71,8 +117,8 @@ export const api = {
         last_listened_at?: string;
       }>
     >("/inbox"),
-  ask: (question: string) =>
-    request<AssistantAnswer>("/assistant/ask", { method: "POST", body: JSON.stringify({ question }) }),
+  ask: (question: string, context?: { song_id?: string; version_id?: string }) =>
+    request<AssistantAnswer>("/assistant/ask", { method: "POST", body: JSON.stringify({ question, ...context }) }),
   addVersion: (songID: string, body: { filename: string; label?: string; type?: string; duration_ms?: number; loudness_lufs?: number }) =>
     request<SongPayload>(`/songs/${songID}/versions`, { method: "POST", body: JSON.stringify(body) }),
   setCurrent: (versionID: string) =>
@@ -130,6 +176,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ item_ids }),
     }),
+  // === Pins & Recent (Pieces 4 & 5) ====================================
+
+  getMyPins: (workspaceID = "wsp-amf-private") =>
+    request<MyPinsPayload>(`/workspaces/${workspaceID}/my-pins`),
+  pinSong: (workspaceID: string, songID: string) =>
+    request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/songs/${songID}`, { method: "PUT", body: JSON.stringify({}) }),
+  unpinSong: (workspaceID: string, songID: string) =>
+    request<{ unpinned: true }>(`/workspaces/${workspaceID}/my-pins/songs/${songID}`, { method: "DELETE" }),
+  pinPlaylist: (workspaceID: string, playlistID: string) =>
+    request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/playlists/${playlistID}`, { method: "PUT", body: JSON.stringify({}) }),
+  unpinPlaylist: (workspaceID: string, playlistID: string) =>
+    request<{ unpinned: true }>(`/workspaces/${workspaceID}/my-pins/playlists/${playlistID}`, { method: "DELETE" }),
+  pinProject: (workspaceID: string, projectID: string) =>
+    request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/projects/${projectID}`, { method: "PUT", body: JSON.stringify({}) }),
+  unpinProject: (workspaceID: string, projectID: string) =>
+    request<{ unpinned: true }>(`/workspaces/${workspaceID}/my-pins/projects/${projectID}`, { method: "DELETE" }),
+  recent: (workspaceID: string, limit = 20) =>
+    request<RecentItem[]>(`/workspaces/${workspaceID}/recent?limit=${limit}`),
+
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
   sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
     request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {

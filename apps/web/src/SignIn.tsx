@@ -135,7 +135,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               </button>
             ) : (
               <button className="linklike" onClick={(e) => { e.preventDefault(); setMode("producer-signup"); }}>
-                New to WHITE LABEL? Create an account
+                No account yet? Create one
               </button>
             )}
           </div>

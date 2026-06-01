@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "@fastify/cors": "^9.0.1",
     "@pmw/shared": "0.1.0",
     "@supabase/supabase-js": "^2.46.1",

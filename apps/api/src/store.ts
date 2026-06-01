@@ -22,6 +22,7 @@ import {
   type VersionType,
   type WorkspaceSnapshot,
 } from "@pmw/shared";
+import { answerWorkspaceQuestionLlm } from "./assistant";
 import { hashToken, makeShareToken } from "./hash";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
 import { persistNote, persistNoteReopen, persistNoteResolution } from "./supabase-persist";
@@ -547,6 +548,15 @@ export class WorkspaceStore {
 
   ask(question: string) {
     return answerWorkspaceQuestion(this.snapshot, question);
+  }
+
+  /**
+   * Claude-backed Ask, focused by the optional song/version the user is viewing.
+   * Falls back to the deterministic `ask` above when no API key is configured
+   * or the LLM call fails (handled inside answerWorkspaceQuestionLlm).
+   */
+  askLlm(question: string, context?: { song_id?: string; version_id?: string }) {
+    return answerWorkspaceQuestionLlm(this.snapshot, question, context);
   }
 
   private recordEvent(event: Omit<ActivityEvent, "event_id" | "created_at">) {

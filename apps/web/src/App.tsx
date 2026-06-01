@@ -2756,6 +2756,18 @@ function AssistantPanel({
   const [isLoading, setIsLoading] = useState(false);
   // C3: error state
   const [askError, setAskError] = useState<string | null>(null);
+  // Whether the server has the Claude-backed Ask live (vs the keyword fallback),
+  // so the disclaimer below tells the truth. null = not yet known → assume the
+  // conservative (whole-workspace) wording until we hear back.
+  const [llmEnabled, setLlmEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api.assistantStatus()
+      .then((s) => { if (active) setLlmEnabled(s.llm_enabled); })
+      .catch(() => { /* leave conservative wording on failure */ });
+    return () => { active = false; };
+  }, []);
 
   async function submit(text = question) {
     setIsLoading(true);
@@ -2787,10 +2799,11 @@ function AssistantPanel({
         </div>
         <Shield size={22} aria-label="Read-only — Ask cannot modify workspace state" />
       </div>
-      {/* T1: honest disclaimer — no false per-song scope implied */}
+      {/* Honest disclaimer, calibrated to whether the AI backend is live. */}
       <p className="ask-context-line" style={{ color: "var(--pencil-warm)", fontStyle: "italic" }}>
-        Answers cover the whole workspace for now.
-        {songTitle ? ` (Viewing: ${songTitle})` : ""}
+        {llmEnabled
+          ? `AI answers, drawn read-only from your workspace records.${songTitle ? ` Focused on ${songTitle}.` : ""}`
+          : `Answers cover the whole workspace for now.${songTitle ? ` (Viewing: ${songTitle})` : ""}`}
       </p>
       <div className="ask-box">
         <input

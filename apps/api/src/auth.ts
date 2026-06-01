@@ -97,20 +97,26 @@ export async function authFromHeaders(
     throw new AuthError("Invalid or expired token", 401);
   }
 
-  // Token is valid — resolve to the external_id from public.users
+  // Token is valid — resolve to the external_id of the PRE-PROVISIONED user row.
+  // Identity is bridged by users.auth_uid, set by handle_new_auth_user on first
+  // sign-in via email relink (migration 0005). We match on auth_uid, NOT user_id:
+  // user_id is the app-generated PK that memberships/songs/notes reference and is
+  // NOT the Supabase auth UID. (Requires 0005 applied before this serves traffic.)
   const authUid = data.user.id;
   try {
     const userQuery = supabase
       .from("users")
-      .select("external_id, user_id")
-      .eq("user_id", authUid)
+      .select("external_id")
+      .eq("auth_uid", authUid)
       .maybeSingle();
     const userRes = await withTimeout(Promise.resolve(userQuery), AUTH_TIMEOUT_MS);
     const external = (userRes.data as { external_id?: string } | null)
       ?.external_id;
     if (external) return { userID: external };
-    // No public.users row yet — handle_new_auth_user trigger should have
-    // written it. Fall back to the raw auth UID rather than failing.
+    // Not yet relinked (user hasn't completed email-matched sign-in, or is a
+    // brand-new account mid-provision). Fall back to the raw auth UID rather than
+    // 500ing — they resolve to a memberless identity (fail-closed at authz),
+    // never to someone else's data.
     return { userID: authUid };
   } catch (err) {
     if (err instanceof AuthError) throw err;

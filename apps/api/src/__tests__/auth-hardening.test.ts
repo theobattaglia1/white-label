@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { buildApp } from "../server.js";
 import { store } from "../store.js";
+import { authFromHeaders } from "../auth.js";
 
 // ─── Mock supabase module ────────────────────────────────────────────────────
 // Use vi.hoisted() so the mock variables are available inside the vi.mock
@@ -297,5 +298,64 @@ describe("GET /me identity-leak prevention", () => {
     const body = res.json<Record<string, unknown>>();
     // Must NOT contain a leaked user object
     expect((body["data"] as Record<string, unknown> | undefined)?.["user"]).toBeFalsy();
+  });
+});
+
+// ─── G. users lookup queries auth_uid column (not user_id) ───────────────────
+// These tests exercise authFromHeaders directly so they can capture the exact
+// arguments passed to .select() and .eq() — validating the 0005-migration
+// column rename at the JS layer.
+
+describe("users lookup uses auth_uid column and returns external_id (migration 0005)", () => {
+  it("resolves to external_id when auth_uid row exists", async () => {
+    // Capture the arguments passed into the Supabase query chain.
+    const maybeSingleFn = vi.fn().mockResolvedValue({
+      data: { external_id: "usr-theo" },
+      error: null,
+    });
+    const eqFn = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFn });
+    const selectFn = vi.fn().mockReturnValue({ eq: eqFn });
+    mockFrom.mockReturnValue({ select: selectFn });
+
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: "supabase-uuid-abc" } },
+      error: null,
+    });
+
+    const ctx = await authFromHeaders({
+      authorization: "Bearer valid-jwt",
+    });
+
+    // Result: external_id is returned as the resolved identity
+    expect(ctx.userID).toBe("usr-theo");
+
+    // The query selected only external_id (not "external_id, user_id")
+    expect(selectFn).toHaveBeenCalledWith("external_id");
+
+    // The filter used auth_uid (not user_id) with the Supabase auth UID
+    expect(eqFn).toHaveBeenCalledWith("auth_uid", "supabase-uuid-abc");
+  });
+
+  it("falls back to the raw auth UID when no public.users row matches", async () => {
+    const maybeSingleFn = vi.fn().mockResolvedValue({ data: null, error: null });
+    const eqFn = vi.fn().mockReturnValue({ maybeSingle: maybeSingleFn });
+    const selectFn = vi.fn().mockReturnValue({ eq: eqFn });
+    mockFrom.mockReturnValue({ select: selectFn });
+
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: "supabase-uuid-unlinked" } },
+      error: null,
+    });
+
+    const ctx = await authFromHeaders({
+      authorization: "Bearer valid-jwt-unlinked",
+    });
+
+    // Falls back to the raw auth UID rather than 500ing or leaking another user
+    expect(ctx.userID).toBe("supabase-uuid-unlinked");
+
+    // Column names are still correct even on the no-match path
+    expect(selectFn).toHaveBeenCalledWith("external_id");
+    expect(eqFn).toHaveBeenCalledWith("auth_uid", "supabase-uuid-unlinked");
   });
 });

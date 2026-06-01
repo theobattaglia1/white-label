@@ -9,6 +9,9 @@ dist/
 .vite/
 .parcel-cache/
 
+# Local test/smoke artifacts (screenshots, scratch output)
+artifacts/
+
 # iOS build artifacts
 apps/ios/**/build/
 apps/ios/**/DerivedData/

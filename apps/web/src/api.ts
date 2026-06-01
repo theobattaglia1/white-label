@@ -119,6 +119,7 @@ export const api = {
     >("/inbox"),
   ask: (question: string, context?: { song_id?: string; version_id?: string }) =>
     request<AssistantAnswer>("/assistant/ask", { method: "POST", body: JSON.stringify({ question, ...context }) }),
+  assistantStatus: () => request<{ llm_enabled: boolean }>("/assistant/status"),
   addVersion: (songID: string, body: { filename: string; label?: string; type?: string; duration_ms?: number; loudness_lufs?: number }) =>
     request<SongPayload>(`/songs/${songID}/versions`, { method: "POST", body: JSON.stringify(body) }),
   setCurrent: (versionID: string) =>

@@ -6,6 +6,8 @@ import { signUpload, finalizeUpload, type FinalizeUploadInput, type SignUploadIn
 import { loadSnapshotFromSupabase } from "./supabase-loader";
 import { isSupabaseEnabled } from "./supabase";
 import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthError } from "./auth";
+import { isAssistantLlmEnabled } from "./assistant";
+import { rateLimit } from "./ratelimit";
 
 /**
  * Builds and returns a fully-registered Fastify instance without binding a
@@ -519,13 +521,29 @@ server.post("/uploads/grouping-proposals", async (request) => {
   return ok(store.proposeGroupings(body.files ?? []));
 });
 
-server.post("/assistant/ask", async (request) => {
+/** Whether the Claude-backed Ask is live (API key configured) vs the
+ *  deterministic fallback. Lets the client phrase its disclaimer honestly. */
+server.get("/assistant/status", async () => ok({ llm_enabled: isAssistantLlmEnabled() }));
+
+server.post("/assistant/ask", async (request, reply) => {
+  // Participate in strict-auth mode: when REQUIRE_JWT_AUTH + Supabase are on, an
+  // anonymous caller is rejected here (closes the x-user-id bypass on the paid
+  // path). Behaviour-preserving otherwise.
+  const auth = await requireAuthedFromRequest(request);
   const body = request.body as { question?: string; song_id?: string; version_id?: string };
   const question = body.question ?? "";
   // Hard cap the free-text input before it drives an Opus call — cheap guard
-  // against oversized / cost-abusive prompts. (Rate-limiting + auth on this
-  // route is a documented prerequisite before enabling the API key in prod.)
+  // against oversized / cost-abusive prompts.
   if (question.length > 2000) throw new Error("Question is too long (2000 character max).");
+  // Per-identity fixed-window limit (falls back to client IP) bounds how fast
+  // any one caller can drive LLM spend.
+  const limit = rateLimit(`ask:${auth.userID || request.ip}`, 20, 60_000);
+  if (!limit.allowed) {
+    return reply
+      .header("retry-after", Math.ceil(limit.retryAfterMs / 1000))
+      .code(429)
+      .send({ error: "Too many questions in a short window — give it a moment." });
+  }
   return ok(await store.askLlm(question, { song_id: body.song_id, version_id: body.version_id }));
 });
 

@@ -115,6 +115,27 @@ enum PMWSampleData {
         version("ver-lowlight-inst", "song-lowlight", 3, "Stem-derived v3", .instrumental, true, false, "asset-lowlight-inst", parent: "ver-lowlight-v2")
     ]
 
+    // MARK: - Saved views (smart-view seed data) --------------------------
+
+    static let savedViews: [PMWSavedView] = [
+        PMWSavedView(id: "sv-needs-revision",
+                     name: "Needs Revision",
+                     filter: ["status": "Revision"],
+                     missingFlag: false),
+        PMWSavedView(id: "sv-in-review",
+                     name: "In Review",
+                     filter: ["status": "Review"],
+                     missingFlag: false),
+        PMWSavedView(id: "sv-approved",
+                     name: "Approved",
+                     filter: ["status": "Approved"],
+                     missingFlag: false),
+        PMWSavedView(id: "sv-missing-deliverables",
+                     name: "Missing Deliverables",
+                     filter: [:],
+                     missingFlag: true)
+    ]
+
     static let notes = [
         PMWNote(id: "note-vocal-delay",  songID: "song-midnight", anchorVersionID: "ver-midnight-v1",
                 author: "Hudson Ingram",

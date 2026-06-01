@@ -136,6 +136,37 @@ func pmwDurationDiffExceeds(anchorMS: Int, currentMS: Int, threshold: Double = 0
     return abs(Double(currentMS - anchorMS)) / Double(anchorMS) > threshold
 }
 
+/// A saved / smart view: a named filter preset the producer can select to
+/// slice the library. The `filter` dictionary mirrors the web's `SmartFilter`
+/// shape (keys: `status`, `release_readiness`, `missing`).
+struct PMWSavedView: Identifiable, Equatable {
+    let id: String       // view_id on the API
+    var name: String
+    var filter: [String: String]   // e.g. ["status": "Revision"] or ["release_readiness": "ready"]
+    /// When the key is "missing" the value is unused; presence of the key is
+    /// the predicate ("exclude songs that are release-ready").
+    var missingFlag: Bool          // true when filter contains "missing" key
+}
+
+// MARK: - Smart-view predicate (port of web matchesSmart) -----------------
+
+/// Returns true when a song passes the saved-view filter.
+/// Filter keys: `status` (exact, case-insensitive), `release_readiness` (exact),
+/// `missing` (if missingFlag is true, exclude songs whose readiness == "ready").
+func pmwMatchesSmart(song: PMWSong, readiness: String?, view: PMWSavedView) -> Bool {
+    if let status = view.filter["status"], !status.isEmpty {
+        if song.status.lowercased() != status.lowercased() { return false }
+    }
+    if let readinessFilter = view.filter["release_readiness"], !readinessFilter.isEmpty {
+        guard let r = readiness else { return false }
+        if r != readinessFilter { return false }
+    }
+    if view.missingFlag {
+        if readiness == "ready" { return false }
+    }
+    return true
+}
+
 func pmwVisibleNotes(
     songID: String,
     viewingVersion: PMWVersion,

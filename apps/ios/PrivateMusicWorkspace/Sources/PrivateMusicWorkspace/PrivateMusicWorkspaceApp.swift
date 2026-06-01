@@ -7,12 +7,23 @@ struct PrivateMusicWorkspaceApp: App {
     /// (also reachable via universal link if entitled later).
     @State private var recipientToken: String? = nil
 
+    /// Shared session — observed here so the sign-in gate reacts to
+    /// sign-in success / mid-session token-refresh failure.
+    @StateObject private var session = PMWSession.shared
+
     var body: some Scene {
         WindowGroup {
             ZStack {
-                // Producer workspace sits behind a biometric gate.
+                // Gate composition:
+                //   OUTER — PMWBiometricGate (Face ID / passcode)
+                //   INNER — PMWSessionGate   (Supabase sign-in)
+                // Both gates are only enforced when their respective flags are
+                // on. The biometric gate has its own DEBUG-default-off logic.
+                // The session gate only fires when WL_USE_REAL_AUTH=1.
                 PMWBiometricGate {
-                    PMWRootView()
+                    PMWSessionGate(session: session) {
+                        PMWRootView()
+                    }
                 }
 
                 // Recipient surface slides up over the producer workspace
@@ -178,6 +189,33 @@ struct PMWBiometricGate<Content: View>: View {
             authError = nil
         } catch {
             authError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Session gate --------------------------------------------------------
+
+/// Sits INSIDE PMWBiometricGate. When `PMWConfig.useRealAuth` is false (the
+/// default), this view is completely transparent — it renders `content()`
+/// directly with zero overhead.
+///
+/// When the flag is true:
+///   - If a valid (or refreshable) Keychain session exists → content appears.
+///   - If not signed in → PMWSignInView is shown until sign-in succeeds.
+///   - If a mid-session refresh fails → session clears → sign-in re-appears.
+///
+/// The flag-off path is structurally identical to the pre-auth codebase:
+/// no sign-in screen, no token checks, dev/sample mode untouched.
+struct PMWSessionGate<Content: View>: View {
+    @ObservedObject var session: PMWSession
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if !PMWConfig.useRealAuth || session.isSignedIn {
+            content()
+        } else {
+            PMWSignInView(session: session)
+                .transition(.opacity)
         }
     }
 }

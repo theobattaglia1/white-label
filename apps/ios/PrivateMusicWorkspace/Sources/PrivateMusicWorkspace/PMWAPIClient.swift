@@ -1,13 +1,46 @@
 import Foundation
 
+// MARK: - API errors ----------------------------------------------------------
+
+enum PMWAPIError: Error, LocalizedError {
+    /// Real auth is on and no valid token could be obtained (auth rejection,
+    /// not a network failure). Callers should re-present the sign-in gate.
+    case unauthenticated
+
+    var errorDescription: String? {
+        switch self {
+        case .unauthenticated: return "You must be signed in to perform this action."
+        }
+    }
+}
+
+// MARK: - Client --------------------------------------------------------------
+
 /// Thin URLSession-based client for the Fastify API at `PMWConfig.apiBaseURL`.
-/// Mirrors the web's `apps/web/src/api.ts`. All requests carry the dev
-/// `x-user-id` header until Supabase Auth is wired.
+/// Mirrors the web's `apps/web/src/api.ts`.
+///
+/// Header injection:
+///   - `x-user-id: <devUserId>` — sent ONLY when `PMWConfig.useRealAuth` is
+///     false (dev/sample mode). When real auth is on, the Bearer JWT is the
+///     identity; the legacy header is omitted to avoid mis-attribution.
+///   - `Authorization: Bearer <token>` — added when `PMWConfig.useRealAuth`
+///     is true AND a valid session token is available from `PMWSession.shared`.
+///     Token is fetched (and auto-refreshed if near expiry) via
+///     `PMWSession.validAccessToken()`, which is async — the existing `send()`
+///     is already `async throws` so this adds zero protocol surface.
 ///
 /// The client is intentionally tiny: no caching, no retry. It's meant to be
 /// called from PMWStore which owns the data state.
 struct PMWAPIClient {
     static let shared = PMWAPIClient()
+
+    /// Dedicated session with a 20 s request timeout (matches PMWAuthClient)
+    /// so API calls fail fast on a dead network instead of hanging 60 s.
+    private let urlSession: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 20
+        return URLSession(configuration: cfg)
+    }()
 
     // MARK: - Wire types (mirror the API's JSON envelope) -----------------
 
@@ -220,6 +253,48 @@ struct PMWAPIClient {
         return try await post("/notes", body: payload, as: APINote.self)
     }
 
+    // MARK: - Links -------------------------------------------------------
+
+    struct APICreatedLink: Decodable {
+        let link: APILink
+        let token: String
+    }
+
+    /// Create a share link for a song, room, or playlist.
+    /// Mirrors `api.createLink` in apps/web/src/api.ts.
+    @discardableResult
+    func createLink(workspaceID: String = "wsp-amf-private",
+                    targetType: String,
+                    targetID: String,
+                    linkName: String? = nil) async throws -> APICreatedLink {
+        var body: [String: Any] = [
+            "workspace_id": workspaceID,
+            "target_type": targetType,
+            "target_id": targetID,
+            "access_mode": "identity_required",
+            "version_policy": "latest_only",
+            "download_policy": "none",
+            "watermark_enabled": true,
+            "allow_comments": true,
+            "allow_approval": true,
+            "allow_forwarding": false
+        ]
+        if let linkName { body["link_name"] = linkName }
+        return try await post("/links", body: body, as: APICreatedLink.self)
+    }
+
+    // MARK: - Saved views --------------------------------------------------
+
+    struct APISavedView: Decodable {
+        let view_id: String
+        let name: String
+        let filter: [String: String]
+    }
+
+    func savedViews(workspaceID: String = "wsp-amf-private") async throws -> [APISavedView] {
+        try await get("/workspaces/\(workspaceID)/saved-views", as: [APISavedView].self)
+    }
+
     @discardableResult
     func approve(versionID: String, state: String = "approved") async throws -> APIApproval {
         try await post("/versions/\(versionID)/approvals",
@@ -251,11 +326,28 @@ struct PMWAPIClient {
         var request = URLRequest(url: components?.url ?? PMWConfig.apiBaseURL)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue(PMWConfig.devUserId,  forHTTPHeaderField: "x-user-id")
+        if PMWConfig.useRealAuth {
+            // Real auth: Bearer JWT is the identity. Omit x-user-id so writes
+            // are not mis-attributed to the dev user.
+            // `validAccessToken()` is async and handles auto-refresh transparently,
+            // including the single-flight dedup and offline-stale fallback.
+            guard let token = await PMWSession.shared.validAccessToken() else {
+                // Genuine auth failure (not offline) — surface it so callers
+                // can re-present the sign-in gate.
+                throw PMWAPIError.unauthenticated
+            }
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            // Dev/sample mode (default): legacy identity header, no JWT.
+            // This path is completely unchanged from the original behaviour.
+            request.setValue(PMWConfig.devUserId, forHTTPHeaderField: "x-user-id")
+        }
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Use the dedicated session (20 s request timeout) instead of
+        // URLSession.shared (60 s default, 7-day resource timeout).
+        let (data, response) = try await urlSession.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw NSError(domain: "PMWAPI", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "Request failed: \(response)"])

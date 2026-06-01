@@ -16,6 +16,9 @@ final class PMWStore: ObservableObject {
     @Published var selectedSongID = "song-midnight"
     @Published var selectedTab: PMWTab = .library
     @Published var selectedPlaylistID: String? = nil
+    @Published private(set) var savedViews: [PMWSavedView] = PMWSampleData.savedViews
+    /// nil = "All" (no filter)
+    @Published var selectedSavedViewID: String? = nil
     @Published var comparisonLeftID = "ver-midnight-v1"
     @Published var comparisonRightID = "ver-midnight-v2"
     @Published var offlineQueue: Set<String> = ["song-midnight", "song-witness"]
@@ -213,6 +216,29 @@ final class PMWStore: ObservableObject {
         let present = rows.filter(\.1).map(\.0)
         let missing = rows.filter { !$0.1 }.map(\.0)
         return (missing.isEmpty, present, missing)
+    }
+
+    /// Client-side release-readiness string derived from deliverables.
+    /// Returns "ready" when all deliverables are present, nil otherwise.
+    func releaseReadiness(for song: PMWSong) -> String? {
+        deliverables(for: song).ready ? "ready" : nil
+    }
+
+    /// The active saved view, if any.
+    var activeSavedView: PMWSavedView? {
+        guard let id = selectedSavedViewID else { return nil }
+        return savedViews.first { $0.id == id }
+    }
+
+    /// Songs filtered by the currently active saved view.
+    /// Falls through to the full list when selectedSavedViewID is nil.
+    var smartFilteredSongs: [PMWSong] {
+        guard let view = activeSavedView else { return songs }
+        return songs.filter { song in
+            pmwMatchesSmart(song: song,
+                            readiness: releaseReadiness(for: song),
+                            view: view)
+        }
     }
 
     func assistantAnswer(for question: String) -> String {

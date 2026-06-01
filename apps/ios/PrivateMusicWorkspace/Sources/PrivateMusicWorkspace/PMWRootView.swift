@@ -989,13 +989,24 @@ struct PMWLibraryView: View {
 
     private var filtered: [PMWAPIClient.APILibraryItem] {
         store.libraryItems.filter { item in
-            switch filter {
-            case .all: return true
-            case .approved: return item.song.status == "approved"
-            case .inReview: return item.song.status == "in_review" || item.song.status == "revision_requested"
-            case .ready: return item.song.release_readiness_status == "ready"
+            // Smart-view filter (mirrors matchesSmart from the web)
+            if let view = store.activeSavedView {
+                if let statusFilter = view.filter["status"], !statusFilter.isEmpty {
+                    if item.song.status.lowercased() != statusFilter.lowercased() { return false }
+                }
+                if let readinessFilter = view.filter["release_readiness"], !readinessFilter.isEmpty {
+                    if item.song.release_readiness_status != readinessFilter { return false }
+                }
+                if view.missingFlag && item.song.release_readiness_status == "ready" { return false }
             }
-        }.filter { item in
+            // Status filter pill
+            switch filter {
+            case .all: break
+            case .approved: if item.song.status != "approved" { return false }
+            case .inReview: if item.song.status != "in_review" && item.song.status != "revision_requested" { return false }
+            case .ready: if item.song.release_readiness_status != "ready" { return false }
+            }
+            // Search
             let s = search.trimmingCharacters(in: .whitespaces).lowercased()
             if s.isEmpty { return true }
             return item.song.title.lowercased().contains(s)
@@ -1004,13 +1015,50 @@ struct PMWLibraryView: View {
         }
     }
 
+    /// Local-songs fallback for offline / sample-data mode when libraryItems is empty.
+    private var filteredLocal: [PMWSong] {
+        store.smartFilteredSongs.filter { song in
+            let s = search.trimmingCharacters(in: .whitespaces).lowercased()
+            if s.isEmpty { return true }
+            return song.title.lowercased().contains(s) || song.artistName.lowercased().contains(s)
+        }
+    }
+
+    private var isOffline: Bool { store.libraryItems.isEmpty }
+
     var body: some View {
         VStack(alignment: .leading, spacing: PMWSpacing.stack) {
-            PMWSectionHeader(eyebrow: "LIBRARY", title: "All work in this workspace.") {
+            // ---- Section header ------------------------------------------
+            let smartView = store.activeSavedView
+            PMWSectionHeader(
+                eyebrow: smartView != nil ? "SMART VIEW" : "LIBRARY",
+                title: smartView?.name ?? "All work in this workspace."
+            ) {
                 HStack(spacing: 1) {
-                    PMWMetric(value: "\(store.libraryItems.count)", label: "Songs")
+                    PMWMetric(value: "\(isOffline ? filteredLocal.count : filtered.count)", label: smartView != nil ? "Match" : "Songs")
                     PMWMetric(value: "\(store.libraryItems.filter { $0.song.status == "approved" }.count)", label: "Approved")
                     PMWMetric(value: "\(store.roomsSummary.count)", label: "Rooms")
+                }
+            }
+
+            // ---- Saved-view pills ----------------------------------------
+            if !store.savedViews.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        // "All" pill clears the saved-view selection
+                        pmwViewPill(label: "All", isActive: store.selectedSavedViewID == nil) {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                store.selectedSavedViewID = nil
+                            }
+                        }
+                        ForEach(store.savedViews) { view in
+                            pmwViewPill(label: view.name, isActive: store.selectedSavedViewID == view.id) {
+                                withAnimation(.easeOut(duration: 0.15)) {
+                                    store.selectedSavedViewID = store.selectedSavedViewID == view.id ? nil : view.id
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1019,41 +1067,107 @@ struct PMWLibraryView: View {
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.line, lineWidth: 1))
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Filter.allCases) { f in
-                        Button {
-                            withAnimation(.easeOut(duration: 0.15)) { filter = f }
-                        } label: {
-                            Text(f.label)
-                                .font(.system(size: 12, weight: .medium))
-                                .tracking(0.2)
-                                .foregroundStyle(filter == f ? .white : PMWColors.ink)
-                                .padding(.horizontal, 16).padding(.vertical, 9)
-                                .background(
-                                    Capsule()
-                                        .fill(filter == f ? PMWColors.redline : PMWColors.paper)
-                                        .overlay(
-                                            Capsule().stroke(
-                                                filter == f ? .clear : PMWColors.lineStrong.opacity(0.45),
-                                                lineWidth: 1
+            // ---- Status filter pills (only shown when not smart-filtering) ----
+            if smartView == nil {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Filter.allCases) { f in
+                            Button {
+                                withAnimation(.easeOut(duration: 0.15)) { filter = f }
+                            } label: {
+                                Text(f.label)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .tracking(0.2)
+                                    .foregroundStyle(filter == f ? .white : PMWColors.ink)
+                                    .padding(.horizontal, 16).padding(.vertical, 9)
+                                    .background(
+                                        Capsule()
+                                            .fill(filter == f ? PMWColors.redline : PMWColors.paper)
+                                            .overlay(
+                                                Capsule().stroke(
+                                                    filter == f ? .clear : PMWColors.lineStrong.opacity(0.45),
+                                                    lineWidth: 1
+                                                )
                                             )
-                                        )
-                                )
+                                    )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
 
+            // ---- Song list -----------------------------------------------
             VStack(spacing: 0) {
                 PMWRule()
-                ForEach(filtered, id: \.song.song_id) { item in
-                    libraryRow(item)
-                    PMWRule()
+                if isOffline {
+                    // Offline / sample-data mode: render local PMWSong rows
+                    ForEach(filteredLocal) { song in
+                        localSongRow(song)
+                        PMWRule()
+                    }
+                } else {
+                    ForEach(filtered, id: \.song.song_id) { item in
+                        libraryRow(item)
+                        PMWRule()
+                    }
                 }
             }
         }
+    }
+
+    // MARK: - Saved-view pill helper
+
+    private func pmwViewPill(label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .tracking(0.2)
+                .foregroundStyle(isActive ? .white : PMWColors.ink)
+                .padding(.horizontal, 16).padding(.vertical, 9)
+                .background(
+                    Capsule()
+                        .fill(isActive ? PMWColors.redline : PMWColors.paper)
+                        .overlay(
+                            Capsule().stroke(
+                                isActive ? .clear : PMWColors.lineStrong.opacity(0.45),
+                                lineWidth: 1
+                            )
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    // MARK: - Local (offline) song row
+
+    @ViewBuilder
+    private func localSongRow(_ song: PMWSong) -> some View {
+        Button {
+            store.selectSong(song)
+        } label: {
+            HStack(spacing: 12) {
+                PMWCoverMark(songID: song.id)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(PMWFont.sans(15, weight: .semibold))
+                        .foregroundStyle(PMWColors.ink)
+                    Text("\(song.artistName) · \(song.status)")
+                        .font(PMWFont.sans(11))
+                        .foregroundStyle(PMWColors.muted)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(song.catalogId)
+                    .font(PMWFont.readout(11))
+                    .foregroundStyle(PMWColors.muted)
+            }
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -1185,6 +1299,13 @@ struct PMWPlaylistDetailView: View {
     @ObservedObject var audio: PMWAudioEngine
     @State private var detail: PMWAPIClient.APIPlaylistDetail? = nil
 
+    // MARK: - Share state
+    @State private var shareURL: URL? = nil
+    @State private var shareToken: String? = nil
+    @State private var isSharing = false
+    @State private var shareSheetPresented = false
+    @State private var shareError: String? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: PMWSpacing.stack) {
             HStack(alignment: .top, spacing: 16) {
@@ -1222,6 +1343,10 @@ struct PMWPlaylistDetailView: View {
                 }
                 Spacer(minLength: 0)
             }
+
+            // MARK: Share as one link button
+            shareSection
+
             VStack(spacing: 0) {
                 PMWRule()
                 if let detail {
@@ -1240,8 +1365,119 @@ struct PMWPlaylistDetailView: View {
             } catch {
                 detail = nil
             }
+            // Reset share state when playlist changes
+            shareToken = nil
+            shareURL = nil
+            shareError = nil
+        }
+        .sheet(isPresented: $shareSheetPresented) {
+            if let url = shareURL {
+                ShareSheet(items: [url])
+                    .presentationDetents([.medium])
+            }
         }
     }
+
+    // MARK: - Share section
+
+    @ViewBuilder
+    private var shareSection: some View {
+        VStack(alignment: .leading, spacing: PMWSpacing.compact) {
+            if let token = shareToken {
+                // Link already created — show it with copy/share actions
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SHARE LINK READY")
+                        .font(PMWFont.mono(10, weight: .bold))
+                        .kerning(1.6)
+                        .foregroundStyle(PMWColors.redline)
+                    HStack(spacing: 8) {
+                        Text(pmwShareURLString(token: token))
+                            .font(PMWFont.readout(12))
+                            .foregroundStyle(PMWColors.muted)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button {
+                            UIPasteboard.general.string = pmwShareURLString(token: token)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(PMWIconButtonStyle(diameter: 36))
+                        .accessibilityLabel("Copy share link")
+                        Button {
+                            shareURL = URL(string: pmwShareURLString(token: token))
+                            shareSheetPresented = true
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .buttonStyle(PMWIconButtonStyle(diameter: 36))
+                        .accessibilityLabel("Share link via system sheet")
+                    }
+                }
+                .padding(PMWSpacing.compact)
+                .overlay(RoundedRectangle(cornerRadius: PMWSpacing.radiusCard).stroke(PMWColors.line, lineWidth: 1))
+            } else {
+                // Primary CTA
+                HStack {
+                    Button {
+                        Task { await doSharePlaylist() }
+                    } label: {
+                        if isSharing {
+                            HStack(spacing: 8) {
+                                ProgressView().tint(.white)
+                                Text("Creating link…")
+                            }
+                        } else {
+                            Label("Share as one link", systemImage: "link.badge.plus")
+                        }
+                    }
+                    .buttonStyle(PMWChromeButtonStyle(variant: .accent))
+                    .disabled(isSharing)
+                    .accessibilityLabel("Share entire playlist as one link")
+
+                    Spacer()
+                }
+
+                if let err = shareError {
+                    Text(err)
+                        .font(PMWFont.sans(12))
+                        .foregroundStyle(PMWColors.warning)
+                }
+            }
+        }
+    }
+
+    // MARK: - Share action
+
+    private func pmwShareURLString(token: String) -> String {
+        "\(PMWConfig.apiBaseURL.absoluteString)/shared/\(token)"
+    }
+
+    private func doSharePlaylist() async {
+        isSharing = true
+        shareError = nil
+        defer { isSharing = false }
+
+        if PMWConfig.useRemoteAPI {
+            do {
+                let result = try await PMWAPIClient.shared.createLink(
+                    targetType: "playlist",
+                    targetID: playlist.playlist_id,
+                    linkName: "\(playlist.title) — share"
+                )
+                shareToken = result.token
+            } catch {
+                shareError = "Could not create link: \(error.localizedDescription)"
+            }
+        } else {
+            // Offline / sample-data fallback: synthesise a local demo token
+            // so the UI is demonstrable without a live API.
+            let demoToken = "demo-\(playlist.playlist_id)-\(Int(Date().timeIntervalSince1970))"
+            shareToken = demoToken
+        }
+    }
+
+    // MARK: - Song row
 
     @ViewBuilder
     private func row(_ entry: PMWAPIClient.APIPlaylistDetail.Entry) -> some View {
@@ -1279,6 +1515,20 @@ struct PMWPlaylistDetailView: View {
         let total = max(0, ms / 1000)
         return "\(total / 60):\(String(format: "%02d", total % 60))"
     }
+}
+
+// MARK: - System share sheet wrapper ------------------------------------
+
+/// UIActivityViewController wrapped for SwiftUI. Used by PMWPlaylistDetailView
+/// to present the system share sheet after a playlist share link is created.
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {

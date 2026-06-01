@@ -3,35 +3,102 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		082A249033D39CA53F30E174 /* PMWStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893A1AB4D223C6FCF424DB44 /* PMWStore.swift */; };
 		175871D33BA3F0B66F820504 /* PMWAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21B3364396EF2813AD7DBDB /* PMWAudioEngine.swift */; };
 		2195E362C7DCCCD56C22863D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 89C6EE842A6DCBD79A588CE2 /* Assets.xcassets */; };
+		3058FEB82AA9101FE47D1CAE /* PMWSongCardHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = 869FBF667A1526D01D6A0DE7 /* PMWSongCardHero.swift */; };
+		40CC20A42FC5110C0044412D /* Messages.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 40CC20A32FC5110C0044412D /* Messages.framework */; };
+		40CC20B02FC5110F0044412D /* WhiteLabelReceipts.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 40CC20A22FC5110C0044412D /* WhiteLabelReceipts.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		607AE9A00D63034DBC3A1F86 /* PMWAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4CF12795567A57B10BBCC27 /* PMWAPIClient.swift */; };
 		9FC9C35AC237ED69E8186415 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BF03471EC9402DB7271816CD /* Foundation.framework */; };
 		BE4C1598EC70C8471FFB73E5 /* PMWModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE076524473163447D09AA98 /* PMWModels.swift */; };
 		C865624C36E7DDA3FEC66DEE /* PMWRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9005AAA2E09071FB84936D88 /* PMWRootView.swift */; };
 		DB6F196C2C379A15F982E561 /* PMWSampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8FA7B3F1A48D33BB9A5229 /* PMWSampleData.swift */; };
 		DD9D438F840E7D3F54ADB06C /* PrivateMusicWorkspaceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42CFC8E6F5243E2FC2DEEAA /* PrivateMusicWorkspaceApp.swift */; };
 		F39D788FBD82BF90D25A467B /* PMWTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B7376B3B4508C9151CCEFE /* PMWTheme.swift */; };
+		FEA8D4138FE1E2FECE7A207C /* PMWConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C843F39C0297483C914AE62 /* PMWConfig.swift */; };
+		FF6F0911E763D9E00D7FFD96 /* PMWRecipientView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909E1FC05CC6FFCAF5AFEC9A /* PMWRecipientView.swift */; };
+		AA01BB0000000001AABBCC01 /* PMWAuthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB0100000001AABBCC01 /* PMWAuthClient.swift */; };
+		AA01BB0000000002AABBCC02 /* PMWKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB0100000002AABBCC02 /* PMWKeychain.swift */; };
+		AA01BB0000000003AABBCC03 /* PMWSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB0100000003AABBCC03 /* PMWSession.swift */; };
+		AA01BB0000000004AABBCC04 /* PMWSignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01BB0100000004AABBCC04 /* PMWSignInView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		40CC20AE2FC5110F0044412D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4642AD2F0406169567D50CD2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 40CC20A12FC5110C0044412D;
+			remoteInfo = WhiteLabelReceipts;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		40CC20B12FC5110F0044412D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				40CC20B02FC5110F0044412D /* WhiteLabelReceipts.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		27B7376B3B4508C9151CCEFE /* PMWTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWTheme.swift; path = PrivateMusicWorkspace/PMWTheme.swift; sourceTree = "<group>"; };
+		3C843F39C0297483C914AE62 /* PMWConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWConfig.swift; path = PrivateMusicWorkspace/PMWConfig.swift; sourceTree = "<group>"; };
+		40CC209D2FC50DF60044412D /* PrivateMusicWorkspace-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "PrivateMusicWorkspace-Info.plist"; sourceTree = "<group>"; };
+		40CC20A22FC5110C0044412D /* WhiteLabelReceipts.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhiteLabelReceipts.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		40CC20A32FC5110C0044412D /* Messages.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Messages.framework; path = Library/Frameworks/Messages.framework; sourceTree = DEVELOPER_DIR; };
 		5D8FA7B3F1A48D33BB9A5229 /* PMWSampleData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWSampleData.swift; path = PrivateMusicWorkspace/PMWSampleData.swift; sourceTree = "<group>"; };
 		715D2FA0FB2EB6518BDE86FC /* PrivateMusicWorkspace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PrivateMusicWorkspace.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		869FBF667A1526D01D6A0DE7 /* PMWSongCardHero.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWSongCardHero.swift; path = PrivateMusicWorkspace/PMWSongCardHero.swift; sourceTree = "<group>"; };
 		893A1AB4D223C6FCF424DB44 /* PMWStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWStore.swift; path = PrivateMusicWorkspace/PMWStore.swift; sourceTree = "<group>"; };
 		89C6EE842A6DCBD79A588CE2 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9005AAA2E09071FB84936D88 /* PMWRootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWRootView.swift; path = PrivateMusicWorkspace/PMWRootView.swift; sourceTree = "<group>"; };
+		909E1FC05CC6FFCAF5AFEC9A /* PMWRecipientView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWRecipientView.swift; path = PrivateMusicWorkspace/PMWRecipientView.swift; sourceTree = "<group>"; };
 		A42CFC8E6F5243E2FC2DEEAA /* PrivateMusicWorkspaceApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PrivateMusicWorkspaceApp.swift; path = PrivateMusicWorkspace/PrivateMusicWorkspaceApp.swift; sourceTree = "<group>"; };
 		AE076524473163447D09AA98 /* PMWModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWModels.swift; path = PrivateMusicWorkspace/PMWModels.swift; sourceTree = "<group>"; };
 		BF03471EC9402DB7271816CD /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		D4CF12795567A57B10BBCC27 /* PMWAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWAPIClient.swift; path = PrivateMusicWorkspace/PMWAPIClient.swift; sourceTree = "<group>"; };
 		F21B3364396EF2813AD7DBDB /* PMWAudioEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWAudioEngine.swift; path = PrivateMusicWorkspace/PMWAudioEngine.swift; sourceTree = "<group>"; };
+		AA01BB0100000001AABBCC01 /* PMWAuthClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWAuthClient.swift; path = PrivateMusicWorkspace/PMWAuthClient.swift; sourceTree = "<group>"; };
+		AA01BB0100000002AABBCC02 /* PMWKeychain.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWKeychain.swift; path = PrivateMusicWorkspace/PMWKeychain.swift; sourceTree = "<group>"; };
+		AA01BB0100000003AABBCC03 /* PMWSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWSession.swift; path = PrivateMusicWorkspace/PMWSession.swift; sourceTree = "<group>"; };
+		AA01BB0100000004AABBCC04 /* PMWSignInView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PMWSignInView.swift; path = PrivateMusicWorkspace/PMWSignInView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		40CC20B42FC5110F0044412D /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 40CC20A12FC5110C0044412D /* WhiteLabelReceipts */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		40CC20A52FC5110C0044412D /* WhiteLabelReceipts */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (40CC20B42FC5110F0044412D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = WhiteLabelReceipts; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		40CC209F2FC5110C0044412D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				40CC20A42FC5110C0044412D /* Messages.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7B943C9754A97781A45705D0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -46,6 +113,8 @@
 		7F4A907AC26C52D5BD57F7E8 = {
 			isa = PBXGroup;
 			children = (
+				40CC209D2FC50DF60044412D /* PrivateMusicWorkspace-Info.plist */,
+				40CC20A52FC5110C0044412D /* WhiteLabelReceipts */,
 				90243341C7DECDF23EB3C09D /* Products */,
 				F1B182EE76ACD73B84DEDD0B /* Frameworks */,
 				C1CF2A2D18D55B998A3E92D7 /* Sources */,
@@ -57,6 +126,7 @@
 			isa = PBXGroup;
 			children = (
 				715D2FA0FB2EB6518BDE86FC /* PrivateMusicWorkspace.app */,
+				40CC20A22FC5110C0044412D /* WhiteLabelReceipts.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,6 +134,10 @@
 		C1CF2A2D18D55B998A3E92D7 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				909E1FC05CC6FFCAF5AFEC9A /* PMWRecipientView.swift */,
+				869FBF667A1526D01D6A0DE7 /* PMWSongCardHero.swift */,
+				D4CF12795567A57B10BBCC27 /* PMWAPIClient.swift */,
+				3C843F39C0297483C914AE62 /* PMWConfig.swift */,
 				F21B3364396EF2813AD7DBDB /* PMWAudioEngine.swift */,
 				AE076524473163447D09AA98 /* PMWModels.swift */,
 				9005AAA2E09071FB84936D88 /* PMWRootView.swift */,
@@ -71,8 +145,11 @@
 				893A1AB4D223C6FCF424DB44 /* PMWStore.swift */,
 				27B7376B3B4508C9151CCEFE /* PMWTheme.swift */,
 				A42CFC8E6F5243E2FC2DEEAA /* PrivateMusicWorkspaceApp.swift */,
+				AA01BB0100000001AABBCC01 /* PMWAuthClient.swift */,
+				AA01BB0100000002AABBCC02 /* PMWKeychain.swift */,
+				AA01BB0100000003AABBCC03 /* PMWSession.swift */,
+				AA01BB0100000004AABBCC04 /* PMWSignInView.swift */,
 			);
-			name = Sources;
 			path = Sources;
 			sourceTree = "<group>";
 		};
@@ -88,6 +165,7 @@
 			isa = PBXGroup;
 			children = (
 				DA82DFE8296C0592F85C354C /* iOS */,
+				40CC20A32FC5110C0044412D /* Messages.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -95,6 +173,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		40CC20A12FC5110C0044412D /* WhiteLabelReceipts */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 40CC20B52FC5110F0044412D /* Build configuration list for PBXNativeTarget "WhiteLabelReceipts" */;
+			buildPhases = (
+				40CC209E2FC5110C0044412D /* Sources */,
+				40CC209F2FC5110C0044412D /* Frameworks */,
+				40CC20A02FC5110C0044412D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				40CC20A52FC5110C0044412D /* WhiteLabelReceipts */,
+			);
+			name = WhiteLabelReceipts;
+			packageProductDependencies = (
+			);
+			productName = WhiteLabelReceipts;
+			productReference = 40CC20A22FC5110C0044412D /* WhiteLabelReceipts.appex */;
+			productType = "com.apple.product-type.app-extension.messages";
+		};
 		D958DA5F7ED33328D4DC3B6C /* PrivateMusicWorkspace */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 15F48028104A1BD86D3D4071 /* Build configuration list for PBXNativeTarget "PrivateMusicWorkspace" */;
@@ -102,10 +202,12 @@
 				A34404D164470709BC1E04BB /* Sources */,
 				7B943C9754A97781A45705D0 /* Frameworks */,
 				6E72325CF39153F5E03D0CB1 /* Resources */,
+				40CC20B12FC5110F0044412D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				40CC20AF2FC5110F0044412D /* PBXTargetDependency */,
 			);
 			name = PrivateMusicWorkspace;
 			productName = "Private Music Workspace";
@@ -118,8 +220,16 @@
 		4642AD2F0406169567D50CD2 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 2600;
+				LastSwiftUpdateCheck = 2650;
 				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					40CC20A12FC5110C0044412D = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					D958DA5F7ED33328D4DC3B6C = {
+						ProvisioningStyle = Automatic;
+					};
+				};
 			};
 			buildConfigurationList = 174E5BC34D07105291A11D6D /* Build configuration list for PBXProject "PrivateMusicWorkspace" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -130,18 +240,24 @@
 				Base,
 			);
 			mainGroup = 7F4A907AC26C52D5BD57F7E8;
-			minimizedProjectReferenceProxies = 0;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = 90243341C7DECDF23EB3C09D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				D958DA5F7ED33328D4DC3B6C /* PrivateMusicWorkspace */,
+				40CC20A12FC5110C0044412D /* WhiteLabelReceipts */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		40CC20A02FC5110C0044412D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6E72325CF39153F5E03D0CB1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -153,10 +269,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		40CC209E2FC5110C0044412D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A34404D164470709BC1E04BB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FF6F0911E763D9E00D7FFD96 /* PMWRecipientView.swift in Sources */,
+				3058FEB82AA9101FE47D1CAE /* PMWSongCardHero.swift in Sources */,
+				607AE9A00D63034DBC3A1F86 /* PMWAPIClient.swift in Sources */,
+				FEA8D4138FE1E2FECE7A207C /* PMWConfig.swift in Sources */,
 				175871D33BA3F0B66F820504 /* PMWAudioEngine.swift in Sources */,
 				BE4C1598EC70C8471FFB73E5 /* PMWModels.swift in Sources */,
 				C865624C36E7DDA3FEC66DEE /* PMWRootView.swift in Sources */,
@@ -164,12 +291,98 @@
 				082A249033D39CA53F30E174 /* PMWStore.swift in Sources */,
 				F39D788FBD82BF90D25A467B /* PMWTheme.swift in Sources */,
 				DD9D438F840E7D3F54ADB06C /* PrivateMusicWorkspaceApp.swift in Sources */,
+				AA01BB0000000001AABBCC01 /* PMWAuthClient.swift in Sources */,
+				AA01BB0000000002AABBCC02 /* PMWKeychain.swift in Sources */,
+				AA01BB0000000003AABBCC03 /* PMWSession.swift in Sources */,
+				AA01BB0000000004AABBCC04 /* PMWSignInView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		40CC20AF2FC5110F0044412D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 40CC20A12FC5110C0044412D /* WhiteLabelReceipts */;
+			targetProxy = 40CC20AE2FC5110F0044412D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		40CC20B22FC5110F0044412D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "iMessage App Icon";
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VR6F23HLU3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WhiteLabelReceipts/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = WhiteLabelReceipts;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Theo.PrivateMusicWorkspace.WhiteLabelReceipts;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		40CC20B32FC5110F0044412D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "iMessage App Icon";
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VR6F23HLU3;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WhiteLabelReceipts/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = WhiteLabelReceipts;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Theo.PrivateMusicWorkspace.WhiteLabelReceipts;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		57C9BF06084C6BC499DFC847 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -227,7 +440,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -281,7 +494,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -292,14 +505,20 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VR6F23HLU3;
+				MARKETING_VERSION = 1.0;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "PrivateMusicWorkspace-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Private Music Workspace";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "audio fetch";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = Theo.PrivateMusicWorkspace;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -316,14 +535,20 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VR6F23HLU3;
+				MARKETING_VERSION = 1.0;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "PrivateMusicWorkspace-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Private Music Workspace";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "audio fetch";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = Theo.PrivateMusicWorkspace;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -349,6 +574,15 @@
 			buildConfigurations = (
 				57C9BF06084C6BC499DFC847 /* Debug */,
 				794C329DB56508E4E0742443 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		40CC20B52FC5110F0044412D /* Build configuration list for PBXNativeTarget "WhiteLabelReceipts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40CC20B22FC5110F0044412D /* Debug */,
+				40CC20B32FC5110F0044412D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

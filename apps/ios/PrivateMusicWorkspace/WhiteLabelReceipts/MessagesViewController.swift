@@ -1,3 +1,4 @@
+import Combine
 import Messages
 import SwiftUI
 
@@ -89,7 +90,7 @@ final class MessagesViewController: MSMessagesAppViewController {
 
     @MainActor
     private func sendApproval() {
-        guard let token = model.token, let versionID = model.currentVersionID else { return }
+        guard model.token != nil, let versionID = model.currentVersionID else { return }
         Task {
             do {
                 _ = try await WLReceiptAPI.shared.approve(versionID: versionID)

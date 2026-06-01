@@ -7,12 +7,12 @@ import Foundation
 struct WLReceiptAPI {
     static let shared = WLReceiptAPI()
 
-    /// Production: replace with your Render URL.
+    /// Production: live Render deployment for the WL API.
     /// Process env var `WL_API_BASE_URL` overrides for dev.
     private var baseURL: URL {
         if let raw = ProcessInfo.processInfo.environment["WL_API_BASE_URL"],
            let url = URL(string: raw) { return url }
-        return URL(string: "https://white-label-api.onrender.com")!
+        return URL(string: "https://white-label-api-6mnt.onrender.com")!
     }
 
     struct Envelope<T: Decodable>: Decodable { let data: T?; let error: String? }

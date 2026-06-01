@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { getSupabase } from "./supabase";
 import type { AuthContext } from "./store";
 
@@ -153,6 +154,31 @@ export async function requireAuthedFromHeaders(
   }
 
   return authFromHeaders(headers);
+}
+
+// ---------------------------------------------------------------------------
+// assertInternalSecret — shared-secret guard for the legacy x-user-id routes
+// (POST /notes, POST /versions/:id/approvals) that the iMessage extension uses.
+// Those routes trust a caller-supplied x-user-id with no verification, so any
+// client could POST as `usr-theo`. When INTERNAL_WRITE_SECRET is set, every such
+// request must carry a matching `x-internal-secret` header. When the env is
+// UNSET, this is a no-op — so it's safe to deploy BEFORE the extension is
+// updated to send the header (behaviour-preserving until you opt in).
+// ---------------------------------------------------------------------------
+
+export function assertInternalSecret(
+  headers: Record<string, string | string[] | undefined>,
+): void {
+  const required = process.env.INTERNAL_WRITE_SECRET;
+  if (!required) return; // unset ⇒ behaviour-preserving no-op
+  const provided = pickHeader(headers, "x-internal-secret") ?? "";
+  // Constant-time compare over fixed-length SHA-256 digests — avoids leaking the
+  // secret's length or a byte-by-byte match position via response timing.
+  const a = createHash("sha256").update(provided).digest();
+  const b = createHash("sha256").update(required).digest();
+  if (!timingSafeEqual(a, b)) {
+    throw new AuthError("Invalid or missing internal secret", 401);
+  }
 }
 
 // ---------------------------------------------------------------------------

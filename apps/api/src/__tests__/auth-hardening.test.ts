@@ -10,12 +10,15 @@
  *  D. REQUIRE_JWT_AUTH unset  + no Bearer on protected route     → 2xx (behaviour-preserved)
  *  E. PATCH /songs/:id ignores a non-allowlisted field
  *  F. GET /me with unknown identity does NOT leak users[0]
+ *  G. users lookup uses auth_uid column (migration 0005)
+ *  H. assertInternalSecret — INTERNAL_WRITE_SECRET guard on POST /notes
+ *     and POST /versions/:id/approvals
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { buildApp } from "../server.js";
 import { store } from "../store.js";
-import { authFromHeaders } from "../auth.js";
+import { authFromHeaders, assertInternalSecret, AuthError } from "../auth.js";
 
 // ─── Mock supabase module ────────────────────────────────────────────────────
 // Use vi.hoisted() so the mock variables are available inside the vi.mock
@@ -56,6 +59,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete process.env.REQUIRE_JWT_AUTH;
+  delete process.env.INTERNAL_WRITE_SECRET;
 });
 
 // ─── A. Bearer + Supabase enabled + getUser returns in-band error → 401 ─────
@@ -298,6 +302,237 @@ describe("GET /me identity-leak prevention", () => {
     const body = res.json<Record<string, unknown>>();
     // Must NOT contain a leaked user object
     expect((body["data"] as Record<string, unknown> | undefined)?.["user"]).toBeFalsy();
+  });
+});
+
+// ─── H. assertInternalSecret — INTERNAL_WRITE_SECRET guard ───────────────────
+//
+// Four scenarios per the spec:
+//  1. env UNSET → POST /notes and POST /versions/:id/approvals behave as before
+//     (no 401 from the guard).
+//  2. env SET + no x-internal-secret header → 401.
+//  3. env SET + wrong x-internal-secret → 401.
+//  4. env SET + correct x-internal-secret → guard passes (handler runs).
+//
+// Unit-level coverage of assertInternalSecret is also included so failures
+// produce a precise message about which branch misbehaved.
+
+describe("assertInternalSecret (unit) — function-level behaviour", () => {
+  afterEach(() => {
+    delete process.env.INTERNAL_WRITE_SECRET;
+  });
+
+  it("is a no-op when INTERNAL_WRITE_SECRET is unset", () => {
+    delete process.env.INTERNAL_WRITE_SECRET;
+    // Must not throw regardless of what headers are provided
+    expect(() => assertInternalSecret({})).not.toThrow();
+    expect(() => assertInternalSecret({ "x-internal-secret": "anything" })).not.toThrow();
+    expect(() => assertInternalSecret({ "x-internal-secret": "" })).not.toThrow();
+  });
+
+  it("throws AuthError(401) when env is set and header is absent", () => {
+    process.env.INTERNAL_WRITE_SECRET = "super-secret";
+    expect(() => assertInternalSecret({})).toThrow(AuthError);
+    let caught: unknown;
+    try { assertInternalSecret({}); } catch (e) { caught = e; }
+    expect((caught as AuthError).httpStatus).toBe(401);
+  });
+
+  it("throws AuthError(401) when env is set and header value is wrong", () => {
+    process.env.INTERNAL_WRITE_SECRET = "super-secret";
+    expect(() =>
+      assertInternalSecret({ "x-internal-secret": "wrong-secret" })
+    ).toThrow(AuthError);
+    let caught: unknown;
+    try { assertInternalSecret({ "x-internal-secret": "wrong-secret" }); } catch (e) { caught = e; }
+    expect((caught as AuthError).httpStatus).toBe(401);
+  });
+
+  it("does not throw when env is set and header matches exactly", () => {
+    process.env.INTERNAL_WRITE_SECRET = "super-secret";
+    expect(() =>
+      assertInternalSecret({ "x-internal-secret": "super-secret" })
+    ).not.toThrow();
+  });
+
+  it("rejects a prefix of the correct secret (no false positive on partial match)", () => {
+    process.env.INTERNAL_WRITE_SECRET = "super-secret";
+    expect(() =>
+      assertInternalSecret({ "x-internal-secret": "super-secre" })
+    ).toThrow(AuthError);
+  });
+
+  it("rejects an empty string when env is set", () => {
+    process.env.INTERNAL_WRITE_SECRET = "super-secret";
+    expect(() =>
+      assertInternalSecret({ "x-internal-secret": "" })
+    ).toThrow(AuthError);
+  });
+});
+
+describe("POST /notes — INTERNAL_WRITE_SECRET guard (route-level)", () => {
+  afterEach(() => {
+    delete process.env.INTERNAL_WRITE_SECRET;
+  });
+
+  // Scenario 1: env UNSET → behaviour-preserved, no 401 from guard
+  it("allows the request and creates the note when INTERNAL_WRITE_SECRET is unset", async () => {
+    delete process.env.INTERNAL_WRITE_SECRET;
+    const res = await app.inject({
+      method: "POST",
+      url: "/notes",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-theo",
+      },
+      body: JSON.stringify({
+        song_id: SEED.song,
+        anchor_version_id: SEED.version,
+        body: "Guard unset — should pass",
+        scope: "song",
+      }),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ data: { author_user_id: string } }>();
+    expect(body.data.author_user_id).toBe("usr-theo");
+  });
+
+  // Scenario 2: env SET + no header → 401
+  it("responds 401 when INTERNAL_WRITE_SECRET is set but x-internal-secret header is absent", async () => {
+    process.env.INTERNAL_WRITE_SECRET = "top-secret-key";
+    const res = await app.inject({
+      method: "POST",
+      url: "/notes",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-theo",
+      },
+      body: JSON.stringify({
+        song_id: SEED.song,
+        anchor_version_id: SEED.version,
+        body: "Should be blocked",
+        scope: "song",
+      }),
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  // Scenario 3: env SET + wrong secret → 401
+  it("responds 401 when INTERNAL_WRITE_SECRET is set and x-internal-secret is wrong", async () => {
+    process.env.INTERNAL_WRITE_SECRET = "top-secret-key";
+    const res = await app.inject({
+      method: "POST",
+      url: "/notes",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-theo",
+        "x-internal-secret": "wrong-key",
+      },
+      body: JSON.stringify({
+        song_id: SEED.song,
+        anchor_version_id: SEED.version,
+        body: "Should be blocked — wrong key",
+        scope: "song",
+      }),
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  // Scenario 4: env SET + correct secret → guard passes, handler runs
+  it("allows the request when INTERNAL_WRITE_SECRET is set and x-internal-secret matches", async () => {
+    process.env.INTERNAL_WRITE_SECRET = "top-secret-key";
+    const res = await app.inject({
+      method: "POST",
+      url: "/notes",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-maya",
+        "x-internal-secret": "top-secret-key",
+      },
+      body: JSON.stringify({
+        song_id: SEED.song,
+        anchor_version_id: SEED.version,
+        body: "Correct secret — should succeed",
+        scope: "song",
+      }),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ data: { author_user_id: string } }>();
+    expect(body.data.author_user_id).toBe("usr-maya");
+  });
+});
+
+describe("POST /versions/:id/approvals — INTERNAL_WRITE_SECRET guard (route-level)", () => {
+  afterEach(() => {
+    delete process.env.INTERNAL_WRITE_SECRET;
+  });
+
+  // Scenario 1: env UNSET → behaviour-preserved
+  it("allows the request and records the approval when INTERNAL_WRITE_SECRET is unset", async () => {
+    delete process.env.INTERNAL_WRITE_SECRET;
+    const res = await app.inject({
+      method: "POST",
+      url: `/versions/${SEED.version}/approvals`,
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-maya",
+      },
+      body: JSON.stringify({ state: "approved" }),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ data: { actor_user_id: string; state: string } }>();
+    expect(body.data.actor_user_id).toBe("usr-maya");
+    expect(body.data.state).toBe("approved");
+  });
+
+  // Scenario 2: env SET + no header → 401
+  it("responds 401 when INTERNAL_WRITE_SECRET is set but x-internal-secret header is absent", async () => {
+    process.env.INTERNAL_WRITE_SECRET = "approval-secret";
+    const res = await app.inject({
+      method: "POST",
+      url: `/versions/${SEED.version}/approvals`,
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-maya",
+      },
+      body: JSON.stringify({ state: "approved" }),
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  // Scenario 3: env SET + wrong secret → 401
+  it("responds 401 when INTERNAL_WRITE_SECRET is set and x-internal-secret is wrong", async () => {
+    process.env.INTERNAL_WRITE_SECRET = "approval-secret";
+    const res = await app.inject({
+      method: "POST",
+      url: `/versions/${SEED.version}/approvals`,
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-maya",
+        "x-internal-secret": "not-the-secret",
+      },
+      body: JSON.stringify({ state: "approved" }),
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  // Scenario 4: env SET + correct secret → guard passes, handler runs
+  it("allows the request when INTERNAL_WRITE_SECRET is set and x-internal-secret matches", async () => {
+    process.env.INTERNAL_WRITE_SECRET = "approval-secret";
+    const res = await app.inject({
+      method: "POST",
+      url: `/versions/${SEED.version}/approvals`,
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-river",
+        "x-internal-secret": "approval-secret",
+      },
+      body: JSON.stringify({ state: "revision_requested", note: "Bridge needs work" }),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ data: { actor_user_id: string; state: string } }>();
+    expect(body.data.actor_user_id).toBe("usr-river");
+    expect(body.data.state).toBe("revision_requested");
   });
 });
 

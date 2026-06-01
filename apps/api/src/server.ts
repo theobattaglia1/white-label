@@ -5,7 +5,7 @@ import { store, type AuthContext } from "./store";
 import { signUpload, finalizeUpload, type FinalizeUploadInput, type SignUploadInput } from "./uploads";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
 import { isSupabaseEnabled } from "./supabase";
-import { authFromHeaders, requireAuthedFromHeaders, AuthError } from "./auth";
+import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthError } from "./auth";
 
 /**
  * Builds and returns a fully-registered Fastify instance without binding a
@@ -413,6 +413,7 @@ server.post("/versions/:id/set-current", async (request) => {
 // (separate sandbox, no App Group). Kept on legacy auth until the extension has a credential
 // path — see runbook 2026-05-29.
 server.post("/versions/:id/approvals", async (request) => {
+  assertInternalSecret(request.headers); // no-op unless INTERNAL_WRITE_SECRET is set
   const { id } = request.params as { id: string };
   const body = request.body as { state: "approved" | "revision_requested" | "passed"; note?: string };
   return ok(store.createApproval(id, authFromRequest(request), body.state, body.note));
@@ -421,7 +422,10 @@ server.post("/versions/:id/approvals", async (request) => {
 // iMessage extension (WLReceiptAPI) posts here with x-user-id and cannot obtain a Supabase JWT
 // (separate sandbox, no App Group). Kept on legacy auth until the extension has a credential
 // path — see runbook 2026-05-29.
-server.post("/notes", async (request) => ok(store.createNote(authFromRequest(request), request.body as never)));
+server.post("/notes", async (request) => {
+  assertInternalSecret(request.headers); // no-op unless INTERNAL_WRITE_SECRET is set
+  return ok(store.createNote(authFromRequest(request), request.body as never));
+});
 server.patch("/notes/:id", async (request) => {
   const auth = await requireAuthedFromRequest(request);
   const { id } = request.params as { id: string };
@@ -608,6 +612,13 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
     app.log.warn(
       { supabaseEnabled: false },
       "write routes running in x-user-id FALLBACK mode — JWT not enforced because Supabase is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing)",
+    );
+  }
+
+  if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_WRITE_SECRET) {
+    app.log.warn(
+      { internalWriteSecret: false },
+      "POST /notes and POST /versions/:id/approvals accept an UNVERIFIED x-user-id header — set INTERNAL_WRITE_SECRET (and have the iMessage extension send a matching x-internal-secret) to close this spoofing surface. See runbook.",
     );
   }
 

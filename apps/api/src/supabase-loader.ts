@@ -6,6 +6,8 @@ import type {
   Mention,
   Note,
   NotificationItem,
+  Playlist,
+  PlaylistItem,
   Room,
   SavedView,
   ShareLink,
@@ -48,6 +50,8 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     activityR,
     notificationsR,
     viewsR,
+    playlistsR,
+    playlistItemsR,
   ] = await Promise.all([
     supabase.from("users").select("*"),
     supabase.from("workspaces").select("*"),
@@ -64,9 +68,11 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     supabase.from("activity_events").select("*"),
     supabase.from("notifications").select("*"),
     supabase.from("saved_views").select("*"),
+    supabase.from("playlists").select("*"),
+    supabase.from("playlist_items").select("*"),
   ]);
 
-  for (const r of [usersR, workspacesR, membershipsR, roomsR, assetsR, songsR, versionsR, notesR, mentionsR, tasksR, approvalsR, linksR, activityR, notificationsR, viewsR]) {
+  for (const r of [usersR, workspacesR, membershipsR, roomsR, assetsR, songsR, versionsR, notesR, mentionsR, tasksR, approvalsR, linksR, activityR, notificationsR, viewsR, playlistsR, playlistItemsR]) {
     if (r.error) {
       console.error("[supabase-loader]", r.error);
       throw new Error(`Supabase query failed: ${r.error.message}`);
@@ -317,6 +323,27 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       name: v.name,
       filter: v.filter,
       created_at: v.created_at,
+    })),
+    playlists: (playlistsR.data ?? []).map((p: any): Playlist => ({
+      playlist_id: p.external_id ?? p.playlist_id,
+      workspace_id: ext(p.workspace_id),
+      owner_user_id: ext(p.owner_user_id) || undefined,
+      title: p.title,
+      description: p.description ?? undefined,
+      cover_seed: p.cover_seed ?? p.playlist_id,
+      is_pinned: !!p.is_pinned,
+      created_by: ext(p.created_by),
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+    })),
+    playlistItems: (playlistItemsR.data ?? []).map((it: any): PlaylistItem => ({
+      playlist_item_id: it.playlist_item_id,
+      playlist_id: ext(it.playlist_id) || it.playlist_id,
+      song_id: ext(it.song_id),
+      position: it.position,
+      added_by: ext(it.added_by),
+      added_at: it.added_at,
+      note: it.note ?? undefined,
     })),
   };
 

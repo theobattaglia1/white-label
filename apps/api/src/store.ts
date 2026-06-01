@@ -13,9 +13,11 @@ import {
   type DownloadPolicy,
   type FileAsset,
   type LinkAccess,
+  type Membership,
   type Note,
   type NoteVisibility,
   type ShareLink,
+  type User,
   type VersionPolicy,
   type VersionType,
   type WorkspaceSnapshot,
@@ -64,9 +66,15 @@ export class WorkspaceStore {
     return this.snapshot;
   }
 
-  me(auth: AuthContext) {
-    const user = this.snapshot.users.find((candidate) => candidate.user_id === auth.userID) ?? this.snapshot.users[0];
-    const memberships = this.snapshot.memberships.filter((membership) => membership.user_id === user.user_id);
+  // TODO(authz): per-resource membership/ownership authorization in store mutations — see runbook
+
+  me(auth: AuthContext): { user: User | null; memberships: Membership[] } {
+    const user =
+      this.snapshot.users.find((candidate) => candidate.user_id === auth.userID) ?? null;
+    if (!user) return { user: null, memberships: [] };
+    const memberships = this.snapshot.memberships.filter(
+      (membership) => membership.user_id === user.user_id,
+    );
     return { user, memberships };
   }
 

@@ -8,7 +8,7 @@ import Foundation
 /// where the data came from.
 @MainActor
 final class PMWStore: ObservableObject {
-    @Published private(set) var room = PMWSampleData.room
+    @Published private(set) var project = PMWSampleData.project
     @Published private(set) var songs = PMWSampleData.songs
     @Published private(set) var versions = PMWSampleData.versions
     @Published private(set) var assets = PMWSampleData.assets
@@ -21,15 +21,15 @@ final class PMWStore: ObservableObject {
     @Published var offlineQueue: Set<String> = ["song-midnight", "song-witness"]
     @Published private(set) var lastError: String?
 
-    // Loaded asynchronously from the API for Library / Playlists / Room switcher.
-    @Published var roomsSummary: [PMWAPIClient.APIRoomSummary] = []
+    // Loaded asynchronously from the API for Library / Playlists / Project switcher.
+    @Published var projectsSummary: [PMWAPIClient.APIProjectSummary] = []
     @Published var libraryItems: [PMWAPIClient.APILibraryItem] = []
     @Published var playlistsList: [PMWAPIClient.APIPlaylist] = []
 
     func loadLibrarySurfaces() async {
         do {
-            self.roomsSummary  = try await PMWAPIClient.shared.roomsSummary()
-        } catch { print("roomsSummary failed:", error) }
+            self.projectsSummary  = try await PMWAPIClient.shared.projectsSummary()
+        } catch { print("projectsSummary failed:", error) }
         do {
             self.libraryItems  = try await PMWAPIClient.shared.library()
         } catch { print("library failed:", error) }
@@ -226,7 +226,7 @@ final class PMWStore: ObservableObject {
                 return "\(song.title): missing \(missing)"
             }.joined(separator: "\n")
         }
-        return "\(room.title) has \(songs.count) songs, \(versions.count) versions, and \(notes.filter { $0.status == .open }.count) open notes. The assistant is read-only."
+        return "\(project.title) has \(songs.count) songs, \(versions.count) versions, and \(notes.filter { $0.status == .open }.count) open notes. The assistant is read-only."
     }
 
     // MARK: - Loading from API ----------------------------------------
@@ -236,26 +236,26 @@ final class PMWStore: ObservableObject {
     func loadFromAPIIfEnabled() async {
         guard PMWConfig.useRemoteAPI else { return }
         do {
-            let payload = try await PMWAPIClient.shared.room()
+            let payload = try await PMWAPIClient.shared.project()
             adopt(payload: payload)
         } catch {
             lastError = "Could not load workspace: \(error.localizedDescription)"
         }
     }
 
-    func adoptRoomPayload(_ payload: PMWAPIClient.RoomPayload) { adopt(payload: payload) }
+    func adoptProjectPayload(_ payload: PMWAPIClient.ProjectPayload) { adopt(payload: payload) }
 
-    private func adopt(payload: PMWAPIClient.RoomPayload) {
-        room = PMWRoom(
-            id: payload.room.room_id,
-            title: payload.room.title,
-            detail: payload.room.description ?? "",
+    private func adopt(payload: PMWAPIClient.ProjectPayload) {
+        project = PMWProject(
+            id: payload.project.project_id,
+            title: payload.project.title,
+            detail: payload.project.description ?? "",
             versionPolicy: "full history",
             downloadPolicy: "none"
         )
         songs = payload.songs.map { s in
             PMWSong(
-                id: s.song_id, roomID: payload.room.room_id,
+                id: s.song_id, projectID: payload.project.project_id,
                 title: s.title, artistName: s.artist_display_name ?? "",
                 projectName: s.project_name ?? "",
                 status: s.status,
@@ -308,12 +308,12 @@ final class PMWStore: ObservableObject {
 }
 
 enum PMWTab: String, CaseIterable, Identifiable {
-    case library, song, inbox, playlists, room, compare, links, ask
+    case library, song, inbox, playlists, project, compare, links, ask
     var id: String { rawValue }
 
     /// HIG-compliant primary tabs (max 5). The remaining cases live in a More sheet.
     static let primary: [PMWTab] = [.library, .song, .inbox]
-    static let secondary: [PMWTab] = [.playlists, .room, .compare, .links, .ask]
+    static let secondary: [PMWTab] = [.playlists, .project, .compare, .links, .ask]
 
     var title: String {
         switch self {
@@ -321,7 +321,7 @@ enum PMWTab: String, CaseIterable, Identifiable {
         case .song: "Song"
         case .inbox: "Inbox"
         case .playlists: "Playlists"
-        case .room: "Room"
+        case .project: "Project"
         case .compare: "Compare"
         case .links: "Links"
         case .ask: "Ask"
@@ -334,7 +334,7 @@ enum PMWTab: String, CaseIterable, Identifiable {
         case .song: "waveform"
         case .inbox: "tray"
         case .playlists: "list.bullet.rectangle"
-        case .room: "square.stack"
+        case .project: "square.stack"
         case .compare: "rectangle.split.2x1"
         case .links: "link"
         case .ask: "message"

@@ -4,7 +4,7 @@ import Foundation
 /// `WL_API_BASE_URL` as a process environment variable for one-off testing.
 enum PMWConfig {
     /// Where the WL API + static audio live. Used by both PMWAudioEngine
-    /// (for /seed-audio/*) and PMWAPIClient (for /rooms, /songs, /notes).
+    /// (for /seed-audio/*) and PMWAPIClient (for /projects, /songs, /notes).
     static var apiBaseURL: URL {
         if let raw = ProcessInfo.processInfo.environment["WL_API_BASE_URL"],
            let url = URL(string: raw) { return url }
@@ -13,21 +13,24 @@ enum PMWConfig {
 
     /// Default API URL.
     ///
-    /// - In Simulator on the dev machine, point at the dev API + Vite web:
-    ///   `http://127.0.0.1:5180` (Vite serves /seed-audio from /public,
-    ///   and you can run a reverse-proxy or hit the API separately).
+    /// Defaults to the live Render deployment so a fresh checkout / TestFlight
+    /// build "just works". For local development, override with the
+    /// `WL_API_BASE_URL` scheme env var (Product → Scheme → Edit Scheme →
+    /// Run → Arguments → Environment Variables), e.g.:
     ///
-    /// - On a real device on the same Wi-Fi as your Mac, replace 127.0.0.1
-    ///   with the Mac's LAN IP.
-    ///
-    /// - In production (TestFlight / App Store), set this to your Render URL,
-    ///   e.g. `https://white-label-api.onrender.com`.
-    static let defaultAPIBaseURL = "http://127.0.0.1:5180"
+    ///   - Simulator on dev machine:  `http://127.0.0.1:4317`
+    ///   - Real device on same Wi-Fi: `http://<mac-lan-ip>:4317`
+    static let defaultAPIBaseURL = "https://white-label-api-6mnt.onrender.com"
 
     /// When true, PMWStore loads from PMWAPIClient. When false, it uses
     /// PMWSampleData and the user can demo the UI offline.
+    /// Defaults to true so the production build pulls live data; set
+    /// `WL_USE_REMOTE_API=0` in the scheme to force the offline sample
+    /// dataset (useful for design reviews and screenshots).
     static var useRemoteAPI: Bool {
-        ProcessInfo.processInfo.environment["WL_USE_REMOTE_API"] == "1"
+        let raw = ProcessInfo.processInfo.environment["WL_USE_REMOTE_API"]
+        if raw == "0" || raw == "false" { return false }
+        return true
     }
 
     /// The dev user id sent as the `x-user-id` header. Stand-in until real

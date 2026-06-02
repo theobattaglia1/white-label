@@ -9,7 +9,7 @@ export type MemberRole =
   | "anr"
   | "viewer"
   | "guest";
-export type RoomType =
+export type ProjectType =
   | "project"
   | "producer_delivery"
   | "album_ep"
@@ -88,10 +88,10 @@ export interface Membership {
   created_at: string;
 }
 
-export interface Room {
-  room_id: string;
+export interface Project {
+  project_id: string;
   workspace_id: string;
-  type: RoomType;
+  type: ProjectType;
   title: string;
   description?: string;
   visibility: string;
@@ -134,7 +134,7 @@ export interface FileAsset {
 export interface Song {
   song_id: string;
   workspace_id: string;
-  primary_room_id?: string;
+  primary_project_id?: string;
   title: string;
   artist_display_name?: string;
   project_name?: string;
@@ -172,7 +172,7 @@ export interface Note {
   note_id: string;
   song_id: string;
   anchor_version_id: string;
-  room_id?: string;
+  project_id?: string;
   author_user_id?: string;
   author_guest_label?: string;
   body: string;
@@ -213,7 +213,7 @@ export interface Mention {
 export interface Task {
   task_id: string;
   workspace_id: string;
-  room_id?: string;
+  project_id?: string;
   song_id?: string;
   version_id?: string;
   source_note_id?: string;
@@ -242,7 +242,7 @@ export interface Approval {
 export interface ShareLink {
   link_id: string;
   workspace_id: string;
-  target_type: "song" | "room" | "playlist";
+  target_type: "song" | "project" | "playlist";
   target_id: string;
   token_hash: string;
   demo_token?: string;
@@ -299,7 +299,7 @@ export interface SavedView {
 
 export interface InboxItem {
   song: Song;
-  room: Room;
+  project: Project;
   current_version: Version;
   asset: FileAsset;
   shared_by: string;
@@ -315,10 +315,10 @@ export interface DeliverableStatus {
 }
 
 /**
- * Producer-curated ordered list of songs. Unlike a Room (which is
+ * Producer-curated ordered list of songs. Unlike a Project (which is
  * permissioned and purposeful — "Hudson Ingram LP · Approval run"), a
  * Playlist is ad-hoc and personal. Songs can live in multiple playlists,
- * playlists can cross rooms, and a playlist's purpose is just to be a
+ * playlists can cross projects, and a playlist's purpose is just to be a
  * thing you can play through or share.
  */
 export interface Playlist {
@@ -349,11 +349,50 @@ export interface PlaylistItem {
   note?: string;
 }
 
+export interface PinnedSong {
+  pin_id: string;
+  workspace_id: string;
+  user_id: string;
+  song_id: string;
+  pinned_at: string;
+}
+
+export interface PinnedPlaylist {
+  pin_id: string;
+  workspace_id: string;
+  user_id: string;
+  playlist_id: string;
+  pinned_at: string;
+}
+
+export interface PinnedProject {
+  pin_id: string;
+  workspace_id: string;
+  user_id: string;
+  project_id: string;
+  pinned_at: string;
+}
+
+/**
+ * One item in the workspace "recently active" feed.
+ * `last_activity_at` = max(song.updated_at, current_version.created_at).
+ * Shape is a superset of the library item so the client can reuse the
+ * same row component.
+ */
+export interface RecentItem {
+  song: Song;
+  project: { project_id: string; title: string; type: ProjectType } | null;
+  current_version: Version | null;
+  asset: FileAsset | null;
+  /** ISO 8601 — use this to render "2h ago" / "Yesterday" labels. */
+  last_activity_at: string;
+}
+
 export interface WorkspaceSnapshot {
   workspaces: Workspace[];
   users: User[];
   memberships: Membership[];
-  rooms: Room[];
+  projects: Project[];
   assets: FileAsset[];
   songs: Song[];
   versions: Version[];
@@ -367,5 +406,8 @@ export interface WorkspaceSnapshot {
   savedViews: SavedView[];
   playlists: Playlist[];
   playlistItems: PlaylistItem[];
+  pinnedSongs: PinnedSong[];
+  pinnedPlaylists: PinnedPlaylist[];
+  pinnedProjects: PinnedProject[];
 }
 

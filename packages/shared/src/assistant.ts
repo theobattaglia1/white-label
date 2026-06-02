@@ -1,9 +1,9 @@
 import { computeDeliverables } from "./deliverables";
-import type { ActivityEvent, FileAsset, Note, Room, Song, User, Version, WorkspaceSnapshot } from "./models";
+import type { ActivityEvent, FileAsset, Note, Project, Song, User, Version, WorkspaceSnapshot } from "./models";
 
 export interface AssistantAnswer {
   answer: string;
-  citations: Array<{ type: "song" | "version" | "activity" | "note" | "room"; id: string; label: string }>;
+  citations: Array<{ type: "song" | "version" | "activity" | "note" | "project"; id: string; label: string }>;
 }
 
 function labelUser(users: User[], userID?: string): string {
@@ -89,21 +89,21 @@ export function answerWorkspaceQuestion(snapshot: WorkspaceSnapshot, rawQuestion
         .map((link) => link.link_name ?? link.link_id)
         .join(", ")}.`,
       citations: activeLinks.map((link) => ({
-        type: link.target_type === "room" ? "room" : "song",
+        type: link.target_type === "project" ? "project" : "song",
         id: link.target_id,
         label: link.link_name ?? "Share link",
       })),
     };
   }
 
-  const room: Room | undefined = snapshot.rooms[0];
+  const project: Project | undefined = snapshot.projects[0];
   const openNotes = snapshot.notes.filter((note) => note.status === "open");
   const assets: FileAsset[] = snapshot.assets;
   return {
-    answer: `${room?.title ?? "This workspace"} has ${snapshot.songs.length} songs, ${snapshot.versions.length} versions, ${openNotes.length} open notes, and ${Math.round(
+    answer: `${project?.title ?? "This workspace"} has ${snapshot.songs.length} songs, ${snapshot.versions.length} versions, ${openNotes.length} open notes, and ${Math.round(
       assets.reduce((sum, asset) => sum + asset.file_size_bytes, 0) / 1_000_000
     )} MB of seeded audio assets. I can answer from records only and will not mutate anything.`,
-    citations: room ? [{ type: "room", id: room.room_id, label: room.title }] : [],
+    citations: project ? [{ type: "project", id: project.project_id, label: project.title }] : [],
   };
 }
 

@@ -40,15 +40,15 @@ export async function persistNote(note: Note): Promise<void> {
   const authorUuid = note.author_user_id
     ? await uuidFor("users", "user_id", note.author_user_id)
     : null;
-  const roomUuid = note.room_id
-    ? await uuidFor("rooms", "room_id", note.room_id)
+  const projectUuid = note.project_id
+    ? await uuidFor("projects", "project_id", note.project_id)
     : null;
 
   const { error } = await supabase.from("notes").insert({
     external_id: note.note_id,
     song_id: songUuid,
     anchor_version_id: versionUuid,
-    room_id: roomUuid,
+    project_id: projectUuid,
     author_user_id: authorUuid,
     author_guest_label: note.author_guest_label ?? null,
     body: note.body,

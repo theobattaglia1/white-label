@@ -9,10 +9,10 @@ enum PMWSampleData {
         PMWUser(id: "usr-dana",  displayName: "Dana Kim",       role: "A&R")
     ]
 
-    static let room = PMWRoom(
+    static let project = PMWProject(
         id: "room-secret-album",
         title: "Hudson Ingram LP · Approval run",
-        detail: "Private review room — four songs on the approval path before label submission.",
+        detail: "Private review project — four songs on the approval path before label submission.",
         versionPolicy: "full history",
         downloadPolicy: "none"
     )
@@ -53,7 +53,7 @@ enum PMWSampleData {
 
     static let songs = [
         PMWSong(id: "song-midnight",
-                roomID: room.id,
+                projectID: project.id,
                 title: "The First Night",
                 artistName: "Hudson Ingram",
                 projectName: "Hudson Ingram LP",
@@ -64,7 +64,7 @@ enum PMWSampleData {
                 explicit: true),
 
         PMWSong(id: "song-neon",
-                roomID: room.id,
+                projectID: project.id,
                 title: "Lighting The Fuse",
                 artistName: "Hudson Ingram",
                 projectName: "Hudson Ingram LP",
@@ -75,7 +75,7 @@ enum PMWSampleData {
                 explicit: false),
 
         PMWSong(id: "song-witness",
-                roomID: room.id,
+                projectID: project.id,
                 title: "Duel",
                 artistName: "Ruby Plume",
                 projectName: "Ruby Plume single",
@@ -86,7 +86,7 @@ enum PMWSampleData {
                 explicit: true),
 
         PMWSong(id: "song-lowlight",
-                roomID: room.id,
+                projectID: project.id,
                 title: "Best Of Me",
                 artistName: "Daniel Price · Olmo · Mills",
                 projectName: "Daniel Price · EP",

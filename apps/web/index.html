@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WHITE LABEL · Private music. Before release.</title>
+    <!-- Fraunces — editorial-serif headline used in HomeView / LibraryView heroes.
+         Preload removed: the woff2 URL Google serves rotates and an exact
+         preload URL goes 404 within weeks. Self-host as a follow-up to restore
+         the LCP optimization. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

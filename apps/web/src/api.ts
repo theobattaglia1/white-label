@@ -1,5 +1,51 @@
-import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Room, SavedView, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
+import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Project, SavedView, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
 import { supabase } from "./auth";
+
+// =====================================================================
+// Pin / Recent types  (Pieces 4 & 5 — defined here for the client layer)
+// =====================================================================
+
+export type PinnedSong = {
+  song_id: string;
+  title: string;
+  artist_display_name?: string;
+  project_name?: string;
+  status: string;
+  pinned_at: string;
+};
+
+export type PinnedPlaylist = {
+  playlist_id: string;
+  title: string;
+  item_count: number;
+  cover_seed: string;
+  pinned_at: string;
+};
+
+export type PinnedProject = {
+  project_id: string;
+  title: string;
+  project_type: string;
+  song_count: number;
+  pinned_at: string;
+};
+
+export type MyPinsPayload = {
+  songs: PinnedSong[];
+  playlists: PinnedPlaylist[];
+  projects: PinnedProject[];
+};
+
+export type RecentItem = {
+  entity_type: "song" | "playlist" | "project";
+  entity_id: string;
+  title: string;
+  artist_display_name?: string;
+  project_name?: string;
+  version_label?: string;
+  status?: string;
+  last_activity_at: string;
+};
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
 
@@ -26,8 +72,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data as T;
 }
 
-export type RoomPayload = {
-  room: Room;
+export type ProjectPayload = {
+  project: Project;
   songs: Song[];
   versions: Version[];
   assets: FileAsset[];
@@ -51,19 +97,19 @@ export type SharedPayload = {
   songs: Song[];
   versions: Version[];
   assets: FileAsset[];
-  rooms: Room[];
+  projects: Project[];
   /** Set when the link's `target_type === "playlist"`. */
   playlist?: Playlist | null;
 };
 
 export const api = {
-  room: (id = "room-hudson-ingram-lp") => request<RoomPayload>(`/rooms/${id}`),
+  project: (id = "room-hudson-ingram-lp") => request<ProjectPayload>(`/projects/${id}`),
   song: (id: string) => request<SongPayload>(`/songs/${id}`),
   inbox: () =>
     request<
       Array<{
         song: Song;
-        room: Room;
+        project: Project;
         current_version: Version;
         asset: FileAsset;
         shared_by: string;
@@ -89,19 +135,19 @@ export const api = {
     request<VisibleNote>(`/notes/${noteID}`, { method: "PATCH", body: JSON.stringify(body) }),
   approve: (versionID: string, state: "approved" | "revision_requested" | "passed") =>
     request(`/versions/${versionID}/approvals`, { method: "POST", body: JSON.stringify({ state }) }),
-  createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "room" | "playlist"; target_id: string }) =>
+  createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "project" | "playlist"; target_id: string }) =>
     request<{ link: ShareLink; token: string }>("/links", { method: "POST", body: JSON.stringify(body) }),
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
-  roomAnalytics: (id = "room-hudson-ingram-lp") =>
-    request<Array<ActivityEvent & { actor_display_name: string }>>(`/rooms/${id}/analytics`),
+  projectAnalytics: (id = "room-hudson-ingram-lp") =>
+    request<Array<ActivityEvent & { actor_display_name: string }>>(`/projects/${id}/analytics`),
   workspaceMembers: (id = "wsp-amf-private") =>
     request<Array<{ user_id: string; display_name: string; role: string }>>(`/workspaces/${id}/members`),
-  roomsSummary: (id = "wsp-amf-private") =>
-    request<Array<Room & { song_count: number; open_note_count: number }>>(`/workspaces/${id}/rooms-summary`),
+  projectsSummary: (id = "wsp-amf-private") =>
+    request<Array<Project & { song_count: number; open_note_count: number }>>(`/workspaces/${id}/projects-summary`),
   workspaceLibrary: (id = "wsp-amf-private") =>
     request<Array<{
       song: Song;
-      room: { room_id: string; title: string; type: string } | null;
+      project: { project_id: string; title: string; type: string } | null;
       current_version: Version | null;
       asset: FileAsset | null;
     }>>(`/workspaces/${id}/library`),
@@ -130,6 +176,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ item_ids }),
     }),
+  // === Pins & Recent (Pieces 4 & 5) ====================================
+
+  getMyPins: (workspaceID = "wsp-amf-private") =>
+    request<MyPinsPayload>(`/workspaces/${workspaceID}/my-pins`),
+  pinSong: (workspaceID: string, songID: string) =>
+    request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/songs/${songID}`, { method: "PUT", body: JSON.stringify({}) }),
+  unpinSong: (workspaceID: string, songID: string) =>
+    request<{ unpinned: true }>(`/workspaces/${workspaceID}/my-pins/songs/${songID}`, { method: "DELETE" }),
+  pinPlaylist: (workspaceID: string, playlistID: string) =>
+    request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/playlists/${playlistID}`, { method: "PUT", body: JSON.stringify({}) }),
+  unpinPlaylist: (workspaceID: string, playlistID: string) =>
+    request<{ unpinned: true }>(`/workspaces/${workspaceID}/my-pins/playlists/${playlistID}`, { method: "DELETE" }),
+  pinProject: (workspaceID: string, projectID: string) =>
+    request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/projects/${projectID}`, { method: "PUT", body: JSON.stringify({}) }),
+  unpinProject: (workspaceID: string, projectID: string) =>
+    request<{ unpinned: true }>(`/workspaces/${workspaceID}/my-pins/projects/${projectID}`, { method: "DELETE" }),
+  recent: (workspaceID: string, limit = 20) =>
+    request<RecentItem[]>(`/workspaces/${workspaceID}/recent?limit=${limit}`),
+
   shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
   sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
     request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {

@@ -1727,7 +1727,7 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .library-row {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 18px;
   align-items: center;
   padding: 14px 0;
@@ -1745,6 +1745,17 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   color: inherit;
   text-align: left;
   min-width: 0;
+}
+/* Stretched pseudo-link: extends the row-main click target across the full row
+   except the rightmost buttons (+, pin). z-index kept below siblings so it
+   never covers .library-add or .pin-button. */
+.library-row-main::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  right: 84px; /* leaves room for + button (32px) + pin button (32px) + gap (20px) */
+  cursor: pointer;
+  z-index: 0;
 }
 .library-row-main .cover-art {
   width: 52px; height: 52px;
@@ -1787,6 +1798,8 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   place-items: center;
   cursor: pointer;
   color: var(--tape-oxide);
+  position: relative;
+  z-index: 1;
 }
 .library-add:hover { border-color: var(--redline); color: var(--redline); }
 .library-add-menu {
@@ -2895,4 +2908,369 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   body, .app-shell, .shared-page { background: #fff; color: #000; }
   .top-bar, .sidebar, .mini-player, .sticky-composer { display: none !important; }
   .workspace-main, .shared-main { padding: 0; }
+}
+
+/* =====================================================================
+   HomeView + shared paper-surface (lib) tokens — Piece 6
+   ===================================================================== */
+
+/* Paper canvas — cream editorial surface. Both HomeView and the future
+   LibraryView rebuild share this surface. */
+.home-canvas, .library-canvas {
+  background: var(--sleeve-cream);
+  color: var(--ink);
+  min-height: 100%;
+}
+
+/* === Paper ink tokens (used only on cream surfaces) ================ */
+.home-canvas, .library-canvas {
+  --paper-ink: var(--ink);
+  --paper-ink-muted: var(--pencil-cool);
+  --paper-line: var(--sleeve-hairline);
+  --paper-surface: var(--sleeve-card);
+  --paper-elevated: var(--sleeve-elevated);
+}
+
+/* === Hero band ====================================================== */
+.lib-hero {
+  padding: 48px clamp(24px, 5vw, 72px) 40px;
+  border-bottom: 1px solid var(--sleeve-hairline);
+  position: relative;
+}
+
+/* Single kicker eyebrow — HOME / ALL SONGS / etc. */
+.lib-kicker {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0 0 14px;
+}
+
+/* Fraunces editorial headline — the centrepiece of the hero */
+.lib-headline {
+  font-family: "Fraunces", "Georgia", serif;
+  font-weight: 400;
+  font-size: clamp(56px, 8vw, 92px);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+  letter-spacing: -0.01em;
+  line-height: 0.95;
+  color: var(--ink);
+  margin: 0 0 0;
+}
+
+/* Slot for the Piece-7 AMF Gallery — leave present, empty for now */
+.home-hero-gallery-slot {
+  min-height: 0;
+  /* Piece 7 will set a real height and inject gallery tiles here */
+}
+
+/* === Sections ======================================================= */
+.home-section {
+  padding: 48px clamp(24px, 5vw, 72px) 0;
+}
+.home-section:last-of-type {
+  padding-bottom: 48px;
+}
+
+/* Section head — Fraunces serif at a smaller scale ("Pinned" / "Recent") */
+.home-section-head {
+  font-family: "Fraunces", "Georgia", serif;
+  font-weight: 400;
+  font-size: clamp(28px, 3.4vw, 44px);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+  letter-spacing: -0.005em;
+  line-height: 1.05;
+  color: var(--ink);
+  margin: 0 0 28px;
+}
+
+/* === Pin groups (Songs / Playlists / Projects sub-sections) ========= */
+.home-pin-group {
+  margin-top: 32px;
+}
+.home-pin-group:first-child {
+  margin-top: 0;
+}
+
+.home-pin-sublabel {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0 0 10px;
+}
+
+/* === lib-row — the universal cream-surface row ====================== */
+/* Used for pinned songs, recent items — mirrors .library-row but on the
+   paper (cream) surface and with the extended column anatomy. */
+.lib-grid {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--sleeve-hairline);
+}
+
+.lib-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sleeve-hairline);
+}
+
+/* Main clickable area: cover + title + meta */
+.lib-row-main {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+}
+.lib-row-main:hover .lib-title { color: var(--redline); }
+
+.lib-row-main .cover-art {
+  width: 48px; height: 48px;
+  border-radius: 2px;
+  flex: 0 0 48px;
+}
+
+.lib-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lib-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--motion-fast) var(--easing);
+}
+
+.lib-meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Right-column cells */
+.lib-catalog {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+}
+
+.lib-when {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--pencil-cool);
+  white-space: nowrap;
+  min-width: 52px;
+  text-align: right;
+}
+
+/* === Empty state (shared) =========================================== */
+.lib-empty {
+  padding: 48px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lib-empty-label {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+.lib-empty-hint {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--pencil-cool);
+  max-width: 42ch;
+  line-height: 1.5;
+}
+
+/* === Footer metrics bar ============================================= */
+.lib-footer-metrics {
+  padding: 20px clamp(24px, 5vw, 72px);
+  border-top: 1px solid var(--sleeve-hairline);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--pencil-cool);
+  display: flex;
+  gap: 6px;
+}
+
+/* === Pin button ====================================================== */
+/* 28px square icon button. Lives alongside .library-add on lib-rows and
+   .side-list-item entries. */
+.pin-button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  width: 28px; height: 28px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--pencil-cool);
+  flex: 0 0 auto;
+  transition: color var(--motion-fast) var(--easing),
+              border-color var(--motion-fast) var(--easing);
+}
+.pin-button:hover {
+  color: var(--ink);
+  border-color: var(--sleeve-hairline);
+}
+.pin-button.pinned {
+  color: var(--redline);
+  border-color: transparent;
+}
+
+/* Pin button inside the dark studio library rows */
+.library-row .pin-button {
+  color: var(--pencil-warm);
+  border-color: transparent;
+  position: relative;
+  z-index: 1;
+}
+.library-row .pin-button:hover {
+  color: var(--tape-oxide);
+  border-color: var(--studio-hairline);
+}
+.library-row .pin-button.pinned {
+  color: var(--redline);
+}
+
+/* Pin button inside dark sidebar list items */
+.side-list-item .pin-button {
+  color: var(--pencil-warm);
+}
+.side-list-item .pin-button:hover {
+  color: var(--tape-oxide);
+}
+.side-list-item .pin-button.pinned {
+  color: var(--redline);
+}
+
+/* Sidebar list items that have a pin button need row layout.
+   Only apply when .side-info is present (playlists/projects with pin affordance).
+   Smart-view items keep the original column layout via .side-title/.side-meta. */
+.side-list-item:has(.side-info) {
+  flex-direction: row;
+  align-items: center;
+}
+.side-list-item .side-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* workspace-main animation — extend to home-canvas too */
+.workspace-main > .home-canvas {
+  animation: view-enter var(--motion-mid) var(--easing);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-main > .home-canvas { animation: none; }
+}
+
+/* =====================================================================
+   AMF-style asymmetric gallery — used in HomeView hero band
+   Ported from coverflow_amf/.../index.js layout algo
+   ===================================================================== */
+.amfg-wrap {
+  position: relative;
+  width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.amfg-canvas {
+  position: relative;
+  /* width + height set inline by the layout pass */
+}
+.amfg-item {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  will-change: transform, left, top;
+  transform: translateZ(0);
+}
+.amfg-item:focus-visible {
+  outline: 2px solid var(--redline);
+  outline-offset: 3px;
+}
+.amfg-img {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: transform .25s ease;
+}
+.amfg-item:hover .amfg-img {
+  transform: scale(1.04);
+}
+.amfg-meta {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  right: 12px;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,.75);
+  pointer-events: none;
+}
+.amfg-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.amfg-sub {
+  margin: 2px 0 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  opacity: 0.8;
+  letter-spacing: 0.02em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .amfg-img { transition: none; }
 }

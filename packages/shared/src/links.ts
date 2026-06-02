@@ -18,8 +18,8 @@ export function resolveShareLink(params: {
     case "song":
       songs = params.songs.filter((song) => song.song_id === link.target_id);
       break;
-    case "room":
-      songs = params.songs.filter((song) => song.primary_room_id === link.target_id);
+    case "project":
+      songs = params.songs.filter((song) => song.primary_project_id === link.target_id);
       break;
     case "playlist": {
       const items = (params.playlistItems ?? [])

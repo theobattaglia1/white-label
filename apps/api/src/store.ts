@@ -15,6 +15,10 @@ import {
   type LinkAccess,
   type Note,
   type NoteVisibility,
+  type PinnedPlaylist,
+  type PinnedProject,
+  type PinnedSong,
+  type RecentItem,
   type ShareLink,
   type VersionPolicy,
   type VersionType,
@@ -70,21 +74,58 @@ export class WorkspaceStore {
     return { user, memberships };
   }
 
-  listRooms(workspaceID: string) {
-    return this.snapshot.rooms.filter((room) => room.workspace_id === workspaceID);
+  listProjects(workspaceID: string) {
+    return this.snapshot.projects.filter((project) => project.workspace_id === workspaceID);
   }
 
-  getRoom(roomID: string) {
-    const room = this.snapshot.rooms.find((candidate) => candidate.room_id === roomID);
-    if (!room) throw new Error("Room not found");
-    const songs = this.snapshot.songs.filter((song) => song.primary_room_id === room.room_id);
+  /**
+   * Recently-active feed for a workspace.
+   *
+   * "last activity" = max(song.updated_at, current_version.created_at).
+   * Songs without a current_version use song.updated_at only.
+   * Tie-breaks on identical timestamps preserve insertion order (stable sort).
+   */
+  recent(workspaceID: string, limit: number): RecentItem[] {
+    const projectByID = new Map(this.snapshot.projects.map((p) => [p.project_id, p]));
+    const versionByID = new Map(this.snapshot.versions.map((v) => [v.version_id, v]));
+    const assetByID = new Map(this.snapshot.assets.map((a) => [a.asset_id, a]));
+
+    const items: RecentItem[] = this.snapshot.songs
+      .filter((song) => song.workspace_id === workspaceID)
+      .map((song) => {
+        const current = song.current_version_id ? versionByID.get(song.current_version_id) : undefined;
+        const asset = current ? assetByID.get(current.file_asset_id) : undefined;
+        const project = song.primary_project_id ? projectByID.get(song.primary_project_id) : undefined;
+        const last_activity_at =
+          current && current.created_at > song.updated_at
+            ? current.created_at
+            : song.updated_at;
+        return {
+          song,
+          project: project
+            ? { project_id: project.project_id, title: project.title, type: project.type }
+            : null,
+          current_version: current ?? null,
+          asset: asset ?? null,
+          last_activity_at,
+        };
+      });
+
+    items.sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at));
+    return items.slice(0, limit);
+  }
+
+  getProject(projectID: string) {
+    const project = this.snapshot.projects.find((candidate) => candidate.project_id === projectID);
+    if (!project) throw new Error("Project not found");
+    const songs = this.snapshot.songs.filter((song) => song.primary_project_id === project.project_id);
     return {
-      room,
+      project,
       songs,
       versions: this.snapshot.versions.filter((version) => songs.some((song) => song.song_id === version.song_id)),
       assets: this.snapshot.assets,
       notes: this.snapshot.notes.filter((note) => songs.some((song) => song.song_id === note.song_id)),
-      links: this.snapshot.shareLinks.filter((link) => link.target_id === room.room_id),
+      links: this.snapshot.shareLinks.filter((link) => link.target_id === project.project_id),
     };
   }
 
@@ -262,7 +303,7 @@ export class WorkspaceStore {
       note_id: randomUUID(),
       song_id: params.song_id,
       anchor_version_id: params.anchor_version_id,
-      room_id: song.primary_room_id,
+      project_id: song.primary_project_id,
       author_user_id: params.author_guest_label ? undefined : auth.userID,
       author_guest_label: params.author_guest_label,
       body: params.body,
@@ -367,7 +408,7 @@ export class WorkspaceStore {
 
   createLink(auth: AuthContext, params: {
     workspace_id: string;
-    target_type: "song" | "room" | "playlist";
+    target_type: "song" | "project" | "playlist";
     target_id: string;
     link_name?: string;
     access_mode?: LinkAccess;
@@ -455,14 +496,14 @@ export class WorkspaceStore {
       playlistItems: this.snapshot.playlistItems,
     });
     const assets = this.snapshot.assets.filter((asset) => resolved.versions.some((version) => version.file_asset_id === asset.asset_id));
-    const rooms = this.snapshot.rooms.filter((room) => resolved.songs.some((song) => song.primary_room_id === room.room_id));
+    const projects = this.snapshot.projects.filter((project) => resolved.songs.some((song) => song.primary_project_id === project.project_id));
     // If this is a playlist link, attach the playlist meta so the recipient
     // can render the playlist hero (cover + title + ordered queue).
     const playlist =
       resolved.link.target_type === "playlist"
         ? this.snapshot.playlists.find((p) => p.playlist_id === resolved.link.target_id) ?? null
         : null;
-    return { ...resolved, assets, rooms, playlist };
+    return { ...resolved, assets, projects, playlist };
   }
 
   createUpload(workspaceID: string, params: { filename: string; size_bytes: number; checksum_sha256?: string }) {
@@ -505,14 +546,14 @@ export class WorkspaceStore {
     return this.snapshot.songs.map((song, index) => {
       const currentVersion = this.snapshot.versions.find((version) => version.version_id === song.current_version_id);
       const asset = this.snapshot.assets.find((candidate) => candidate.asset_id === currentVersion?.file_asset_id);
-      const room = this.snapshot.rooms.find((candidate) => candidate.room_id === song.primary_room_id);
-      if (!currentVersion || !asset || !room) return undefined;
+      const project = this.snapshot.projects.find((candidate) => candidate.project_id === song.primary_project_id);
+      if (!currentVersion || !asset || !project) return undefined;
       const listened = this.snapshot.activityEvents.some(
         (event) => event.actor_user_id === userID && event.event_type === "played_track" && event.version_id === currentVersion.version_id
       );
       return {
         song,
-        room,
+        project,
         current_version: currentVersion,
         asset,
         shared_by: "Maya Chen",
@@ -539,6 +580,94 @@ export class WorkspaceStore {
 
   ask(question: string) {
     return answerWorkspaceQuestion(this.snapshot, question);
+  }
+
+  // ── Pin methods ──────────────────────────────────────────────────────────
+
+  getMyPins(userID: string): {
+    songs: PinnedSong[];
+    playlists: PinnedPlaylist[];
+    projects: PinnedProject[];
+  } {
+    const byDate = (a: { pinned_at: string }, b: { pinned_at: string }) =>
+      b.pinned_at.localeCompare(a.pinned_at);
+    return {
+      songs: this.snapshot.pinnedSongs
+        .filter((p) => p.user_id === userID)
+        .sort(byDate),
+      playlists: this.snapshot.pinnedPlaylists
+        .filter((p) => p.user_id === userID)
+        .sort(byDate),
+      projects: this.snapshot.pinnedProjects
+        .filter((p) => p.user_id === userID)
+        .sort(byDate),
+    };
+  }
+
+  pinSong(workspaceID: string, userID: string, songID: string): PinnedSong {
+    const existing = this.snapshot.pinnedSongs.find(
+      (p) => p.user_id === userID && p.song_id === songID
+    );
+    if (existing) return existing;
+    const pin: PinnedSong = {
+      pin_id: randomUUID(),
+      workspace_id: workspaceID,
+      user_id: userID,
+      song_id: songID,
+      pinned_at: new Date().toISOString(),
+    };
+    this.snapshot.pinnedSongs = [...this.snapshot.pinnedSongs, pin];
+    return pin;
+  }
+
+  unpinSong(userID: string, songID: string): void {
+    this.snapshot.pinnedSongs = this.snapshot.pinnedSongs.filter(
+      (p) => !(p.user_id === userID && p.song_id === songID)
+    );
+  }
+
+  pinPlaylist(workspaceID: string, userID: string, playlistID: string): PinnedPlaylist {
+    const existing = this.snapshot.pinnedPlaylists.find(
+      (p) => p.user_id === userID && p.playlist_id === playlistID
+    );
+    if (existing) return existing;
+    const pin: PinnedPlaylist = {
+      pin_id: randomUUID(),
+      workspace_id: workspaceID,
+      user_id: userID,
+      playlist_id: playlistID,
+      pinned_at: new Date().toISOString(),
+    };
+    this.snapshot.pinnedPlaylists = [...this.snapshot.pinnedPlaylists, pin];
+    return pin;
+  }
+
+  unpinPlaylist(userID: string, playlistID: string): void {
+    this.snapshot.pinnedPlaylists = this.snapshot.pinnedPlaylists.filter(
+      (p) => !(p.user_id === userID && p.playlist_id === playlistID)
+    );
+  }
+
+  pinProject(workspaceID: string, userID: string, projectID: string): PinnedProject {
+    const existing = this.snapshot.pinnedProjects.find(
+      (p) => p.user_id === userID && p.project_id === projectID
+    );
+    if (existing) return existing;
+    const pin: PinnedProject = {
+      pin_id: randomUUID(),
+      workspace_id: workspaceID,
+      user_id: userID,
+      project_id: projectID,
+      pinned_at: new Date().toISOString(),
+    };
+    this.snapshot.pinnedProjects = [...this.snapshot.pinnedProjects, pin];
+    return pin;
+  }
+
+  unpinProject(userID: string, projectID: string): void {
+    this.snapshot.pinnedProjects = this.snapshot.pinnedProjects.filter(
+      (p) => !(p.user_id === userID && p.project_id === projectID)
+    );
   }
 
   private recordEvent(event: Omit<ActivityEvent, "event_id" | "created_at">) {

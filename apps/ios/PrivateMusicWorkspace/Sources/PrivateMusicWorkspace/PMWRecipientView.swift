@@ -111,7 +111,7 @@ struct PMWRecipientView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Color.clear.frame(height: 56) // wordmark + close room
+                Color.clear.frame(height: 56) // wordmark + close project
                 crumb(payload: payload, song: song, current: current)
                 title(song: song, current: current)
                 metaRow(asset: asset, song: song)
@@ -507,7 +507,7 @@ struct PMWRecipientView: View {
 
     // Conversion helpers to drive the shared PMWAudioEngine from API types
     private func toPmwSong(_ s: PMWAPIClient.APISong) -> PMWSong? {
-        PMWSong(id: s.song_id, roomID: s.primary_room_id ?? "",
+        PMWSong(id: s.song_id, projectID: s.primary_project_id ?? "",
                 title: s.title, artistName: s.artist_display_name ?? "",
                 projectName: s.project_name ?? "", status: s.status,
                 currentVersionID: s.current_version_id ?? "",

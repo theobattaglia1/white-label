@@ -6,9 +6,12 @@ import type {
   Membership,
   Note,
   NotificationItem,
+  PinnedPlaylist,
+  PinnedProject,
+  PinnedSong,
   Playlist,
   PlaylistItem,
-  Room,
+  Project,
   SavedView,
   ShareLink,
   Song,
@@ -23,7 +26,7 @@ const now = "2026-05-22T18:30:00.000Z";
 
 const ids = {
   workspace: "wsp-amf-private",
-  room: "room-hudson-ingram-lp", // kept as legacy alias so /rooms/room-secret-album still works via redirect
+  room: "room-hudson-ingram-lp", // stable external ID — kept as-is
   rooms: {
     hudson: "room-hudson-ingram-lp",
     ruby: "room-ruby-plume-single",
@@ -153,9 +156,9 @@ const memberships: Membership[] = [
   { membership_id: "mem-dana", workspace_id: ids.workspace, user_id: ids.users.dana, role: "anr", created_at: now },
 ];
 
-const rooms: Room[] = [
+const projects: Project[] = [
   {
-    room_id: ids.rooms.hudson,
+    project_id: ids.rooms.hudson,
     workspace_id: ids.workspace,
     type: "album_ep",
     title: "Hudson Ingram LP",
@@ -170,7 +173,7 @@ const rooms: Room[] = [
     updated_at: now,
   },
   {
-    room_id: ids.rooms.ruby,
+    project_id: ids.rooms.ruby,
     workspace_id: ids.workspace,
     type: "pitch",
     title: "Ruby Plume single",
@@ -185,7 +188,7 @@ const rooms: Room[] = [
     updated_at: now,
   },
   {
-    room_id: ids.rooms.daniel,
+    project_id: ids.rooms.daniel,
     workspace_id: ids.workspace,
     type: "album_ep",
     title: "Daniel Price · EP",
@@ -224,7 +227,7 @@ const songs: Song[] = [
   {
     song_id: "song-midnight",
     workspace_id: ids.workspace,
-    primary_room_id: ids.rooms.hudson,
+    primary_project_id: ids.rooms.hudson,
     title: "The First Night",
     artist_display_name: "Hudson Ingram",
     project_name: "Hudson Ingram LP",
@@ -246,7 +249,7 @@ const songs: Song[] = [
   {
     song_id: "song-neon",
     workspace_id: ids.workspace,
-    primary_room_id: ids.rooms.hudson,
+    primary_project_id: ids.rooms.hudson,
     title: "Lighting The Fuse",
     artist_display_name: "Hudson Ingram",
     project_name: "Hudson Ingram LP",
@@ -268,7 +271,7 @@ const songs: Song[] = [
   {
     song_id: "song-witness",
     workspace_id: ids.workspace,
-    primary_room_id: ids.rooms.ruby,
+    primary_project_id: ids.rooms.ruby,
     title: "Duel",
     artist_display_name: "Ruby Plume",
     project_name: "Ruby Plume single",
@@ -290,7 +293,7 @@ const songs: Song[] = [
   {
     song_id: "song-lowlight",
     workspace_id: ids.workspace,
-    primary_room_id: ids.rooms.daniel,
+    primary_project_id: ids.rooms.daniel,
     title: "Best Of Me",
     artist_display_name: "Daniel Price · Olmo · Mills",
     project_name: "Daniel Price · EP",
@@ -471,7 +474,7 @@ const notes: Note[] = [
     note_id: "note-vocal-delay",
     song_id: "song-midnight",
     anchor_version_id: "ver-midnight-v1",
-    room_id: ids.room,
+    project_id: ids.room,
     author_user_id: ids.users.river,
     body: "Vocal delay too loud here @Alex.",
     scope: "song",
@@ -488,7 +491,7 @@ const notes: Note[] = [
     note_id: "note-kick-fixed",
     song_id: "song-midnight",
     anchor_version_id: "ver-midnight-v1",
-    room_id: ids.room,
+    project_id: ids.room,
     author_user_id: ids.users.maya,
     body: "Kick pokes too hard entering the second hook.",
     scope: "song",
@@ -508,7 +511,7 @@ const notes: Note[] = [
     note_id: "note-neon-private",
     song_id: "song-neon",
     anchor_version_id: "ver-neon-v3",
-    room_id: ids.room,
+    project_id: ids.room,
     author_user_id: ids.users.dana,
     body: "Private: strong hook, needs shorter intro for pitch.",
     scope: "version",
@@ -547,11 +550,11 @@ const shareLinks: ShareLink[] = [
   {
     link_id: "link-room-current",
     workspace_id: ids.workspace,
-    target_type: "room",
+    target_type: "project",
     target_id: ids.room,
     token_hash: "demo-room-token-hash",
     demo_token: "room-demo",
-    link_name: "Artist + manager latest room",
+    link_name: "Artist + manager latest project",
     access_mode: "identity_required",
     download_policy: "none",
     version_policy: "latest_only",
@@ -665,7 +668,7 @@ const tasks: Task[] = [
   {
     task_id: "task-delay",
     workspace_id: ids.workspace,
-    room_id: ids.room,
+    project_id: ids.room,
     song_id: "song-midnight",
     version_id: "ver-midnight-v1",
     source_note_id: "note-vocal-delay",
@@ -746,12 +749,49 @@ const playlistItems: PlaylistItem[] = [
   { playlist_item_id: "pli-mira-2", playlist_id: "playlist-pitch-mira", song_id: "song-midnight", position: 2, added_by: ids.users.theo, added_at: now },
 ];
 
+const pinnedSongs: PinnedSong[] = [
+  {
+    pin_id: "pin-song-midnight",
+    workspace_id: ids.workspace,
+    user_id: ids.users.theo,
+    song_id: "song-midnight",
+    pinned_at: "2026-05-22T19:00:00.000Z",
+  },
+  {
+    pin_id: "pin-song-neon",
+    workspace_id: ids.workspace,
+    user_id: ids.users.theo,
+    song_id: "song-neon",
+    pinned_at: "2026-05-22T18:45:00.000Z",
+  },
+];
+
+const pinnedPlaylists: PinnedPlaylist[] = [
+  {
+    pin_id: "pin-playlist-friday",
+    workspace_id: ids.workspace,
+    user_id: ids.users.theo,
+    playlist_id: "playlist-friday-listen",
+    pinned_at: "2026-05-22T18:30:00.000Z",
+  },
+];
+
+const pinnedProjects: PinnedProject[] = [
+  {
+    pin_id: "pin-project-hudson",
+    workspace_id: ids.workspace,
+    user_id: ids.users.theo,
+    project_id: ids.rooms.hudson,
+    pinned_at: "2026-05-22T18:00:00.000Z",
+  },
+];
+
 export function createSeedSnapshot(): WorkspaceSnapshot {
   return structuredClone({
     workspaces,
     users,
     memberships,
-    rooms,
+    projects,
     assets,
     songs,
     versions,
@@ -765,6 +805,9 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     savedViews,
     playlists,
     playlistItems,
+    pinnedSongs,
+    pinnedPlaylists,
+    pinnedProjects,
   });
 }
 

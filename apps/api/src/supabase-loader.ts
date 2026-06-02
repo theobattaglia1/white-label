@@ -6,7 +6,10 @@ import type {
   Mention,
   Note,
   NotificationItem,
-  Room,
+  PinnedPlaylist,
+  PinnedProject,
+  PinnedSong,
+  Project,
   SavedView,
   ShareLink,
   Song,
@@ -36,7 +39,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     usersR,
     workspacesR,
     membershipsR,
-    roomsR,
+    projectsR,
     assetsR,
     songsR,
     versionsR,
@@ -48,11 +51,14 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     activityR,
     notificationsR,
     viewsR,
+    pinnedSongsR,
+    pinnedPlaylistsR,
+    pinnedProjectsR,
   ] = await Promise.all([
     supabase.from("users").select("*"),
     supabase.from("workspaces").select("*"),
     supabase.from("memberships").select("*"),
-    supabase.from("rooms").select("*"),
+    supabase.from("projects").select("*"),
     supabase.from("file_assets").select("*"),
     supabase.from("songs").select("*"),
     supabase.from("versions").select("*"),
@@ -64,9 +70,12 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     supabase.from("activity_events").select("*"),
     supabase.from("notifications").select("*"),
     supabase.from("saved_views").select("*"),
+    supabase.from("pinned_songs").select("*"),
+    supabase.from("pinned_playlists").select("*"),
+    supabase.from("pinned_projects").select("*"),
   ]);
 
-  for (const r of [usersR, workspacesR, membershipsR, roomsR, assetsR, songsR, versionsR, notesR, mentionsR, tasksR, approvalsR, linksR, activityR, notificationsR, viewsR]) {
+  for (const r of [usersR, workspacesR, membershipsR, projectsR, assetsR, songsR, versionsR, notesR, mentionsR, tasksR, approvalsR, linksR, activityR, notificationsR, viewsR, pinnedSongsR, pinnedPlaylistsR, pinnedProjectsR]) {
     if (r.error) {
       console.error("[supabase-loader]", r.error);
       throw new Error(`Supabase query failed: ${r.error.message}`);
@@ -87,7 +96,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
   track(usersR.data);
   track(workspacesR.data);
   track(membershipsR.data);
-  track(roomsR.data);
+  track(projectsR.data);
   track(assetsR.data);
   track(songsR.data);
   track(versionsR.data);
@@ -131,8 +140,8 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       role: m.role,
       created_at: m.created_at,
     })),
-    rooms: (roomsR.data ?? []).map((r: any): Room => ({
-      room_id: r.external_id ?? r.room_id,
+    projects: (projectsR.data ?? []).map((r: any): Project => ({
+      project_id: r.external_id ?? r.project_id,
       workspace_id: ext(r.workspace_id),
       type: r.type,
       title: r.title,
@@ -174,7 +183,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     songs: (songsR.data ?? []).map((s: any): Song => ({
       song_id: s.external_id ?? s.song_id,
       workspace_id: ext(s.workspace_id),
-      primary_room_id: ext(s.primary_room_id) || undefined,
+      primary_project_id: ext(s.primary_project_id) || undefined,
       title: s.title,
       artist_display_name: s.artist_display_name ?? undefined,
       project_name: s.project_name ?? undefined,
@@ -210,7 +219,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       note_id: n.external_id ?? n.note_id,
       song_id: ext(n.song_id),
       anchor_version_id: ext(n.anchor_version_id),
-      room_id: ext(n.room_id) || undefined,
+      project_id: ext(n.project_id) || undefined,
       author_user_id: ext(n.author_user_id) || undefined,
       author_guest_label: n.author_guest_label ?? undefined,
       body: n.body ?? "",
@@ -241,7 +250,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     tasks: (tasksR.data ?? []).map((t: any): Task => ({
       task_id: t.task_id,
       workspace_id: ext(t.workspace_id),
-      room_id: ext(t.room_id) || undefined,
+      project_id: ext(t.room_id ?? t.project_id) || undefined,
       song_id: ext(t.song_id) || undefined,
       version_id: ext(t.version_id) || undefined,
       source_note_id: ext(t.source_note_id) || undefined,
@@ -317,6 +326,32 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       name: v.name,
       filter: v.filter,
       created_at: v.created_at,
+    })),
+    // playlists and playlistItems were added in 0005 but the loader was
+    // written before that migration; keep empty arrays so hydration never
+    // overwrites the in-memory seed playlists with undefined.
+    playlists: [],
+    playlistItems: [],
+    pinnedSongs: (pinnedSongsR.data ?? []).map((p: any): PinnedSong => ({
+      pin_id: p.pin_id,
+      workspace_id: ext(p.workspace_id),
+      user_id: ext(p.user_id),
+      song_id: ext(p.song_id),
+      pinned_at: p.pinned_at,
+    })),
+    pinnedPlaylists: (pinnedPlaylistsR.data ?? []).map((p: any): PinnedPlaylist => ({
+      pin_id: p.pin_id,
+      workspace_id: ext(p.workspace_id),
+      user_id: ext(p.user_id),
+      playlist_id: ext(p.playlist_id),
+      pinned_at: p.pinned_at,
+    })),
+    pinnedProjects: (pinnedProjectsR.data ?? []).map((p: any): PinnedProject => ({
+      pin_id: p.pin_id,
+      workspace_id: ext(p.workspace_id),
+      user_id: ext(p.user_id),
+      project_id: ext(p.project_id),
+      pinned_at: p.pinned_at,
     })),
   };
 

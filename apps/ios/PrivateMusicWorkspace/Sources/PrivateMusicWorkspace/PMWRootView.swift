@@ -65,20 +65,20 @@ struct PMWRootView: View {
                 .accessibilityLabel("Search workspace")
 
                 Menu {
-                    if store.roomsSummary.isEmpty {
-                        Text("Loading rooms…")
+                    if store.projectsSummary.isEmpty {
+                        Text("Loading projects…")
                     } else {
-                        ForEach(store.roomsSummary, id: \.room_id) { r in
+                        ForEach(store.projectsSummary, id: \.project_id) { r in
                             Button {
-                                // Pick room → switch to Room tab focused on it.
+                                // Pick project → switch to Project tab focused on it.
                                 if PMWConfig.useRemoteAPI {
                                     Task {
-                                        if let payload = try? await PMWAPIClient.shared.room(r.room_id) {
-                                            store.adoptRoomPayload(payload)
+                                        if let payload = try? await PMWAPIClient.shared.project(r.project_id) {
+                                            store.adoptProjectPayload(payload)
                                         }
                                     }
                                 }
-                                store.selectedTab = .room
+                                store.selectedTab = .project
                             } label: {
                                 Label {
                                     VStack(alignment: .leading) {
@@ -100,7 +100,7 @@ struct PMWRootView: View {
                             .frame(width: 28, height: 28)
                             .background(Circle().fill(PMWColors.ink))
 
-                        Text(store.room.title)
+                        Text(store.project.title)
                             .font(.system(size: 12, weight: .medium))
                             .tracking(0.4)
                             .foregroundStyle(PMWColors.ink)
@@ -113,7 +113,7 @@ struct PMWRootView: View {
                     .frame(maxWidth: 210)
                 }
                 .buttonStyle(PMWChromeButtonStyle())
-                .accessibilityLabel("Switch room")
+                .accessibilityLabel("Switch project")
 
                 Spacer()
 
@@ -144,8 +144,8 @@ struct PMWRootView: View {
                     PMWLibraryView(store: store, audio: audio)
                 case .playlists:
                     PMWPlaylistsListView(store: store, audio: audio)
-                case .room:
-                    PMWRoomView(store: store, audio: audio)
+                case .project:
+                    PMWProjectView(store: store, audio: audio)
                 case .song:
                     PMWSongView(store: store, audio: audio, onAddNote: {
                         noteComposerPresented = true
@@ -345,13 +345,13 @@ struct PMWRootView: View {
     }
 }
 
-struct PMWRoomView: View {
+struct PMWProjectView: View {
     @ObservedObject var store: PMWStore
     @ObservedObject var audio: PMWAudioEngine
 
     var body: some View {
         VStack(alignment: .leading, spacing: PMWSpacing.stack) {
-            PMWSectionHeader(eyebrow: "ROOM", title: store.room.title) {
+            PMWSectionHeader(eyebrow: "PROJECT", title: store.project.title) {
                 HStack(spacing: 1) {
                     PMWMetric(value: "\(store.songs.count)", label: "Songs")
                     PMWMetric(value: "\(store.versions.count)", label: "Versions")
@@ -681,7 +681,7 @@ struct PMWLinksView: View {
                 .buttonStyle(PMWChromeButtonStyle(accent: true))
             }
 
-            PMWPanel(eyebrow: "ROOM", title: "Artist + manager latest room", symbol: "link") {
+            PMWPanel(eyebrow: "PROJECT", title: "Artist + manager latest project", symbol: "link") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         PMWBadge("Identity Required", accent: true)
@@ -968,7 +968,7 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - Library view (all songs across all rooms) -----------------
+// MARK: - Library view (all songs across all projects) --------------
 
 struct PMWLibraryView: View {
     @ObservedObject var store: PMWStore
@@ -1000,7 +1000,7 @@ struct PMWLibraryView: View {
             if s.isEmpty { return true }
             return item.song.title.lowercased().contains(s)
                 || (item.song.artist_display_name ?? "").lowercased().contains(s)
-                || (item.room?.title ?? "").lowercased().contains(s)
+                || (item.project?.title ?? "").lowercased().contains(s)
         }
     }
 
@@ -1010,11 +1010,11 @@ struct PMWLibraryView: View {
                 HStack(spacing: 1) {
                     PMWMetric(value: "\(store.libraryItems.count)", label: "Songs")
                     PMWMetric(value: "\(store.libraryItems.filter { $0.song.status == "approved" }.count)", label: "Approved")
-                    PMWMetric(value: "\(store.roomsSummary.count)", label: "Rooms")
+                    PMWMetric(value: "\(store.projectsSummary.count)", label: "Projects")
                 }
             }
 
-            TextField("Search songs, artists, rooms…", text: $search)
+            TextField("Search songs, artists, projects…", text: $search)
                 .textFieldStyle(.plain)
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 2).stroke(PMWColors.line, lineWidth: 1))
@@ -1069,7 +1069,7 @@ struct PMWLibraryView: View {
                         Text(item.song.title)
                             .font(PMWFont.sans(15, weight: .semibold))
                             .foregroundStyle(PMWColors.ink)
-                        Text("\(item.song.artist_display_name ?? "") · \(item.room?.title ?? "—")\(item.current_version?.version_label.map { " · " + $0 } ?? "")")
+                        Text("\(item.song.artist_display_name ?? "") · \(item.project?.title ?? "—")\(item.current_version?.version_label.map { " · " + $0 } ?? "")")
                             .font(PMWFont.sans(11))
                             .foregroundStyle(PMWColors.muted)
                             .lineLimit(1)
@@ -1115,7 +1115,7 @@ struct PMWLibraryView: View {
     }
 
     private func mapSong(_ s: PMWAPIClient.APISong) -> PMWSong? {
-        PMWSong(id: s.song_id, roomID: s.primary_room_id ?? "",
+        PMWSong(id: s.song_id, projectID: s.primary_project_id ?? "",
                 title: s.title, artistName: s.artist_display_name ?? "",
                 projectName: s.project_name ?? "", status: s.status,
                 currentVersionID: s.current_version_id ?? "",

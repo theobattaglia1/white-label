@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Bell,
+  Bookmark,
+  BookmarkCheck,
   CheckCircle2,
   CircleDashed,
   GitCompare,
   History,
+  Home,
   Inbox,
   Link2,
   ListMusic,
@@ -23,13 +26,34 @@ import {
   X,
 } from "lucide-react";
 import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VisibleNote } from "@pmw/shared";
-import { api, assetForVersion, uploadAudio, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
+import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type ProjectPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { usePlayer } from "./player";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import type { Session } from "@supabase/supabase-js";
 
-type ViewMode = "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist";
+const STATUS_MAP: Record<string, string> = {
+  approved: "Approved",
+  in_review: "In review",
+  revision_requested: "Revision",
+  in_progress: "In progress",
+  draft: "Draft",
+  ready: "Ready",
+};
+
+const PROJECT_TYPE_MAP: Record<string, string> = {
+  project: "Project",
+  producer_delivery: "Delivery",
+  album_ep: "Album / EP",
+  anr: "A&R",
+  pitch: "Pitch",
+  submission_portal: "Submissions",
+  release: "Release",
+  inner_circle: "Inner circle",
+  archive: "Archive",
+};
+
+type ViewMode = "home" | "library" | "project" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
@@ -66,29 +90,116 @@ function AuthenticatedApp() {
 }
 
 function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
-  const [roomPayload, setRoomPayload] = useState<RoomPayload | null>(null);
+  const [projectPayload, setProjectPayload] = useState<ProjectPayload | null>(null);
   const [songPayload, setSongPayload] = useState<SongPayload | null>(null);
-  const [mode, setMode] = useState<ViewMode>("library");
+  const [mode, setMode] = useState<ViewMode>("home");
   const [selectedSongID, setSelectedSongID] = useState("song-midnight");
-  const [activeRoomID, setActiveRoomID] = useState("room-hudson-ingram-lp");
+  const [activeProjectID, setActiveProjectID] = useState("room-hudson-ingram-lp");
   const [activePlaylistID, setActivePlaylistID] = useState<string | null>(null);
   const [inboxItems, setInboxItems] = useState<Awaited<ReturnType<typeof api.inbox>>>([]);
-  const [roomsSummary, setRoomsSummary] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
+  const [projectsSummary, setProjectsSummary] = useState<Awaited<ReturnType<typeof api.projectsSummary>>>([]);
   const [playlists, setPlaylists] = useState<Awaited<ReturnType<typeof api.playlists>>>([]);
   const [savedViews, setSavedViews] = useState<Awaited<ReturnType<typeof api.savedViews>>>([]);
   const [activeSmartViewID, setActiveSmartViewID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function refresh(nextSongID = selectedSongID, nextRoomID = activeRoomID) {
+  // === Pin state — global so all surfaces stay in sync =================
+  const [pinnedSongIDs, setPinnedSongIDs] = useState<Set<string>>(new Set());
+  const [pinnedPlaylistIDs, setPinnedPlaylistIDs] = useState<Set<string>>(new Set());
+  const [pinnedProjectIDs, setPinnedProjectIDs] = useState<Set<string>>(new Set());
+
+  async function refreshPins() {
+    try {
+      const p = await api.getMyPins();
+      setPinnedSongIDs(new Set(p.songs.map((s) => s.song_id)));
+      setPinnedPlaylistIDs(new Set(p.playlists.map((pl) => pl.playlist_id)));
+      setPinnedProjectIDs(new Set(p.projects.map((pr) => pr.project_id)));
+    } catch {
+      // Pin endpoint not yet deployed — ignore gracefully
+    }
+  }
+
+  async function toggleSongPin(songID: string) {
+    const wasPinned = pinnedSongIDs.has(songID);
+    // Optimistic update
+    setPinnedSongIDs((prev) => {
+      const next = new Set(prev);
+      if (wasPinned) next.delete(songID); else next.add(songID);
+      return next;
+    });
+    try {
+      if (wasPinned) {
+        await api.unpinSong("wsp-amf-private", songID);
+      } else {
+        await api.pinSong("wsp-amf-private", songID);
+      }
+      void refreshPins();
+    } catch {
+      // Revert optimistic update on failure
+      setPinnedSongIDs((prev) => {
+        const next = new Set(prev);
+        if (wasPinned) next.add(songID); else next.delete(songID);
+        return next;
+      });
+    }
+  }
+
+  async function togglePlaylistPin(playlistID: string) {
+    const wasPinned = pinnedPlaylistIDs.has(playlistID);
+    setPinnedPlaylistIDs((prev) => {
+      const next = new Set(prev);
+      if (wasPinned) next.delete(playlistID); else next.add(playlistID);
+      return next;
+    });
+    try {
+      if (wasPinned) {
+        await api.unpinPlaylist("wsp-amf-private", playlistID);
+      } else {
+        await api.pinPlaylist("wsp-amf-private", playlistID);
+      }
+      void refreshPins();
+    } catch {
+      setPinnedPlaylistIDs((prev) => {
+        const next = new Set(prev);
+        if (wasPinned) next.add(playlistID); else next.delete(playlistID);
+        return next;
+      });
+    }
+  }
+
+  async function toggleProjectPin(projectID: string) {
+    const wasPinned = pinnedProjectIDs.has(projectID);
+    setPinnedProjectIDs((prev) => {
+      const next = new Set(prev);
+      if (wasPinned) next.delete(projectID); else next.add(projectID);
+      return next;
+    });
+    try {
+      if (wasPinned) {
+        await api.unpinProject("wsp-amf-private", projectID);
+      } else {
+        await api.pinProject("wsp-amf-private", projectID);
+      }
+      void refreshPins();
+    } catch {
+      setPinnedProjectIDs((prev) => {
+        const next = new Set(prev);
+        if (wasPinned) next.add(projectID); else next.delete(projectID);
+        return next;
+      });
+    }
+  }
+
+  async function refresh(nextSongID = selectedSongID, nextProjectID = activeProjectID) {
     try {
       const [room, summary, allPlaylists, allSavedViews] = await Promise.all([
-        api.room(nextRoomID),
-        api.roomsSummary(),
+        api.project(nextProjectID),
+        api.projectsSummary(),
         api.playlists(),
         api.savedViews(),
       ]);
-      setRoomPayload(room);
-      setRoomsSummary(summary);
+      setProjectPayload(room);
+      setProjectsSummary(summary);
       setPlaylists(allPlaylists);
       setSavedViews(allSavedViews);
       const songID = nextSongID || room.songs[0]?.song_id;
@@ -104,22 +215,23 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   }
 
   useEffect(() => {
-    void refresh(selectedSongID, activeRoomID);
+    void refresh(selectedSongID, activeProjectID);
+    void refreshPins();
   }, []);
 
-  const selectedSong = roomPayload?.songs.find((song) => song.song_id === selectedSongID) ?? songPayload?.song;
+  const selectedSong = projectPayload?.songs.find((song) => song.song_id === selectedSongID) ?? songPayload?.song;
 
   function openSong(songID: string) {
     setSelectedSongID(songID);
     setMode("song");
-    void refresh(songID, activeRoomID);
+    void refresh(songID, activeProjectID);
   }
 
-  function openRoom(roomID: string) {
-    setActiveRoomID(roomID);
-    setMode("room");
+  function openProject(projectID: string) {
+    setActiveProjectID(projectID);
+    setMode("project");
     setActivePlaylistID(null);
-    void refresh(selectedSongID, roomID);
+    void refresh(selectedSongID, projectID);
   }
 
   function openPlaylist(playlistID: string) {
@@ -137,21 +249,21 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   return (
     <div className="app-shell">
       <TopBar
-        roomTitle={roomPayload?.room.title ?? "Private Workspace"}
+        roomTitle={projectPayload?.project.title ?? "Private Workspace"}
         error={error}
         onSignOut={onSignOut}
-        rooms={roomsSummary}
-        activeRoomID={activeRoomID}
-        onPickRoom={openRoom}
+        projects={projectsSummary}
+        activeProjectID={activeProjectID}
+        onPickProject={openProject}
       />
       <main className="workspace-grid">
         <Sidebar
           mode={mode}
           setMode={setMode}
-          room={roomPayload}
-          rooms={roomsSummary}
-          activeRoomID={activeRoomID}
-          onSelectRoom={openRoom}
+          project={projectPayload}
+          projects={projectsSummary}
+          activeProjectID={activeProjectID}
+          onSelectProject={openProject}
           playlists={playlists}
           activePlaylistID={activePlaylistID}
           onSelectPlaylist={openPlaylist}
@@ -160,8 +272,24 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           onSelectSmartView={openSmartView}
           selectedSongID={selectedSongID}
           onSelectSong={openSong}
+          pinnedPlaylistIDs={pinnedPlaylistIDs}
+          onTogglePlaylistPin={togglePlaylistPin}
         />
         <section className="workspace-main">
+          {mode === "home" && (
+            <HomeView
+              onOpenSong={openSong}
+              onOpenProject={(id) => { setSelectedSongID(id); setMode("song"); }}
+              onOpenPlaylist={openPlaylist}
+              onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
+              pinnedSongIDs={pinnedSongIDs}
+              pinnedPlaylistIDs={pinnedPlaylistIDs}
+              pinnedProjectIDs={pinnedProjectIDs}
+              onToggleSongPin={toggleSongPin}
+              onTogglePlaylistPin={togglePlaylistPin}
+              onToggleProjectPin={toggleProjectPin}
+            />
+          )}
           {mode === "library" && (
             <LibraryView
               onOpenSong={openSong}
@@ -169,16 +297,18 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
               smartView={savedViews.find((v) => v.view_id === activeSmartViewID) ?? null}
               onClearSmart={() => setActiveSmartViewID(null)}
+              pinnedSongIDs={pinnedSongIDs}
+              onToggleSongPin={toggleSongPin}
             />
           )}
-          {mode === "room" && roomPayload && (
-            <RoomView payload={roomPayload} onOpenSong={openSong} />
+          {mode === "project" && projectPayload && (
+            <ProjectView payload={projectPayload} onOpenSong={openSong} />
           )}
           {mode === "song" && songPayload && <SongWorkspace payload={songPayload} playlists={playlists} onRefresh={() => refresh(songPayload.song.song_id)} onRefreshPlaylists={() => api.playlists().then(setPlaylists)} />}
           {mode === "compare" && songPayload && <ComparisonMode payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
           {mode === "inbox" && <InboxView items={inboxItems} onOpenSong={openSong} />}
-          {mode === "links" && roomPayload && selectedSong && (
-            <LinkManager room={roomPayload} song={selectedSong} onRefresh={() => refresh(selectedSong.song_id)} />
+          {mode === "links" && projectPayload && selectedSong && (
+            <LinkManager project={projectPayload} song={selectedSong} onRefresh={() => refresh(selectedSong.song_id)} />
           )}
           {mode === "assistant" && <AssistantPanel />}
           {mode === "playlist" && activePlaylistID && (
@@ -199,19 +329,19 @@ function TopBar({
   roomTitle,
   error,
   onSignOut,
-  rooms = [],
-  activeRoomID,
-  onPickRoom,
+  projects = [],
+  activeProjectID,
+  onPickProject,
 }: {
   roomTitle: string;
   error: string | null;
   onSignOut?: () => void;
-  rooms?: Awaited<ReturnType<typeof api.roomsSummary>>;
-  activeRoomID?: string;
-  onPickRoom?: (id: string) => void;
+  projects?: Awaited<ReturnType<typeof api.projectsSummary>>;
+  activeProjectID?: string;
+  onPickProject?: (id: string) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const activeRoom = rooms.find((r) => r.room_id === activeRoomID);
+  const activeProject = projects.find((r) => r.project_id === activeProjectID);
   return (
     <header className="top-bar">
       <div className="icon-run">
@@ -222,32 +352,32 @@ function TopBar({
         <button className="icon-button" title="Search" aria-label="Search workspace">
           <Search size={17} />
         </button>
-        {rooms.length > 0 && onPickRoom && (
-          <div className="room-picker">
+        {projects.length > 0 && onPickProject && (
+          <div className="project-picker">
             <button
-              className="room-picker-trigger"
+              className="project-picker-trigger"
               onClick={() => setPickerOpen((o) => !o)}
               aria-expanded={pickerOpen}
               aria-haspopup="listbox"
             >
               <span className="dot" />
-              <span className="label">{activeRoom?.title ?? roomTitle}</span>
+              <span className="label">{activeProject?.title ?? roomTitle}</span>
               <span className="chev">▾</span>
             </button>
             {pickerOpen && (
-              <ul className="room-picker-menu" role="listbox">
-                {rooms.map((r) => (
-                  <li key={r.room_id}>
+              <ul className="project-picker-menu" role="listbox">
+                {projects.map((r) => (
+                  <li key={r.project_id}>
                     <button
                       type="button"
-                      className={`room-picker-item ${r.room_id === activeRoomID ? "on" : ""}`}
-                      onClick={() => { onPickRoom(r.room_id); setPickerOpen(false); }}
+                      className={`project-picker-item ${r.project_id === activeProjectID ? "on" : ""}`}
+                      onClick={() => { onPickProject(r.project_id); setPickerOpen(false); }}
                       role="option"
-                      aria-selected={r.room_id === activeRoomID}
+                      aria-selected={r.project_id === activeProjectID}
                     >
                       <span className="who">
                         <span className="title">{r.title}</span>
-                        <span className="meta">{r.type.replace(/_/g, " ")} · {r.song_count} song{r.song_count === 1 ? "" : "s"}</span>
+                        <span className="meta">{PROJECT_TYPE_MAP[r.type] ?? r.type} · {r.song_count} song{r.song_count === 1 ? "" : "s"}</span>
                       </span>
                       {r.open_note_count > 0 && (
                         <span className="cue">{r.open_note_count} open</span>
@@ -279,10 +409,10 @@ function TopBar({
 function Sidebar({
   mode,
   setMode,
-  room,
-  rooms = [],
-  activeRoomID,
-  onSelectRoom,
+  project,
+  projects = [],
+  activeProjectID,
+  onSelectProject,
   playlists = [],
   activePlaylistID,
   onSelectPlaylist,
@@ -291,13 +421,15 @@ function Sidebar({
   onSelectSmartView,
   selectedSongID,
   onSelectSong,
+  pinnedPlaylistIDs = new Set(),
+  onTogglePlaylistPin,
 }: {
   mode: ViewMode;
   setMode: (mode: ViewMode) => void;
-  room: RoomPayload | null;
-  rooms?: Awaited<ReturnType<typeof api.roomsSummary>>;
-  activeRoomID?: string;
-  onSelectRoom?: (id: string) => void;
+  project: ProjectPayload | null;
+  projects?: Awaited<ReturnType<typeof api.projectsSummary>>;
+  activeProjectID?: string;
+  onSelectProject?: (id: string) => void;
   playlists?: Awaited<ReturnType<typeof api.playlists>>;
   activePlaylistID?: string | null;
   onSelectPlaylist?: (id: string) => void;
@@ -306,9 +438,12 @@ function Sidebar({
   onSelectSmartView?: (viewID: string) => void;
   selectedSongID: string;
   onSelectSong: (songID: string) => void;
+  pinnedPlaylistIDs?: Set<string>;
+  onTogglePlaylistPin?: (id: string) => void;
 }) {
   const nav = [
-    ["library", "Library", ListMusic],
+    ["home", "Home", Home],
+    ["library", "All Songs", ListMusic],
     ["inbox", "Inbox", Inbox],
     ["compare", "Compare", GitCompare],
     ["links", "Links", Link2],
@@ -326,16 +461,16 @@ function Sidebar({
         ))}
       </nav>
 
-      {rooms.length > 0 && onSelectRoom && (
+      {projects.length > 0 && onSelectProject && (
         <>
           <div className="side-rule" />
           <div className="side-label">Rooms</div>
           <div className="side-list">
-            {rooms.map((r) => (
+            {projects.map((r) => (
               <button
-                key={r.room_id}
-                className={`side-list-item ${mode === "room" && activeRoomID === r.room_id ? "selected" : ""}`}
-                onClick={() => onSelectRoom(r.room_id)}
+                key={r.project_id}
+                className={`side-list-item ${mode === "project" && activeProjectID === r.project_id ? "selected" : ""}`}
+                onClick={() => onSelectProject(r.project_id)}
               >
                 <span className="side-title">{r.title}</span>
                 <span className="side-meta">{r.song_count} {r.song_count === 1 ? "song" : "songs"}</span>
@@ -350,16 +485,34 @@ function Sidebar({
           <div className="side-rule" />
           <div className="side-label">Playlists</div>
           <div className="side-list">
-            {playlists.map((p) => (
-              <button
-                key={p.playlist_id}
-                className={`side-list-item ${mode === "playlist" && activePlaylistID === p.playlist_id ? "selected" : ""}`}
-                onClick={() => onSelectPlaylist(p.playlist_id)}
-              >
-                <span className="side-title">{p.title}</span>
-                <span className="side-meta">{p.item_count} {p.item_count === 1 ? "song" : "songs"}</span>
-              </button>
-            ))}
+            {playlists.map((p) => {
+              const isPinned = pinnedPlaylistIDs.has(p.playlist_id);
+              return (
+                <button
+                  key={p.playlist_id}
+                  className={`side-list-item ${mode === "playlist" && activePlaylistID === p.playlist_id ? "selected" : ""}`}
+                  onClick={() => onSelectPlaylist(p.playlist_id)}
+                >
+                  <span className="side-info">
+                    <span className="side-title">{p.title}</span>
+                    <span className="side-meta">{p.item_count} {p.item_count === 1 ? "song" : "songs"}</span>
+                  </span>
+                  {onTogglePlaylistPin && (
+                    <span
+                      className={`pin-button ${isPinned ? "pinned" : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={isPinned ? `Unpin ${p.title}` : `Pin ${p.title}`}
+                      aria-pressed={isPinned}
+                      onClick={(e) => { e.stopPropagation(); onTogglePlaylistPin(p.playlist_id); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onTogglePlaylistPin(p.playlist_id); } }}
+                    >
+                      {isPinned ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -383,13 +536,13 @@ function Sidebar({
         </>
       )}
 
-      {mode === "room" && room && room.songs.length > 0 && (
+      {mode === "project" && project && project.songs.length > 0 && (
         <>
           <div className="side-rule" />
-          <div className="side-label">In this room</div>
+          <div className="side-label">In this project</div>
           <div className="song-rail">
-            {room.songs.map((song) => {
-              const versions = versionsForSong(room.versions, song.song_id);
+            {project.songs.map((song) => {
+              const versions = versionsForSong(project.versions, song.song_id);
               const current = versions.find((version) => version.version_id === song.current_version_id);
               return (
                 <button
@@ -409,18 +562,293 @@ function Sidebar({
   );
 }
 
+// =====================================================================
+//  HomeView — default landing: Pinned + Recent
+// =====================================================================
+
+function LibEmptyState({ label, hint }: { label: string; hint: string }) {
+  return (
+    <div className="lib-empty">
+      <span className="lib-empty-label">{label}</span>
+      <p className="lib-empty-hint">{hint}</p>
+    </div>
+  );
+}
+
+function HomeView({
+  onOpenSong,
+  onOpenProject,
+  onOpenPlaylist,
+  onToggleSongPin,
+  onTogglePlaylistPin,
+  onToggleProjectPin,
+  pinnedSongIDs,
+  pinnedPlaylistIDs,
+  pinnedProjectIDs,
+}: {
+  onOpenSong: (id: string) => void;
+  onOpenProject: (id: string) => void;
+  onOpenPlaylist: (id: string) => void;
+  onRefreshPlaylists: () => void;
+  pinnedSongIDs: Set<string>;
+  pinnedPlaylistIDs: Set<string>;
+  pinnedProjectIDs: Set<string>;
+  onToggleSongPin: (id: string) => void;
+  onTogglePlaylistPin: (id: string) => void;
+  onToggleProjectPin: (id: string) => void;
+}) {
+  const [pins, setPins] = useState<MyPinsPayload | null>(null);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.getMyPins().catch((): MyPinsPayload => ({ songs: [], playlists: [], projects: [] })),
+      api.recent("wsp-amf-private", 20).catch((): RecentItem[] => []),
+    ]).then(([p, r]) => {
+      setPins(p);
+      setRecentItems(r);
+    }).finally(() => setIsLoading(false));
+  }, []);
+
+  const totalPinned = pins ? pins.songs.length + pins.playlists.length + pins.projects.length : 0;
+
+  const galleryItems = useMemo<GalleryItem[]>(() => {
+    if (!pins) return [];
+    return [
+      ...pins.songs.map((s) => ({
+        id: `song-${s.song_id}`,
+        title: s.title,
+        subtitle: s.artist_display_name,
+        coverGradient: coverGradient(s.song_id),
+        onClick: () => onOpenSong(s.song_id),
+        aspect: 1.4,
+      })),
+      ...pins.playlists.map((p) => ({
+        id: `playlist-${p.playlist_id}`,
+        title: p.title,
+        subtitle: `${p.item_count} ${p.item_count === 1 ? "song" : "songs"}`,
+        coverGradient: coverGradient(p.cover_seed),
+        onClick: () => onOpenPlaylist(p.playlist_id),
+        aspect: 1.0,
+      })),
+      ...pins.projects.map((p) => ({
+        id: `project-${p.project_id}`,
+        title: p.title,
+        subtitle: PROJECT_TYPE_MAP[p.project_type] ?? p.project_type,
+        coverGradient: coverGradient(p.project_id),
+        onClick: () => onOpenProject(p.project_id),
+        aspect: 1.6,
+      })),
+    ];
+  }, [pins, onOpenSong, onOpenPlaylist, onOpenProject]);
+
+  return (
+    <div className="home-canvas">
+      <header className="lib-hero">
+        <span className="lib-kicker">HOME</span>
+        <h1 className="lib-headline">Workspace</h1>
+        <HomeGallery items={galleryItems} />
+      </header>
+
+      {/* PINNED section */}
+      <section className="home-section">
+        <h2 className="home-section-head">Pinned</h2>
+        {isLoading ? (
+          <LibEmptyState label="Loading" hint="Checking what you've pinned…" />
+        ) : totalPinned === 0 ? (
+          <LibEmptyState
+            label="Nothing pinned yet"
+            hint="Pin a song, playlist, or project to keep it within reach."
+          />
+        ) : (
+          <>
+            {pins && pins.songs.length > 0 && (
+              <div className="home-pin-group">
+                <p className="home-pin-sublabel">Songs</p>
+                <div className="lib-grid">
+                  {pins.songs.map((s) => {
+                    const isPinned = pinnedSongIDs.has(s.song_id);
+                    return (
+                      <article key={s.song_id} className="lib-row">
+                        <button
+                          className="lib-row-main"
+                          onClick={() => onOpenSong(s.song_id)}
+                        >
+                          <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(s.song_id) }} />
+                          <div className="lib-row-text">
+                            <span className="lib-title">{s.title}</span>
+                            <span className="lib-meta">
+                              {s.artist_display_name}
+                              {s.project_name && <> · {s.project_name}</>}
+                            </span>
+                          </div>
+                        </button>
+                        <span className={`status-pill ${s.status === "approved" ? "saved" : ""}`}>
+                          {STATUS_MAP[s.status] ?? s.status}
+                        </span>
+                        <button
+                          className={`pin-button ${isPinned ? "pinned" : ""}`}
+                          onClick={() => onToggleSongPin(s.song_id)}
+                          title="Unpin from Home"
+                          aria-label={`Unpin ${s.title}`}
+                          aria-pressed={isPinned}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {pins && pins.playlists.length > 0 && (
+              <div className="home-pin-group">
+                <p className="home-pin-sublabel">Playlists</p>
+                <div className="lib-grid">
+                  {pins.playlists.map((pl) => {
+                    const isPinned = pinnedPlaylistIDs.has(pl.playlist_id);
+                    return (
+                      <article key={pl.playlist_id} className="lib-row">
+                        <button
+                          className="lib-row-main"
+                          onClick={() => onOpenPlaylist(pl.playlist_id)}
+                        >
+                          <div
+                            className="cover-art"
+                            aria-hidden="true"
+                            style={{ backgroundImage: coverGradient(pl.cover_seed), borderRadius: 2, width: 48, height: 48 }}
+                          />
+                          <div className="lib-row-text">
+                            <span className="lib-title">{pl.title}</span>
+                            <span className="lib-meta">{pl.item_count} {pl.item_count === 1 ? "song" : "songs"}</span>
+                          </div>
+                        </button>
+                        <button
+                          className={`pin-button ${isPinned ? "pinned" : ""}`}
+                          onClick={() => onTogglePlaylistPin(pl.playlist_id)}
+                          title="Unpin from Home"
+                          aria-label={`Unpin ${pl.title}`}
+                          aria-pressed={isPinned}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {pins && pins.projects.length > 0 && (
+              <div className="home-pin-group">
+                <p className="home-pin-sublabel">Projects</p>
+                <div className="lib-grid">
+                  {pins.projects.map((pr) => {
+                    const isPinned = pinnedProjectIDs.has(pr.project_id);
+                    return (
+                      <article key={pr.project_id} className="lib-row">
+                        <div className="lib-row-main" style={{ cursor: "default" }}>
+                          <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(pr.project_id) }} />
+                          <div className="lib-row-text">
+                            <span className="lib-title">{pr.title}</span>
+                            <span className="lib-meta">{PROJECT_TYPE_MAP[pr.project_type] ?? pr.project_type} · {pr.song_count} {pr.song_count === 1 ? "song" : "songs"}</span>
+                          </div>
+                        </div>
+                        <button
+                          className={`pin-button ${isPinned ? "pinned" : ""}`}
+                          onClick={() => onToggleProjectPin(pr.project_id)}
+                          title="Unpin from Home"
+                          aria-label={`Unpin ${pr.title}`}
+                          aria-pressed={isPinned}
+                        >
+                          <BookmarkCheck size={14} />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* RECENT section */}
+      <section className="home-section">
+        <h2 className="home-section-head">Recent</h2>
+        {isLoading ? (
+          <LibEmptyState label="Loading" hint="Fetching recent activity…" />
+        ) : recentItems.length === 0 ? (
+          <LibEmptyState label="Nothing recent" hint="Open a song, playlist, or project and it will appear here." />
+        ) : (
+          <div className="lib-grid">
+            {recentItems.slice(0, 12).map((item) => (
+              <article key={`${item.entity_type}-${item.entity_id}`} className="lib-row">
+                <button
+                  className="lib-row-main"
+                  onClick={() => {
+                    if (item.entity_type === "song") onOpenSong(item.entity_id);
+                    else if (item.entity_type === "playlist") onOpenPlaylist(item.entity_id);
+                  }}
+                >
+                  <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.entity_id) }} />
+                  <div className="lib-row-text">
+                    <span className="lib-title">{item.title}</span>
+                    <span className="lib-meta">
+                      {item.artist_display_name}
+                      {item.project_name && <> · {item.project_name}</>}
+                      {item.version_label && <> · {item.version_label}</>}
+                    </span>
+                  </div>
+                </button>
+                <span className="lib-when">{formatRelative(item.last_activity_at)}</span>
+                {item.status && (
+                  <span className={`status-pill ${item.status === "approved" ? "saved" : ""}`}>
+                    {STATUS_MAP[item.status] ?? item.status}
+                  </span>
+                )}
+                {item.entity_type === "song" && (
+                  <button
+                    className={`pin-button ${pinnedSongIDs.has(item.entity_id) ? "pinned" : ""}`}
+                    onClick={() => onToggleSongPin(item.entity_id)}
+                    title={pinnedSongIDs.has(item.entity_id) ? "Unpin" : "Pin to Home"}
+                    aria-label={pinnedSongIDs.has(item.entity_id) ? `Unpin ${item.title}` : `Pin ${item.title} to Home`}
+                    aria-pressed={pinnedSongIDs.has(item.entity_id)}
+                  >
+                    {pinnedSongIDs.has(item.entity_id) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <footer className="lib-footer-metrics">
+        {totalPinned} Pinned · {recentItems.length} Recent
+      </footer>
+    </div>
+  );
+}
+
 function LibraryView({
   onOpenSong,
   playlists,
   onRefreshPlaylists,
   smartView = null,
   onClearSmart,
+  pinnedSongIDs = new Set(),
+  onToggleSongPin,
 }: {
   onOpenSong: (songID: string) => void;
   playlists: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists: () => void;
   smartView?: { view_id: string; name: string; filter: Record<string, unknown> } | null;
   onClearSmart?: () => void;
+  pinnedSongIDs?: Set<string>;
+  onToggleSongPin?: (songID: string) => void;
 }) {
   const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
   const [filter, setFilter] = useState<"all" | "approved" | "in-review" | "ready">("all");
@@ -455,7 +883,7 @@ function LibraryView({
     })
     .filter((item) => {
       if (!lowerSearch) return true;
-      const hay = `${item.song.title} ${item.song.artist_display_name} ${item.room?.title ?? ""}`.toLowerCase();
+      const hay = `${item.song.title} ${item.song.artist_display_name} ${item.project?.title ?? ""}`.toLowerCase();
       return hay.includes(lowerSearch);
     });
 
@@ -488,7 +916,7 @@ function LibraryView({
         <div className="metric-strip">
           <Metric label={smartView ? "Match" : "Songs"} value={filtered.length} />
           <Metric label="Approved" value={library.filter((i) => i.song.status === "approved").length} />
-          <Metric label="Rooms" value={new Set(library.map((i) => i.room?.room_id).filter(Boolean)).size} />
+          <Metric label="Rooms" value={new Set(library.map((i) => i.project?.project_id).filter(Boolean)).size} />
         </div>
       </div>
 
@@ -535,7 +963,7 @@ function LibraryView({
         {filtered.length === 0 ? (
           <div className="library-empty">Nothing matches.</div>
         ) : (
-          filtered.map(({ song, room, current_version }) => (
+          filtered.map(({ song, project, current_version }) => (
             <article key={song.song_id} className="library-row">
               <button
                 className="library-row-main"
@@ -546,7 +974,7 @@ function LibraryView({
                   <span className="library-title">{song.title}</span>
                   <span className="library-meta">
                     {song.artist_display_name}
-                    {room && <> · <span className="library-room">{room.title}</span></>}
+                    {project && <> · <span className="library-project">{project.title}</span></>}
                     {current_version && <> · {current_version.version_label}</>}
                   </span>
                 </div>
@@ -554,7 +982,7 @@ function LibraryView({
               <div className="library-row-meta">
                 <span className="library-catalog">{catalogIdFor(song.song_id)}</span>
                 <span className={`status-pill ${song.status === "approved" ? "saved" : ""}`}>
-                  {song.status.replace(/_/g, " ")}
+                  {STATUS_MAP[song.status] ?? song.status}
                 </span>
               </div>
               <button
@@ -564,6 +992,20 @@ function LibraryView({
               >
                 <Plus size={16} />
               </button>
+              {onToggleSongPin && (() => {
+                const isPinned = pinnedSongIDs.has(song.song_id);
+                return (
+                  <button
+                    className={`pin-button ${isPinned ? "pinned" : ""}`}
+                    onClick={() => onToggleSongPin(song.song_id)}
+                    title={isPinned ? "Unpin" : "Pin to Home"}
+                    aria-label={isPinned ? `Unpin ${song.title}` : `Pin ${song.title} to Home`}
+                    aria-pressed={isPinned}
+                  >
+                    {isPinned ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                  </button>
+                );
+              })()}
               {addingFor === song.song_id && (
                 <div className="library-add-menu" role="menu">
                   <p className="eyebrow">ADD TO PLAYLIST</p>
@@ -772,13 +1214,13 @@ function PlaylistView({
   );
 }
 
-function RoomView({ payload, onOpenSong }: { payload: RoomPayload; onOpenSong: (songID: string) => void }) {
+function ProjectView({ payload, onOpenSong }: { payload: ProjectPayload; onOpenSong: (songID: string) => void }) {
   return (
     <div className="view-stack">
       <div className="section-head">
         <div>
           <p className="eyebrow">ROOM</p>
-          <h1>{payload.room.title}</h1>
+          <h1>{payload.project.title}</h1>
         </div>
         <div className="metric-strip">
           <Metric label="Songs" value={payload.songs.length} />
@@ -1650,7 +2092,7 @@ function InboxView({
                 <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(item.song.song_id) }} />
                 <button className="row-main row-open" onClick={() => onOpenSong(item.song.song_id)}>
                   <span className="row-title">{item.song.title}</span>
-                  <span className="row-subtitle">Shared by {item.shared_by} · {item.room.title}</span>
+                  <span className="row-subtitle">Shared by {item.shared_by} · {item.project.title}</span>
                 </button>
                 <span className={`status-pill ${isSaved ? "saved" : isPassed ? "passed" : item.new_since_last_listen ? "red" : ""}`}>
                   {isSaved ? "Saved" : isPassed ? "Passed" : item.new_since_last_listen ? "New" : "Heard"}
@@ -1813,21 +2255,21 @@ function RouteMemberPicker({
   );
 }
 
-function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song; onRefresh: () => void }) {
+function LinkManager({ project, song, onRefresh }: { project: ProjectPayload; song: Song; onRefresh: () => void }) {
   const [latestToken, setLatestToken] = useState<string | null>(null);
-  const [analytics, setAnalytics] = useState<Awaited<ReturnType<typeof api.roomAnalytics>>>([]);
-  const links = [...room.links, ...roomPayloadSongLinks(room, song.song_id)];
+  const [analytics, setAnalytics] = useState<Awaited<ReturnType<typeof api.projectAnalytics>>>([]);
+  const links = [...project.links, ...projectPayloadSongLinks(project, song.song_id)];
 
   useEffect(() => {
-    void api.roomAnalytics(room.room.room_id).then(setAnalytics).catch(() => setAnalytics([]));
-  }, [room.room.room_id]);
+    void api.projectAnalytics(project.project.project_id).then(setAnalytics).catch(() => setAnalytics([]));
+  }, [project.project.project_id]);
 
-  async function createRoomLink() {
+  async function createProjectLink() {
     const result = await api.createLink({
-      workspace_id: room.room.workspace_id,
-      target_type: "room",
-      target_id: room.room.room_id,
-      link_name: "Latest room playback",
+      workspace_id: project.project.workspace_id,
+      target_type: "project",
+      target_id: project.project.project_id,
+      link_name: "Latest project playback",
       access_mode: "identity_required",
       version_policy: "latest_only",
       download_policy: "none",
@@ -1847,7 +2289,7 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
           <p className="eyebrow">SHARE LINKS</p>
           <h1>Policy Engine</h1>
         </div>
-        <button className="accent-button" onClick={createRoomLink}>
+        <button className="accent-button" onClick={createProjectLink}>
           <Plus size={16} />
           Create Link
         </button>
@@ -1865,7 +2307,7 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
                 <span>{link.download_policy}</span>
                 <span>{link.watermark_enabled ? "watermark tracing" : "watermark off"}</span>
               </div>
-              <LinkActivity events={analytics.filter((e) => e.link_id === link.link_id)} versions={room.versions} songs={room.songs} />
+              <LinkActivity events={analytics.filter((e) => e.link_id === link.link_id)} versions={project.versions} songs={project.songs} />
             </div>
             <div className="row-actions">
               <a className="chrome-button" href={`/shared/${link.demo_token ?? ""}`}>
@@ -1962,8 +2404,11 @@ function formatRelative(iso: string): string {
   return `${weeks}w ago`;
 }
 
-/** Derive a stable hue (0–360) from a string id so every song has a distinct face. */
-function hashHue(id: string): number {
+/** Derive a stable hue (0–360) from a string id so every song has a distinct face.
+ *  Defensive against undefined / null callers — a stray bad id should not
+ *  blank-screen the whole app. */
+function hashHue(id: string | undefined | null): number {
+  if (!id) return 0;
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return h % 360;
@@ -1990,9 +2435,9 @@ function catalogIdFor(songId: string): string {
 }
 
 /** Build a sleeve-mode gradient string keyed off the song id. */
-function coverGradient(id: string): string {
+function coverGradient(id: string | undefined | null): string {
   const hue = hashHue(id);
-  const angle = 130 + (hashHue(id + "a") % 40);
+  const angle = 130 + (hashHue((id ?? "") + "a") % 40);
   return `linear-gradient(${angle}deg,
     hsl(${(hue + 200) % 360} 8% 14%) 0%,
     hsl(${(hue + 30) % 360} 18% 32%) 32%,
@@ -2026,8 +2471,8 @@ function ToggleSwitch({
   );
 }
 
-function roomPayloadSongLinks(room: RoomPayload, songID: string): ShareLink[] {
-  return room.links.filter((link) => link.target_type === "song" && link.target_id === songID);
+function projectPayloadSongLinks(project: ProjectPayload, songID: string): ShareLink[] {
+  return project.links.filter((link) => link.target_type === "song" && link.target_id === songID);
 }
 
 const SUGGESTED_QUERIES = [
@@ -2496,6 +2941,162 @@ function MonoMark({ size = 16 }: { size?: number }) {
 }
 
 type StampKind = "private" | "notes-due" | "approved" | "latest";
+
+// =====================================================================
+//  HomeGallery — AMF-style asymmetric cover-flow grid
+//  Ported from coverflow_amf/.../index.js layout algorithm
+// =====================================================================
+
+export type GalleryItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  coverGradient: string;
+  aspect?: number;
+  onClick?: () => void;
+};
+
+type TileLayout = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  coverGradient: string;
+  onClick?: () => void;
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+};
+
+/** Deterministic pseudo-random — matches AMF index.js exactly. */
+function seededRand(seed: number, min: number, max: number): number {
+  const x = Math.sin(seed * 9973) * 43758.5453;
+  const t = x - Math.floor(x);
+  return min + t * (max - min);
+}
+
+function computeGalleryLayout(items: GalleryItem[]): { tiles: TileLayout[]; canvasW: number; canvasH: number } {
+  if (items.length === 0) return { tiles: [], canvasW: 0, canvasH: 0 };
+
+  const isMobile = window.innerWidth <= 768;
+
+  const sW = window.innerWidth / 1440;
+  const sH = window.innerHeight / 900;
+  const s = Math.min(sW, sH);
+  const scaleMin = isMobile ? 0.8 : 0.6;
+  const scale = Math.max(scaleMin, Math.min(1.25, s));
+
+  const baseHeight = isMobile ? 280 : 420;
+  const tileHeightPx = baseHeight * scale;
+
+  // Row patterns: lengths only matter, matching AMF
+  const rowPatterns = isMobile
+    ? [[3], [2], [3]]
+    : [[3], [2], [4]];
+
+  const startXBase = 80 * scale;
+  let rowY = 0;
+  let rowIndex = 0;
+  let i = 0;
+  let maxRight = 0;
+
+  const tiles: TileLayout[] = [];
+
+  while (i < items.length) {
+    const patternRow = rowPatterns[rowIndex % rowPatterns.length];
+    const count = patternRow[0];
+    let cursorX = startXBase + (rowIndex % 2 === 1 ? 140 * scale : 0);
+
+    for (let k = 0; k < count && i < items.length; k++, i++) {
+      const item = items[i];
+      const aspect = Math.max(0.3, Math.min(3.0, item.aspect ?? 1.5));
+      const heightPx = tileHeightPx;
+      const widthPx = heightPx * aspect;
+      const jitterY = seededRand(i, -12, 12) * scale;
+      const gapX = (120 * scale) + seededRand(i * 3, 20 * scale, 100 * scale);
+
+      tiles.push({
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        coverGradient: item.coverGradient,
+        onClick: item.onClick,
+        width: widthPx,
+        height: heightPx,
+        left: cursorX,
+        top: rowY + jitterY,
+      });
+
+      cursorX += widthPx + gapX;
+      maxRight = Math.max(maxRight, cursorX);
+    }
+
+    rowIndex++;
+    const gapY = 80 * scale + seededRand(rowIndex, 8 * scale, 40 * scale);
+    rowY += tileHeightPx + gapY;
+  }
+
+  return {
+    tiles,
+    canvasW: Math.ceil(maxRight + startXBase),
+    canvasH: Math.ceil(rowY + startXBase),
+  };
+}
+
+const HomeGallery = memo(function HomeGallery({ items }: { items: GalleryItem[] }) {
+  const [layout, setLayout] = useState<{ tiles: TileLayout[]; canvasW: number; canvasH: number }>({
+    tiles: [],
+    canvasW: 0,
+    canvasH: 0,
+  });
+
+  // Sentinel ref so we only recompute when items actually change identity
+  const itemsRef = useRef(items);
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+    setLayout(computeGalleryLayout(items));
+  }, [items]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div
+      className="amfg-wrap"
+      style={{ height: Math.min(layout.canvasH, window.innerHeight * 0.6) || undefined }}
+      aria-label="Pinned items gallery"
+    >
+      <div
+        className="amfg-canvas"
+        style={{ width: layout.canvasW, height: layout.canvasH }}
+      >
+        {layout.tiles.map((tile) => (
+          <button
+            key={tile.id}
+            className="amfg-item"
+            style={{
+              width: tile.width,
+              height: tile.height,
+              left: tile.left,
+              top: tile.top,
+            }}
+            onClick={tile.onClick}
+            aria-label={tile.subtitle ? `${tile.title} — ${tile.subtitle}` : tile.title}
+          >
+            <div
+              className="amfg-img"
+              style={{ backgroundImage: tile.coverGradient }}
+              aria-hidden="true"
+            />
+            <div className="amfg-meta">
+              <p className="amfg-title">{tile.title.toUpperCase()}</p>
+              {tile.subtitle && <p className="amfg-sub">{tile.subtitle}</p>}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
 
 function Stamp({
   kind = "private",

@@ -30,7 +30,7 @@ struct PMWUser: Identifiable, Equatable {
     var role: String
 }
 
-struct PMWRoom: Identifiable, Equatable {
+struct PMWProject: Identifiable, Equatable {
     let id: String
     var title: String
     var detail: String
@@ -65,7 +65,7 @@ struct PMWVersion: Identifiable, Equatable {
 
 struct PMWSong: Identifiable, Equatable {
     let id: String
-    var roomID: String
+    var projectID: String
     var title: String
     var artistName: String
     var projectName: String

@@ -13,8 +13,8 @@ struct PMWAPIClient {
 
     struct Envelope<T: Decodable>: Decodable { let data: T?; let error: String? }
 
-    struct RoomPayload: Decodable {
-        let room: APIRoom
+    struct ProjectPayload: Decodable {
+        let project: APIProject
         let songs: [APISong]
         let versions: [APIVersion]
         let assets: [APIAsset]
@@ -37,18 +37,18 @@ struct PMWAPIClient {
         let songs: [APISong]
         let versions: [APIVersion]
         let assets: [APIAsset]
-        let rooms: [APIRoom]
+        let projects: [APIProject]
     }
 
-    struct APIRoom: Decodable {
-        let room_id: String
+    struct APIProject: Decodable {
+        let project_id: String
         let title: String
         let description: String?
     }
 
     struct APISong: Decodable {
         let song_id: String
-        let primary_room_id: String?
+        let primary_project_id: String?
         let title: String
         let artist_display_name: String?
         let project_name: String?
@@ -119,14 +119,14 @@ struct PMWAPIClient {
 
     // MARK: - Calls -------------------------------------------------------
 
-    func room(_ id: String = "room-hudson-ingram-lp") async throws -> RoomPayload {
-        try await get("/rooms/\(id)", as: RoomPayload.self)
+    func project(_ id: String = "room-hudson-ingram-lp") async throws -> ProjectPayload {
+        try await get("/projects/\(id)", as: ProjectPayload.self)
     }
 
-    // MARK: - Library / Rooms / Playlists --------------------------------
+    // MARK: - Library / Projects / Playlists -----------------------------
 
-    struct APIRoomSummary: Decodable {
-        let room_id: String
+    struct APIProjectSummary: Decodable {
+        let project_id: String
         let title: String
         let type: String
         let song_count: Int
@@ -134,9 +134,9 @@ struct PMWAPIClient {
     }
 
     struct APILibraryItem: Decodable {
-        struct RoomRef: Decodable { let room_id: String; let title: String; let type: String }
+        struct ProjectRef: Decodable { let project_id: String; let title: String; let type: String }
         let song: APISong
-        let room: RoomRef?
+        let project: ProjectRef?
         let current_version: APIVersion?
         let asset: APIAsset?
     }
@@ -171,8 +171,8 @@ struct PMWAPIClient {
         let items: [Entry]
     }
 
-    func roomsSummary(workspaceID: String = "wsp-amf-private") async throws -> [APIRoomSummary] {
-        try await get("/workspaces/\(workspaceID)/rooms-summary", as: [APIRoomSummary].self)
+    func projectsSummary(workspaceID: String = "wsp-amf-private") async throws -> [APIProjectSummary] {
+        try await get("/workspaces/\(workspaceID)/projects-summary", as: [APIProjectSummary].self)
     }
 
     func library(workspaceID: String = "wsp-amf-private") async throws -> [APILibraryItem] {

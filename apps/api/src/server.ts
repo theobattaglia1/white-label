@@ -63,24 +63,24 @@ server.get("/workspaces/:id/members", async (request) => {
   return ok(members);
 });
 
-server.get("/workspaces/:id/rooms", async (request) => {
+server.get("/workspaces/:id/projects", async (request) => {
   const { id } = request.params as { id: string };
-  return ok(store.listRooms(id));
+  return ok(store.listProjects(id));
 });
 
-/** Rooms enriched with their song-count + open-note-count — used to render
- *  the room switcher dropdown without doing N round-trips. */
-server.get("/workspaces/:id/rooms-summary", async (request) => {
+/** Projects enriched with their song-count + open-note-count — used to render
+ *  the project switcher dropdown without doing N round-trips. */
+server.get("/workspaces/:id/projects-summary", async (request) => {
   const { id } = request.params as { id: string };
-  const rooms = store.listRooms(id);
-  const summary = rooms.map((room) => {
-    const songs = store.data.songs.filter((s) => s.primary_room_id === room.room_id);
+  const projects = store.listProjects(id);
+  const summary = projects.map((project) => {
+    const songs = store.data.songs.filter((s) => s.primary_project_id === project.project_id);
     const songIDs = new Set(songs.map((s) => s.song_id));
     const openNotes = store.data.notes.filter(
       (n) => n.status === "open" && songIDs.has(n.song_id),
     );
     return {
-      ...room,
+      ...project,
       song_count: songs.length,
       open_note_count: openNotes.length,
     };
@@ -212,27 +212,49 @@ server.delete("/playlists/:id", async (request) => {
   return ok({ removed: true });
 });
 
-/** Workspace-wide library. Every song in the workspace plus its room +
+/** Workspace-wide library. Every song in the workspace plus its project +
  *  current version + asset, suitable for an "All Songs" surface. */
 server.get("/workspaces/:id/library", async (request) => {
   const { id } = request.params as { id: string };
   const songs = store.data.songs.filter((s) => s.workspace_id === id);
-  const roomByID = new Map(store.data.rooms.map((r) => [r.room_id, r]));
+  const projectByID = new Map(store.data.projects.map((p) => [p.project_id, p]));
   const items = songs.map((song) => {
     const current = store.data.versions.find((v) => v.version_id === song.current_version_id);
     const asset = current
       ? store.data.assets.find((a) => a.asset_id === current.file_asset_id)
       : undefined;
-    const room = roomByID.get(song.primary_room_id);
+    const project = projectByID.get(song.primary_project_id);
     return {
       song,
-      room: room ? { room_id: room.room_id, title: room.title, type: room.type } : null,
+      project: project ? { project_id: project.project_id, title: project.title, type: project.type } : null,
       current_version: current ?? null,
       asset: asset ?? null,
     };
   });
   return ok(items);
 });
+/** Recently-active songs in the workspace ordered by last activity timestamp.
+ *  "last_activity_at" = max(song.updated_at, current_version.created_at).
+ *  Default limit 20, capped at 100. */
+server.get("/workspaces/:id/recent", async (request) => {
+  const { id } = request.params as { id: string };
+  const rawLimit = Number((request.query as Record<string, string>).limit ?? 20);
+  const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
+  // Flatten the nested store shape into the flat shape the web client expects
+  // (see RecentItem in apps/web/src/api.ts — entity_type/entity_id, not nested).
+  const items = store.recent(id, limit).map((it) => ({
+    entity_type: "song" as const,
+    entity_id: it.song.song_id,
+    title: it.song.title,
+    artist_display_name: it.song.artist_display_name,
+    project_name: it.project?.title,
+    version_label: it.current_version?.version_label,
+    status: it.song.status,
+    last_activity_at: it.last_activity_at,
+  }));
+  return ok(items);
+});
+
 server.get("/workspaces/:id/tasks", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.data.tasks.filter((task) => task.workspace_id === id));
@@ -242,18 +264,18 @@ server.get("/workspaces/:id/activity", async (request) => {
   return ok(store.data.activityEvents.filter((event) => event.workspace_id === id));
 });
 
-server.get("/rooms/:id", async (request) => {
+server.get("/projects/:id", async (request) => {
   const { id } = request.params as { id: string };
-  return ok(store.getRoom(id));
+  return ok(store.getProject(id));
 });
-server.get("/rooms/:id/songs", async (request) => {
+server.get("/projects/:id/songs", async (request) => {
   const { id } = request.params as { id: string };
-  return ok(store.getRoom(id).songs);
+  return ok(store.getProject(id).songs);
 });
-server.get("/rooms/:id/analytics", async (request) => {
+server.get("/projects/:id/analytics", async (request) => {
   const { id } = request.params as { id: string };
-  const room = store.getRoom(id);
-  const songIDs = new Set(room.songs.map((song) => song.song_id));
+  const project = store.getProject(id);
+  const songIDs = new Set(project.songs.map((song) => song.song_id));
   const events = store.data.activityEvents.filter((event) => event.song_id && songIDs.has(event.song_id));
   // Enrich with actor display name so the client doesn't have to do a second join
   const userByID = new Map(store.data.users.map((u) => [u.user_id, u]));
@@ -349,7 +371,7 @@ server.post("/notes/:id/convert-to-task", async (request) => {
   const task = {
     task_id: randomUUID(),
     workspace_id: store.data.songs.find((song) => song.song_id === note.song_id)?.workspace_id ?? "",
-    room_id: note.room_id,
+    project_id: note.project_id,
     song_id: note.song_id,
     version_id: note.anchor_version_id,
     source_note_id: id,
@@ -380,6 +402,106 @@ server.post("/links/:id/revoke", async (request) => {
 });
 
 server.get("/inbox", async (request) => ok(store.inbox(authFromRequest(request).userID)));
+
+// ── Pins ─────────────────────────────────────────────────────────────────────
+//
+// GET    /workspaces/:id/my-pins                          → enriched pin collection
+// PUT    /workspaces/:id/my-pins/songs/:song_id           → pin a song (idempotent)
+// DELETE /workspaces/:id/my-pins/songs/:song_id           → unpin a song
+// PUT    /workspaces/:id/my-pins/playlists/:playlist_id   → pin a playlist
+// DELETE /workspaces/:id/my-pins/playlists/:playlist_id   → unpin a playlist
+// PUT    /workspaces/:id/my-pins/projects/:project_id     → pin a project
+// DELETE /workspaces/:id/my-pins/projects/:project_id     → unpin a project
+
+server.get("/workspaces/:id/my-pins", async (request) => {
+  const auth = await authedFromRequest(request);
+  const pins = store.getMyPins(auth.userID);
+
+  const songByID = new Map(store.data.songs.map((s) => [s.song_id, s]));
+  const playlistByID = new Map(store.data.playlists.map((p) => [p.playlist_id, p]));
+  const projectByID = new Map(store.data.projects.map((p) => [p.project_id, p]));
+
+  // Shape matches MyPinsPayload in apps/web/src/api.ts — each row is a
+  // flattened entity-with-pinned_at, not a nested { pin, entity } pair.
+  return ok({
+    songs: pins.songs.map((pin) => {
+      const s = songByID.get(pin.song_id);
+      return {
+        song_id: pin.song_id,
+        title: s?.title ?? "",
+        artist_display_name: s?.artist_display_name,
+        project_name: s?.project_name,
+        status: s?.status ?? "unknown",
+        pinned_at: pin.pinned_at,
+      };
+    }),
+    playlists: pins.playlists.map((pin) => {
+      const p = playlistByID.get(pin.playlist_id);
+      const itemCount = store.data.playlistItems.filter((it) => it.playlist_id === pin.playlist_id).length;
+      return {
+        playlist_id: pin.playlist_id,
+        title: p?.title ?? "",
+        item_count: itemCount,
+        cover_seed: p?.cover_seed ?? pin.playlist_id,
+        pinned_at: pin.pinned_at,
+      };
+    }),
+    projects: pins.projects.map((pin) => {
+      const p = projectByID.get(pin.project_id);
+      const songCount = store.data.songs.filter((s) => s.primary_project_id === pin.project_id).length;
+      return {
+        project_id: pin.project_id,
+        title: p?.title ?? "",
+        project_type: p?.type ?? "project",
+        song_count: songCount,
+        pinned_at: pin.pinned_at,
+      };
+    }),
+  });
+});
+
+server.put("/workspaces/:id/my-pins/songs/:song_id", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { id, song_id } = request.params as { id: string; song_id: string };
+  store.pinSong(id, auth.userID, song_id);
+  return ok({ pinned: true });
+});
+
+server.delete("/workspaces/:id/my-pins/songs/:song_id", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { song_id } = request.params as { song_id: string };
+  store.unpinSong(auth.userID, song_id);
+  return ok({ unpinned: true });
+});
+
+server.put("/workspaces/:id/my-pins/playlists/:playlist_id", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { id, playlist_id } = request.params as { id: string; playlist_id: string };
+  store.pinPlaylist(id, auth.userID, playlist_id);
+  return ok({ pinned: true });
+});
+
+server.delete("/workspaces/:id/my-pins/playlists/:playlist_id", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { playlist_id } = request.params as { playlist_id: string };
+  store.unpinPlaylist(auth.userID, playlist_id);
+  return ok({ unpinned: true });
+});
+
+server.put("/workspaces/:id/my-pins/projects/:project_id", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { id, project_id } = request.params as { id: string; project_id: string };
+  store.pinProject(id, auth.userID, project_id);
+  return ok({ pinned: true });
+});
+
+server.delete("/workspaces/:id/my-pins/projects/:project_id", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { project_id } = request.params as { project_id: string };
+  store.unpinProject(auth.userID, project_id);
+  return ok({ unpinned: true });
+});
+
 server.post("/inbox/:songId/action", async (request) => {
   const { songId } = request.params as { songId: string };
   return ok({ song_id: songId, accepted: true, action: (request.body as { action?: string }).action ?? "save" });

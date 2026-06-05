@@ -196,7 +196,28 @@ export const api = {
   recent: (workspaceID: string, limit = 20) =>
     request<RecentItem[]>(`/workspaces/${workspaceID}/recent?limit=${limit}`),
 
-  shared: (token: string) => request<SharedPayload>(`/shared/${token}`),
+  shared: async (token: string) => {
+    const payload = await request<SharedPayload>(`/shared/${token}`);
+    // Route recipient audio through the revocation-gated streaming endpoint
+    // rather than a permanent public URL. The server strips playback_url from
+    // shared assets; we point each asset at /shared/:token/stream/:versionId,
+    // which 302s to a fresh short-lived signed URL on every load and dies the
+    // moment the link is revoked. The <audio> element follows the redirect
+    // transparently, so the player needs no change.
+    const versionIdByAsset = new Map<string, string>();
+    for (const v of payload.versions) {
+      if (v.file_asset_id && !versionIdByAsset.has(v.file_asset_id)) {
+        versionIdByAsset.set(v.file_asset_id, v.version_id);
+      }
+    }
+    payload.assets = payload.assets.map((asset) => {
+      const versionId = versionIdByAsset.get(asset.asset_id);
+      return versionId
+        ? { ...asset, playback_url: `${API_URL}/shared/${token}/stream/${versionId}` }
+        : asset;
+    });
+    return payload;
+  },
   sharedApprove: (token: string, versionId: string, state: "approved" | "revision_requested" | "passed" = "approved", note?: string) =>
     request<{ approval_id: string; state: string }>(`/shared/${token}/approve`, {
       method: "POST",

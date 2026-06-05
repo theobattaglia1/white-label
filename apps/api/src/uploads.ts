@@ -55,6 +55,24 @@ export async function signUpload(input: SignUploadInput): Promise<SignUploadResu
   };
 }
 
+/**
+ * Mint a short-lived signed URL to STREAM an already-uploaded object. Unlike
+ * getPublicUrl() (which returns a permanent, unauthenticated URL that outlives
+ * any link revocation), a signed URL expires and is minted per-request — so the
+ * caller can re-check authorization (link still live, not revoked/expired) every
+ * time audio loads. This is the read-path counterpart to the upload signing
+ * above and the mechanism that makes "revoke a link" actually stop the audio.
+ */
+export async function signPlaybackUrl(storagePath: string, ttlSeconds = 3600): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, ttlSeconds);
+  if (error || !data?.signedUrl) {
+    throw new Error(`could not sign playback url: ${error?.message ?? "unknown"}`);
+  }
+  return data.signedUrl;
+}
+
 export type FinalizeUploadInput = {
   storagePath: string;
   publicUrl: string;

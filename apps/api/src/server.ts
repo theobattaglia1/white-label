@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
 import { store, type AuthContext } from "./store";
-import { signUpload, finalizeUpload, type FinalizeUploadInput, type SignUploadInput } from "./uploads";
+import { signUpload, finalizeUpload, signPlaybackUrl, type FinalizeUploadInput, type SignUploadInput } from "./uploads";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
 import { isSupabaseEnabled } from "./supabase";
 import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthError } from "./auth";
@@ -560,10 +560,26 @@ server.get("/shared/:token", async (request) => {
 });
 server.get("/shared/:token/stream/:versionId", async (request, reply) => {
   const { token, versionId } = request.params as { token: string; versionId: string };
+  // resolveShared() throws if the link is revoked or expired — so this mint is
+  // gated on the link being LIVE. Revoking a link immediately stops streaming,
+  // and the recipient never holds a permanent URL (only this endpoint, which
+  // re-checks on every load). This is what makes revocation real.
   const shared = store.resolveShared(token);
   const version = shared.versions.find((candidate) => candidate.version_id === versionId);
   if (!version) throw new Error("Version is not available through this link");
-  return reply.code(501).send({ error: "not_implemented", message: "Audio streaming not yet wired to R2 storage" });
+  const asset = shared.assets.find((candidate) => candidate.asset_id === version.file_asset_id);
+  if (!asset?.key_original) {
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio isn't available for this version yet." });
+  }
+  try {
+    const url = await signPlaybackUrl(asset.key_original);
+    // 302 to a fresh short-lived signed URL. Using code+location (not
+    // reply.redirect) keeps this stable across Fastify major versions.
+    return reply.code(302).header("location", url).send();
+  } catch (err) {
+    server.log.warn({ err }, "signPlaybackUrl failed for shared stream");
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio isn't available for this version yet." });
+  }
 });
 server.post("/shared/:token/notes", async (request) => {
   const { token } = request.params as { token: string };

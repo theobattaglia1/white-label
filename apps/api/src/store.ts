@@ -470,7 +470,14 @@ export class WorkspaceStore {
       versions: this.snapshot.versions,
       playlistItems: this.snapshot.playlistItems,
     });
-    const assets = this.snapshot.assets.filter((asset) => resolved.versions.some((version) => version.file_asset_id === asset.asset_id));
+    // Strip the permanent public playback_url before it reaches a recipient.
+    // Recipients stream via GET /shared/:token/stream/:versionId, which mints a
+    // short-lived signed URL gated on the link still being live — so a permanent
+    // URL must never leave the server on a shared payload (it would outlive
+    // revocation). key_original (the storage path) stays server-side only.
+    const assets = this.snapshot.assets
+      .filter((asset) => resolved.versions.some((version) => version.file_asset_id === asset.asset_id))
+      .map((asset) => ({ ...asset, playback_url: undefined }));
     const rooms = this.snapshot.rooms.filter((room) => resolved.songs.some((song) => song.primary_room_id === room.room_id));
     // If this is a playlist link, attach the playlist meta so the recipient
     // can render the playlist hero (cover + title + ordered queue).

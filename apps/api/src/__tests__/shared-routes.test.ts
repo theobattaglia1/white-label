@@ -27,14 +27,20 @@ beforeEach(async () => {
   store.reset();
 });
 
-describe("GET /shared/:token — no permanent playback_url leaks to recipients", () => {
-  it("strips playback_url from every asset in the payload", async () => {
+describe("GET /shared/:token — no permanent (absolute) playback_url leaks to recipients", () => {
+  it("never exposes an absolute storage URL; real uploads are withheld, seed/static URLs allowed", async () => {
     const res = await app.inject({ method: "GET", url: `/shared/${TOKEN}` });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ data: { assets: Array<{ playback_url?: string }>; songs: unknown[] } }>();
+    const body = res.json<{ data: { assets: Array<{ playback_url?: string }> } }>();
     expect(body.data.assets.length).toBeGreaterThan(0);
     for (const asset of body.data.assets) {
-      expect(asset.playback_url).toBeUndefined();
+      // Invariant: a recipient must never receive an absolute http(s) storage
+      // URL (a real uploaded master). Relative seed/demo paths (/seed-audio/…)
+      // are harmless and may pass through so demo playback still works.
+      if (asset.playback_url !== undefined) {
+        expect(asset.playback_url).toMatch(/^\//);
+        expect(asset.playback_url).not.toMatch(/^https?:\/\//i);
+      }
     }
   });
 });

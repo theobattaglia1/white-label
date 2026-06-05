@@ -211,6 +211,10 @@ export const api = {
       }
     }
     payload.assets = payload.assets.map((asset) => {
+      // Seed/demo audio keeps its static playback_url (the server only strips
+      // real uploaded masters). Only route through the gated stream endpoint
+      // when the server withheld the URL.
+      if (asset.playback_url) return asset;
       const versionId = versionIdByAsset.get(asset.asset_id);
       return versionId
         ? { ...asset, playback_url: `${API_URL}/shared/${token}/stream/${versionId}` }

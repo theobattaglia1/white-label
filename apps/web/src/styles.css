@@ -3229,6 +3229,233 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .home-skel--head { width: 120px; height: 22px; margin-bottom: 18px; }
 @media (prefers-reduced-motion: reduce) { .home-skel { animation: none; } }
 
+/* ================================================================
+   TE × BRAUN INSTRUMENT LANGUAGE — Home prototype
+   The workspace as a considered device: monochrome faceplate,
+   oversized tabular-mono readouts as the hero, ONE red accent used
+   functionally (keys, LEDs, indices), precise hairline grid,
+   tactile pressed controls. Helvetica for names, mono for numbers.
+   ================================================================ */
+.te-home {
+  background: var(--sleeve-cream);
+  color: var(--ink);
+  min-height: 100%;
+  padding: clamp(20px, 3vw, 34px) clamp(20px, 4vw, 56px) 64px;
+}
+
+/* device status strip — the silkscreened header of a faceplate */
+.te-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1.5px solid var(--ink);
+  padding-bottom: 10px;
+  margin-bottom: 26px;
+}
+.te-mark {
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.te-status {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-family: var(--font-readout);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+.te-status .te-on { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.te-led {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--redline);
+  box-shadow: 0 0 0 2px rgba(217,40,29,0.16);
+}
+
+.te-label {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+
+/* === Transport module (hero) — a player faceplate ============== */
+.te-transport {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: clamp(22px, 3.5vw, 44px);
+  align-items: center;
+  background: var(--sleeve-card);
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  padding: 22px 26px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.te-deck {
+  position: relative;
+  width: clamp(128px, 15vw, 164px);
+  aspect-ratio: 1;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background-size: cover;
+  background-position: center;
+  flex: none;
+}
+.te-key {
+  position: absolute;
+  right: -18px; bottom: -18px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--redline);
+  border: none;
+  color: #fff;
+  display: grid; place-items: center;
+  cursor: pointer;
+  /* hard bottom edge = a real physical key */
+  box-shadow: 0 4px 0 #9c1c14, 0 9px 18px -6px rgba(11,10,9,0.5);
+  transition: transform 80ms var(--easing), box-shadow 80ms var(--easing);
+}
+.te-key:hover { transform: translateY(-1px); box-shadow: 0 5px 0 #9c1c14, 0 12px 22px -7px rgba(11,10,9,0.55); }
+.te-key:active { transform: translateY(3px); box-shadow: 0 1px 0 #9c1c14, 0 3px 8px -5px rgba(11,10,9,0.5); }
+.te-deck-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.te-now-title {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3.4vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.98;
+  margin: 2px 0 0;
+  color: var(--ink);
+}
+.te-now-artist {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--pencil-cool);
+}
+/* the labeled readout strip — Braun parameter labels under values */
+.te-readout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sleeve-hairline);
+}
+.te-readout { display: flex; flex-direction: column; gap: 4px; }
+.te-readout .te-val {
+  font-family: var(--font-readout);
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* === Section header — chapter index + tracked label =========== */
+.te-section { margin-top: 34px; }
+.te-section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.te-section-num {
+  font-family: var(--font-readout);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--redline);
+}
+.te-section-title {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* === Rooms as device tiles ==================================== */
+.te-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.te-tile {
+  position: relative;
+  text-align: left;
+  appearance: none;
+  background: var(--sleeve-card);
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 120ms var(--easing), box-shadow 120ms var(--easing);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.te-tile:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -14px rgba(11,10,9,0.5); }
+.te-tile:active { transform: translateY(0); }
+.te-tile-stripe { height: 6px; width: 100%; }
+.te-tile-body { padding: 14px 15px 16px; display: flex; flex-direction: column; gap: 7px; }
+.te-tile-idx {
+  font-family: var(--font-readout);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.te-tile-name { font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.te-tile-meta {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-readout);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+
+/* === Needs your ear — a queue with an oversized count ========= */
+.te-queue { display: grid; grid-template-columns: auto 1fr; gap: clamp(20px, 3vw, 40px); align-items: start; }
+.te-queue-count { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+.te-hero-num {
+  font-family: var(--font-readout);
+  font-size: clamp(64px, 9vw, 116px);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 0.78;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.te-queue-list { display: flex; flex-direction: column; border-top: 1.5px solid var(--ink); }
+.te-queue-row {
+  appearance: none; background: transparent; border: none; cursor: pointer; text-align: left;
+  display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center;
+  padding: 13px 2px; border-bottom: 1px solid var(--sleeve-hairline);
+  transition: background 100ms var(--easing);
+}
+.te-queue-row:hover { background: rgba(11,10,9,0.03); }
+.te-queue-cat { font-family: var(--font-readout); font-size: 12px; color: var(--pencil-cool); font-variant-numeric: tabular-nums; }
+.te-queue-name { font-family: var(--font-sans); font-size: 14px; color: var(--ink); min-width: 0; }
+.te-queue-name b { font-weight: 700; }
+.te-queue-sub { color: var(--pencil-cool); }
+.te-pill {
+  font-family: var(--font-readout);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.te-pill.is-back { color: var(--redline); border-color: var(--redline); }
+
 /* === Sections ======================================================= */
 .home-section {
   padding: 48px clamp(24px, 5vw, 72px) 0;

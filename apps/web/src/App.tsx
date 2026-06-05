@@ -665,90 +665,110 @@ function HomeView({
   }
 
   return (
-    <div className="home-canvas">
-      <header className="home-hero">
-        <span className="home-hero-kicker">
-          {greeting}{rooms.length > 0 ? ` · ${rooms.length} ${rooms.length === 1 ? "room" : "rooms"} in play` : ""}
+    <div className="te-home">
+      {/* device status strip */}
+      <div className="te-statusbar">
+        <span className="te-mark">WHITE LABEL · WORKSPACE</span>
+        <span className="te-status">
+          <span>{greeting.toUpperCase()}</span>
+          <span>{String(rooms.length).padStart(2, "0")} RM</span>
+          {needsAttention.length > 0 && (
+            <span className="te-on"><span className="te-led" />{String(needsAttention.length).padStart(2, "0")} IN REVIEW</span>
+          )}
         </span>
-        {continueItem ? (
-          <button
-            className="home-continue"
-            aria-label={`Play ${continueItem.song.title}`}
-            onClick={() => {
-              if (continueItem.current_version && continueItem.asset) {
-                player.play(continueItem.song, continueItem.current_version, continueItem.asset);
-              }
-            }}
-          >
-            <div className="home-continue-cover" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }}>
-              <span className="home-continue-play" aria-hidden="true">
-                {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={17} /> : <Play size={17} />}
-              </span>
-            </div>
-            <div className="home-continue-text">
-              <span className="home-continue-label">{isResume ? "Pick up where you left off" : "Latest mix"}</span>
-              <span className="home-continue-title">{continueItem.song.title}</span>
-              <span className="home-continue-meta">
-                {continueItem.song.artist_display_name}
-                {continueItem.current_version && <> · {continueItem.current_version.version_label}</>}
-              </span>
-            </div>
-          </button>
-        ) : (
-          <div className="home-continue home-continue--empty">
-            <div className="home-continue-text">
-              <span className="home-continue-label">Nothing to play yet</span>
-              <span className="home-continue-title">Add your first mix</span>
-              <span className="home-continue-meta">Open a room below and upload a version.</span>
+      </div>
+
+      {/* TRANSPORT — the loaded mix, as a player faceplate */}
+      {continueItem ? (
+        <div className="te-transport">
+          <div className="te-deck" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }}>
+            <button
+              className="te-key"
+              aria-label={`Play ${continueItem.song.title}`}
+              onClick={() => {
+                if (continueItem.current_version && continueItem.asset) {
+                  player.play(continueItem.song, continueItem.current_version, continueItem.asset);
+                }
+              }}
+            >
+              {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={20} /> : <Play size={20} />}
+            </button>
+          </div>
+          <div className="te-deck-info">
+            <span className="te-label">{isResume ? "Resume" : "Latest mix"}</span>
+            <h1 className="te-now-title">{continueItem.song.title}</h1>
+            <span className="te-now-artist">{continueItem.song.artist_display_name}</span>
+            <div className="te-readout-row">
+              {typeof continueItem.song.bpm === "number" && (
+                <div className="te-readout"><span className="te-val">{continueItem.song.bpm}</span><span className="te-label">BPM</span></div>
+              )}
+              {continueItem.song.song_key && (
+                <div className="te-readout"><span className="te-val">{continueItem.song.song_key}</span><span className="te-label">Key</span></div>
+              )}
+              {continueItem.current_version && (
+                <div className="te-readout"><span className="te-val">{continueItem.current_version.version_label}</span><span className="te-label">Version</span></div>
+              )}
+              {typeof continueItem.asset?.duration_ms === "number" && (
+                <div className="te-readout"><span className="te-val">{formatTimestamp(continueItem.asset.duration_ms)}</span><span className="te-label">Length</span></div>
+              )}
             </div>
           </div>
-        )}
-      </header>
+        </div>
+      ) : (
+        <div className="te-transport">
+          <div className="te-deck" style={{ background: "var(--sleeve-elevated)" }} />
+          <div className="te-deck-info">
+            <span className="te-label">No mix loaded</span>
+            <h1 className="te-now-title">Add your first version</h1>
+            <span className="te-now-artist">Open a room below and upload a mix.</span>
+          </div>
+        </div>
+      )}
 
-      {/* ROOMS — your active projects, always present */}
+      {/* ROOMS — active projects as device tiles */}
       {rooms.length > 0 && (
-        <section className="home-section">
-          <h2 className="home-section-head">Rooms</h2>
-          <div className="home-room-grid">
-            {rooms.map((r) => (
-              <button key={r.room_id} className="home-room-card" onClick={() => onOpenRoom(r.room_id)}>
-                <div className="home-room-cover" aria-hidden="true" style={{ backgroundImage: coverGradient(r.room_id) }} />
-                <div className="home-room-body">
-                  <span className="home-room-title">{r.title}</span>
-                  <span className="home-room-meta">
-                    {r.song_count} {r.song_count === 1 ? "song" : "songs"}
-                    {r.open_note_count > 0 && <> · {r.open_note_count} open {r.open_note_count === 1 ? "note" : "notes"}</>}
+        <section className="te-section">
+          <div className="te-section-head"><span className="te-section-num">01</span><span className="te-section-title">Rooms</span></div>
+          <div className="te-grid">
+            {rooms.map((r, i) => (
+              <button key={r.room_id} className="te-tile" onClick={() => onOpenRoom(r.room_id)}>
+                <div className="te-tile-stripe" aria-hidden="true" style={{ backgroundImage: coverGradient(r.room_id) }} />
+                <div className="te-tile-body">
+                  <span className="te-tile-idx">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="te-tile-name">{r.title}</span>
+                  <span className="te-tile-meta">
+                    <span>{r.song_count} {r.song_count === 1 ? "SONG" : "SONGS"}</span>
+                    {r.open_note_count > 0 && (
+                      <><span className="te-led" aria-hidden="true" /><span>{r.open_note_count} OPEN</span></>
+                    )}
                   </span>
                 </div>
-                {r.open_note_count > 0 && <span className="home-room-badge" aria-label={`${r.open_note_count} open notes`}>{r.open_note_count}</span>}
               </button>
             ))}
           </div>
         </section>
       )}
 
-      {/* NEEDS YOUR EAR — songs in review or sent back */}
+      {/* NEEDS YOUR EAR — a queue with an oversized count readout */}
       {needsAttention.length > 0 && (
-        <section className="home-section">
-          <h2 className="home-section-head">Needs your ear</h2>
-          <div className="lib-grid">
-            {needsAttention.map((it) => (
-              <article key={it.song.song_id} className="lib-row">
-                <button className="lib-row-main" onClick={() => onOpenSong(it.song.song_id)}>
-                  <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(it.song.song_id) }} />
-                  <div className="lib-row-text">
-                    <span className="lib-title">{it.song.title}</span>
-                    <span className="lib-meta">
-                      {it.song.artist_display_name}
-                      {it.current_version && <> · {it.current_version.version_label}</>}
-                    </span>
-                  </div>
+        <section className="te-section">
+          <div className="te-section-head"><span className="te-section-num">02</span><span className="te-section-title">Needs your ear</span></div>
+          <div className="te-queue">
+            <div className="te-queue-count">
+              <span className="te-hero-num">{String(needsAttention.length).padStart(2, "0")}</span>
+              <span className="te-label">In review</span>
+            </div>
+            <div className="te-queue-list">
+              {needsAttention.map((it, i) => (
+                <button key={it.song.song_id} className="te-queue-row" onClick={() => onOpenSong(it.song.song_id)}>
+                  <span className="te-queue-cat">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="te-queue-name"><b>{it.song.title}</b> <span className="te-queue-sub">· {it.song.artist_display_name}</span></span>
+                  <span className={`te-pill${it.song.status === "revision_requested" ? " is-back" : ""}`}>
+                    {it.song.status === "revision_requested" ? "Sent back" : "Awaiting"}
+                  </span>
                 </button>
-                <span className="status-pill">
-                  {it.song.status === "revision_requested" ? "Sent back" : it.song.status === "in_review" ? "Awaiting your ear" : it.song.status.replace(/_/g, " ")}
-                </span>
-              </article>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
       )}

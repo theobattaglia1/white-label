@@ -681,7 +681,8 @@ function HomeView({
       {/* TRANSPORT — the loaded mix, as a player faceplate */}
       {continueItem ? (
         <div className="te-transport">
-          <div className="te-deck" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }}>
+          <div className="te-deck">
+            <div className="te-deck-cover" aria-hidden="true" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }} />
             <button
               className="te-key"
               aria-label={`Play ${continueItem.song.title}`}
@@ -732,17 +733,14 @@ function HomeView({
           <div className="te-grid">
             {rooms.map((r, i) => (
               <button key={r.room_id} className="te-tile" onClick={() => onOpenRoom(r.room_id)}>
-                <div className="te-tile-stripe" aria-hidden="true" style={{ backgroundImage: coverGradient(r.room_id) }} />
-                <div className="te-tile-body">
-                  <span className="te-tile-idx">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="te-tile-name">{r.title}</span>
-                  <span className="te-tile-meta">
-                    <span>{r.song_count} {r.song_count === 1 ? "SONG" : "SONGS"}</span>
-                    {r.open_note_count > 0 && (
-                      <><span className="te-led" aria-hidden="true" /><span>{r.open_note_count} OPEN</span></>
-                    )}
-                  </span>
-                </div>
+                <span className="te-tile-idx">{String(i + 1).padStart(2, "0")}</span>
+                <span className="te-tile-name">{r.title}</span>
+                <span className="te-tile-meta">
+                  <span>{r.song_count} {r.song_count === 1 ? "SONG" : "SONGS"}</span>
+                  {r.open_note_count > 0 && (
+                    <><span className="te-led" aria-hidden="true" /><span>{r.open_note_count} OPEN</span></>
+                  )}
+                </span>
               </button>
             ))}
           </div>

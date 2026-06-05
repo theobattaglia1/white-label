@@ -3418,6 +3418,26 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 /* the room-switcher chip in the top bar */
 .app-shell .room-switcher, .app-shell .room-chip { color: var(--ed-ink); }
 
+/* ----------------------------------------------------------------
+   COMPREHENSIVE FLIP — remap the studio (dark) surface + text tokens
+   to editorial bone values so EVERY content view (song, library,
+   room, inbox, links, compare, ask) inherits the light skin at once,
+   not just the shell + home. The recipient/shared page is unaffected
+   (it uses its own --sleeve-* tokens by design).
+   ---------------------------------------------------------------- */
+:root {
+  --studio-black: #F3EEE3;     /* app ground — was near-black */
+  --studio-panel: #FAF6EC;     /* raised panel — was dark */
+  --studio-elevated: #ECE5D7;  /* hover / sunk */
+  --studio-hairline: #D7CEBD;  /* hairlines on bone */
+  --tape-oxide: #16120D;       /* primary text — was light cream */
+  --pencil-warm: #7C766A;      /* muted text */
+  /* one saturated accent, unified to the board's orange-red */
+  --redline: #F5380F;
+  --accent: #F5380F;
+  --accent-soft: rgba(245, 56, 15, 0.08);
+}
+
 /* status strip — a quiet device header, hairline-ruled */
 .te-statusbar {
   display: flex;

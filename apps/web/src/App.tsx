@@ -301,7 +301,6 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           {mode === "playlist" && activePlaylistID && (
             <PlaylistView
               playlistID={activePlaylistID}
-              onOpenSong={openSong}
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
             />
           )}
@@ -992,13 +991,12 @@ function LibraryView({
 
 function PlaylistView({
   playlistID,
-  onOpenSong,
   onRefreshPlaylists,
 }: {
   playlistID: string;
-  onOpenSong: (songID: string) => void;
   onRefreshPlaylists: () => void;
 }) {
+  const player = usePlayer();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.playlist>> | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -1123,8 +1121,14 @@ function PlaylistView({
               <span className="playlist-handle" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
               <span className="playlist-index">{String(item.position).padStart(2, "0")}</span>
               <button
-                className="playlist-song"
-                onClick={() => song && onOpenSong(song.song_id)}
+                className={`playlist-song${player.song?.song_id && song && player.song.song_id === song.song_id ? " is-playing" : ""}`}
+                onClick={() => {
+                  // Play in place — stay in the playlist, queue continues.
+                  // (Was navigating to the standalone song page, ejecting you
+                  // from the playlist — the bug.)
+                  if (song && current_version && asset) player.play(song, current_version, asset);
+                }}
+                aria-label={song ? `Play ${song.title}` : undefined}
               >
                 {song ? (
                   <>

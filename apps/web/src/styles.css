@@ -2106,6 +2106,11 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   letter-spacing: 0.04em;
   color: var(--pencil-warm);
 }
+/* Now-playing row — the track currently loaded in the player. */
+.playlist-song.is-playing .title { color: var(--redline); }
+.playlist-song.is-playing .cover-art {
+  box-shadow: 0 0 0 2px var(--redline), 0 0 0 4px var(--accent-soft);
+}
 .playlist-duration {
   font-family: var(--font-readout);
   font-size: 11px;

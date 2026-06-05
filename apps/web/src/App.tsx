@@ -302,6 +302,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           {mode === "playlist" && activePlaylistID && (
             <PlaylistView
               playlistID={activePlaylistID}
+              onOpenSong={openSong}
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
             />
           )}
@@ -614,6 +615,8 @@ function HomeView({
   const recentSongID = recentItems.find((it) => it.entity_type === "song")?.entity_id;
   const continueItem =
     (recentSongID ? playable.find((it) => it.song.song_id === recentSongID) : undefined) ?? playable[0];
+  // Only promise "where you left off" when it's genuinely the last-touched song.
+  const isResume = !!recentSongID && continueItem?.song.song_id === recentSongID;
 
   // Songs waiting on the manager — still in review or sent back for changes.
   const needsAttention = library.filter(
@@ -627,6 +630,40 @@ function HomeView({
     return "Good evening";
   })();
 
+  // Cold-load: show a skeleton that mirrors the real layout so the page reads as
+  // "loading" instead of flashing the empty-state before data arrives.
+  if (isLoading) {
+    return (
+      <div className="home-canvas">
+        <header className="home-hero">
+          <span className="home-skel home-skel--kicker" />
+          <div className="home-continue home-continue--empty">
+            <div className="home-skel home-skel--cover" />
+            <div className="home-continue-text" style={{ flex: 1 }}>
+              <span className="home-skel home-skel--line" style={{ width: 90 }} />
+              <span className="home-skel home-skel--title" />
+              <span className="home-skel home-skel--line" style={{ width: 150 }} />
+            </div>
+          </div>
+        </header>
+        <section className="home-section">
+          <span className="home-skel home-skel--head" />
+          <div className="home-room-grid">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="home-room-card" style={{ pointerEvents: "none" }}>
+                <div className="home-room-cover home-skel" />
+                <div className="home-room-body">
+                  <span className="home-skel home-skel--line" style={{ width: "70%" }} />
+                  <span className="home-skel home-skel--line" style={{ width: "40%" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="home-canvas">
       <header className="home-hero">
@@ -636,6 +673,7 @@ function HomeView({
         {continueItem ? (
           <button
             className="home-continue"
+            aria-label={`Play ${continueItem.song.title}`}
             onClick={() => {
               if (continueItem.current_version && continueItem.asset) {
                 player.play(continueItem.song, continueItem.current_version, continueItem.asset);
@@ -644,11 +682,11 @@ function HomeView({
           >
             <div className="home-continue-cover" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }}>
               <span className="home-continue-play" aria-hidden="true">
-                {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={20} /> : <Play size={20} />}
+                {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={17} /> : <Play size={17} />}
               </span>
             </div>
             <div className="home-continue-text">
-              <span className="home-continue-label">Pick up where you left off</span>
+              <span className="home-continue-label">{isResume ? "Pick up where you left off" : "Latest mix"}</span>
               <span className="home-continue-title">{continueItem.song.title}</span>
               <span className="home-continue-meta">
                 {continueItem.song.artist_display_name}
@@ -679,7 +717,7 @@ function HomeView({
                   <span className="home-room-title">{r.title}</span>
                   <span className="home-room-meta">
                     {r.song_count} {r.song_count === 1 ? "song" : "songs"}
-                    {r.open_note_count > 0 && <> · {r.open_note_count} open</>}
+                    {r.open_note_count > 0 && <> · {r.open_note_count} open {r.open_note_count === 1 ? "note" : "notes"}</>}
                   </span>
                 </div>
                 {r.open_note_count > 0 && <span className="home-room-badge" aria-label={`${r.open_note_count} open notes`}>{r.open_note_count}</span>}
@@ -706,7 +744,9 @@ function HomeView({
                     </span>
                   </div>
                 </button>
-                <span className="status-pill">{it.song.status.replace(/_/g, " ")}</span>
+                <span className="status-pill">
+                  {it.song.status === "revision_requested" ? "Sent back" : it.song.status === "in_review" ? "Awaiting your ear" : it.song.status.replace(/_/g, " ")}
+                </span>
               </article>
             ))}
           </div>
@@ -877,11 +917,6 @@ function HomeView({
         </section>
       )}
 
-      {isLoading && (
-        <section className="home-section">
-          <LibEmptyState label="Loading" hint="Pulling your workspace together…" />
-        </section>
-      )}
     </div>
   );
 }
@@ -1088,9 +1123,11 @@ function LibraryView({
 
 function PlaylistView({
   playlistID,
+  onOpenSong,
   onRefreshPlaylists,
 }: {
   playlistID: string;
+  onOpenSong: (songID: string) => void;
   onRefreshPlaylists: () => void;
 }) {
   const player = usePlayer();
@@ -1243,6 +1280,15 @@ function PlaylistView({
                 )}
               </button>
               <span className="playlist-duration">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
+              <button
+                className="icon-button"
+                title="Open notes & versions"
+                aria-label={song ? `Open ${song.title}` : "Open song"}
+                onClick={() => song && onOpenSong(song.song_id)}
+                disabled={!song}
+              >
+                <MessageSquare size={14} />
+              </button>
               <button
                 className="icon-button"
                 title="Remove from playlist"

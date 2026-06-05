@@ -41,11 +41,14 @@ export function catalogIdFor(songId: string): string {
 export function coverGradient(id: string): string {
   const hue = hashHue(id);
   const angle = 130 + (hashHue(id + "a") % 40);
+  // Saturation floored higher than before so the light stops read as a real
+  // colour (amber / teal / mauve) instead of desaturated olive-grey mud, while
+  // the dark anchor keeps the sleeve grounded. Tuned for the cream surface.
   return `linear-gradient(${angle}deg,
-    hsl(${(hue + 200) % 360} 8% 14%) 0%,
-    hsl(${(hue + 30) % 360} 18% 32%) 32%,
-    hsl(${hue} 28% 56%) 66%,
-    hsl(${(hue + 25) % 360} 38% 78%) 100%)`;
+    hsl(${(hue + 200) % 360} 16% 13%) 0%,
+    hsl(${(hue + 30) % 360} 30% 30%) 32%,
+    hsl(${hue} 46% 52%) 66%,
+    hsl(${(hue + 25) % 360} 60% 74%) 100%)`;
 }
 
 // ---------------------------------------------------------------------------

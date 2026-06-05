@@ -1638,9 +1638,11 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 }
 
 /* Smart-view sidebar variant + banner */
-.side-label.smart { color: var(--notes-blue); }
-.side-list-item.smart .side-meta { color: var(--notes-blue); }
-.side-list-item.smart.selected { background: rgba(45, 93, 184, 0.08); border-left-color: var(--notes-blue); }
+/* Smart views share the single brand red of Rooms/Playlists — blue here broke
+   the one-accent navigation discipline (notes-blue is reserved for annotation). */
+.side-label.smart { color: var(--redline); }
+.side-list-item.smart .side-meta { color: var(--pencil-cool); }
+.side-list-item.smart.selected { background: var(--accent-soft); border-left-color: var(--redline); }
 .smart-banner {
   display: flex;
   align-items: center;
@@ -2055,7 +2057,7 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 
 .playlist-list li {
   display: grid;
-  grid-template-columns: 18px 32px 1fr auto auto;
+  grid-template-columns: 18px 32px 1fr auto auto auto;
   gap: 14px;
   padding: 10px 0;
   border-bottom: 1px solid var(--studio-hairline);
@@ -3087,26 +3089,32 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 .home-continue-cover {
   position: relative;
-  width: 88px;
-  height: 88px;
-  flex: 0 0 88px;
-  border-radius: 4px;
+  width: 120px;
+  height: 120px;
+  flex: 0 0 120px;
+  border-radius: 5px;
   background-size: cover;
   background-position: center;
   box-shadow: inset 0 0 0 1px rgba(11,10,9,0.06);
 }
+/* Persistent play affordance — a real button, visible at rest (not hover-only,
+   which never shows on touch and hides the card's whole purpose). */
 .home-continue-play {
   position: absolute;
-  inset: 0;
+  left: 10px;
+  bottom: 10px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   color: #fff;
-  opacity: 0;
-  background: rgba(11,10,9,0.34);
-  border-radius: 4px;
-  transition: opacity 140ms ease;
+  background: var(--redline);
+  border-radius: 50%;
+  box-shadow: 0 4px 14px -4px rgba(11,10,9,0.55);
+  opacity: 0.94;
+  transition: transform 140ms cubic-bezier(.2,.6,.2,1), opacity 140ms ease;
 }
-.home-continue:hover .home-continue-play { opacity: 1; }
+.home-continue:hover .home-continue-play { transform: scale(1.08); opacity: 1; }
 .home-continue-text {
   display: flex;
   flex-direction: column;
@@ -3124,10 +3132,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .home-continue--empty .home-continue-label { color: var(--pencil-cool); }
 .home-continue-title {
   font-family: var(--font-display);
-  font-size: clamp(22px, 3vw, 30px);
+  font-size: clamp(28px, 3.6vw, 38px);
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
   color: var(--ink);
 }
 .home-continue-meta {
@@ -3200,6 +3208,26 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   font-weight: 700;
   border-radius: 10px;
 }
+
+/* === Home loading skeleton — mirrors the real layout so a cold load reads as
+   "loading", not "broken" ============================================ */
+@keyframes home-skel-shimmer {
+  0% { background-position: -240px 0; }
+  100% { background-position: calc(240px + 100%) 0; }
+}
+.home-skel {
+  display: block;
+  background: linear-gradient(90deg, rgba(11,10,9,0.05) 25%, rgba(11,10,9,0.10) 37%, rgba(11,10,9,0.05) 63%);
+  background-size: 480px 100%;
+  animation: home-skel-shimmer 1.4s ease infinite;
+  border-radius: 4px;
+}
+.home-skel--kicker { width: 180px; height: 10px; margin-bottom: 18px; }
+.home-skel--cover { width: 120px; height: 120px; flex: 0 0 120px; border-radius: 5px; }
+.home-skel--title { width: 58%; height: 30px; border-radius: 5px; }
+.home-skel--line { height: 11px; border-radius: 4px; }
+.home-skel--head { width: 120px; height: 22px; margin-bottom: 18px; }
+@media (prefers-reduced-motion: reduce) { .home-skel { animation: none; } }
 
 /* === Sections ======================================================= */
 .home-section {

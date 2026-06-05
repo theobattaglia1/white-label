@@ -25,7 +25,7 @@ import {
 import { answerWorkspaceQuestionLlm } from "./assistant";
 import { hashToken, makeShareToken } from "./hash";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
-import { persistNote, persistNoteReopen, persistNoteResolution } from "./supabase-persist";
+import { persistNote, persistNoteReopen, persistNoteResolution, persistLinkRevocation } from "./supabase-persist";
 import { isSupabaseEnabled } from "./supabase";
 
 export interface AuthContext {
@@ -446,6 +446,13 @@ export class WorkspaceStore {
       link_id: existing.link_id,
       metadata: patch,
     });
+    // Write revocation state through to Supabase so it survives a restart.
+    // Without this, re-hydration resets revoked_at to null and a revoked link
+    // (and the unreleased audio behind it) comes back. Keyed on the stable
+    // token_hash. Best-effort: failures log, never break the in-memory action.
+    if (Object.prototype.hasOwnProperty.call(patch, "revoked_at")) {
+      void persistLinkRevocation(existing.token_hash, patch.revoked_at ?? null).catch(() => undefined);
+    }
     return this.snapshot.shareLinks.find((link) => link.link_id === linkID);
   }
 

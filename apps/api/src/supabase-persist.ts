@@ -88,6 +88,29 @@ export async function persistNoteResolution(
   if (error) console.warn("[supabase-persist] note resolve failed:", error.message);
 }
 
+/**
+ * Persist a share-link revocation (or un-revocation) to Supabase.
+ *
+ * Keyed on `token_hash` — the one column that is unique, NOT NULL, and present
+ * on every link regardless of whether it was seeded, hydrated from the DB, or
+ * created at runtime (link_id / external_id differ across those paths; token_hash
+ * does not). Without this, revocation lives only in the in-memory snapshot and a
+ * server restart re-hydrates `revoked_at: null` — silently bringing a revoked
+ * link, and the unreleased audio behind it, back to life.
+ */
+export async function persistLinkRevocation(
+  tokenHash: string,
+  revokedAt: string | null
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("share_links")
+    .update({ revoked_at: revokedAt })
+    .eq("token_hash", tokenHash);
+  if (error) console.warn("[supabase-persist] link revoke failed:", error.message);
+}
+
 /** Mark a note reopened in Supabase. */
 export async function persistNoteReopen(noteExternalId: string): Promise<void> {
   const supabase = getSupabase();

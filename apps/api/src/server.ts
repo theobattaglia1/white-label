@@ -72,7 +72,13 @@ function ok<T>(value: T): { data: T } {
 }
 
 server.get("/health", async () => ok({ status: "ok", product: "private-music-workspace" }));
-server.post("/dev/reset", async () => ok(store.reset()));
+// Destructive: wipes the in-memory snapshot back to seed. NEVER expose in
+// production — an unauthenticated POST would let anyone reachable on the
+// internet reset every connected client's workspace. Registered only outside
+// production; tests call store.reset() directly, not this route.
+if (process.env.NODE_ENV !== "production") {
+  server.post("/dev/reset", async () => ok(store.reset()));
+}
 
 server.get("/me", async (request, reply) => {
   const auth = await authedFromRequest(request);
@@ -563,6 +569,16 @@ server.post("/shared/:token/notes", async (request) => {
   const { token } = request.params as { token: string };
   const shared = store.resolveShared(token);
   if (!shared.link.allow_comments) throw new Error("Comments are disabled for this link");
+  // Scope guard: a recipient may only comment on a song + version that this
+  // link actually exposes. resolveShared() already filters to the link's
+  // target; trusting the request body's song_id/anchor_version_id without this
+  // check would let a link-holder attach notes to ANY song whose IDs they know.
+  const body = request.body as { song_id?: string; anchor_version_id?: string };
+  const songInScope = shared.songs.some((s) => s.song_id === body.song_id);
+  const versionInScope = shared.versions.some((v) => v.version_id === body.anchor_version_id);
+  if (!songInScope || !versionInScope) {
+    throw new Error("That song or version is not available through this link");
+  }
   return ok(store.createNote({ userID: "guest" }, request.body as never));
 });
 server.post("/shared/:token/approve", async (request) => {
@@ -570,6 +586,10 @@ server.post("/shared/:token/approve", async (request) => {
   const shared = store.resolveShared(token);
   if (!shared.link.allow_approval) throw new Error("Approvals are disabled for this link");
   const body = request.body as { version_id: string; state?: "approved" | "revision_requested" | "passed"; note?: string };
+  // Scope guard: only a version this link exposes may be approved through it.
+  if (!shared.versions.some((v) => v.version_id === body.version_id)) {
+    throw new Error("That version is not available through this link");
+  }
   return ok(store.createApproval(body.version_id, { userID: "guest" }, body.state ?? "approved", body.note));
 });
 server.get("/shared/:token/download/:versionId", async (request, reply) => {
@@ -583,8 +603,9 @@ server.get("/shared/:token/download/:versionId", async (request, reply) => {
 
 /** Mint a signed upload URL the client uses to PUT directly to Supabase Storage. */
 server.post("/storage/sign-upload", async (request) => {
-  // Auth required — falls back gracefully to x-user-id in dev/offline
-  await authedFromRequest(request);
+  // Real-audio write path: enforce JWT in strict mode (was authedFromRequest,
+  // which left the x-user-id bypass open even with REQUIRE_JWT_AUTH=true).
+  await requireAuthedFromRequest(request);
   const body = request.body as SignUploadInput;
   if (!body?.filename) throw new Error("filename is required");
   return ok(await signUpload(body));
@@ -593,13 +614,16 @@ server.post("/storage/sign-upload", async (request) => {
 /** After the client finishes uploading, create file_asset + version rows
  *  AND re-hydrate the in-memory store so subsequent reads see the new data. */
 server.post("/storage/finalize-upload", async (request) => {
-  // Auth required — falls back gracefully to x-user-id in dev/offline
-  await authedFromRequest(request);
+  // Real-audio write path: enforce JWT in strict mode (was authedFromRequest).
+  const auth = await requireAuthedFromRequest(request);
   const body = request.body as FinalizeUploadInput;
   if (!body?.storagePath || !body?.songExternalId || !body?.publicUrl) {
     throw new Error("storagePath, publicUrl, and songExternalId are required");
   }
-  const result = await finalizeUpload(body);
+  // Attribute the upload to the authenticated caller, never a request-body field
+  // (a client could otherwise forge `uploadedBy: usr-theo`). The body value is
+  // ignored in favour of the resolved identity.
+  const result = await finalizeUpload({ ...body, uploadedBy: auth.userID });
   // Refresh in-memory snapshot so the new version is immediately visible.
   // A hydrate failure must NOT 500 a successful upload — log and continue.
   try {

@@ -24,7 +24,11 @@ import {
  * honest.
  */
 
-const MODEL = "claude-opus-4-8";
+// Model is env-overridable so a deprecation or a cost/latency change is a config
+// edit, not a code deploy. Default preserves current behaviour. For a read-only
+// Q&A over supplied records, claude-haiku-4-5 is a strong, far cheaper option —
+// set ASSISTANT_MODEL to switch without shipping.
+const MODEL = process.env.ASSISTANT_MODEL ?? "claude-opus-4-8";
 
 let _client: Anthropic | null = null;
 let _checked = false;

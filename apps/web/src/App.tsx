@@ -2605,7 +2605,13 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
                   <Link2 size={15} />
                   Open
                 </a>
-                <button className="icon-button" title="Revoke" onClick={async () => {
+                <button className="icon-button" title="Revoke access" onClick={async () => {
+                  // Destructive and immediate: revoking cuts the recipient's
+                  // audio the moment it lands. Confirm before doing it.
+                  const ok = window.confirm(
+                    `Revoke ${link.link_name ?? "this link"}? Anyone holding it loses access to the audio right away. You can't undo this.`,
+                  );
+                  if (!ok) return;
                   await api.revokeLink(link.link_id);
                   onRefresh();
                 }}>
@@ -2799,11 +2805,13 @@ function AssistantPanel({
         </div>
         <Shield size={22} aria-label="Read-only — Ask cannot modify workspace state" />
       </div>
-      {/* Honest disclaimer, calibrated to whether the AI backend is live. */}
+      {/* Honest disclaimer, calibrated to whether the AI backend is live. When
+          live, name the third party and what leaves the workspace — the data is
+          unreleased, so the disclosure has to be explicit, not buried. */}
       <p className="ask-context-line" style={{ color: "var(--pencil-warm)", fontStyle: "italic" }}>
         {llmEnabled
-          ? `AI answers, drawn read-only from your workspace records.${songTitle ? ` Focused on ${songTitle}.` : ""}`
-          : `Answers cover the whole workspace for now.${songTitle ? ` (Viewing: ${songTitle})` : ""}`}
+          ? `Answers come from Claude (Anthropic). Your question and a read-only summary of this workspace — song titles, notes, member and link names — are sent to generate them.${songTitle ? ` Focused on ${songTitle}.` : ""}`
+          : `Answers search your workspace records directly. No AI, nothing leaves the workspace.${songTitle ? ` (Viewing: ${songTitle})` : ""}`}
       </p>
       <div className="ask-box">
         <input
@@ -3050,6 +3058,10 @@ function SharedListeningView({
             <div className="left">
               <b>{catalogId} · {song.title}</b><br />
               {song.artist_display_name} · sent via private link · {payload.link.watermark_enabled ? "watermarked" : "open playback"}
+              <br />
+              <span className="muted" style={{ fontSize: "0.78em" }}>
+                The sender can see when you open this and what you play.
+              </span>
             </div>
             <div className="stamps">
               {payload.link.version_policy === "latest_only" && (

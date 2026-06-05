@@ -573,6 +573,34 @@ export class WorkspaceStore {
     return answerWorkspaceQuestionLlm(this.snapshot, question, context);
   }
 
+  /**
+   * Log that a recipient opened a share link. The analytics + activity surfaces
+   * already render `opened_link`, but nothing was writing it — so the manager
+   * had no way to tell a link they sent was ever opened (only whether audio was
+   * played). Best-effort and never throws: opening a link must not depend on
+   * logging succeeding. In-memory only for now (runtime activity isn't yet
+   * written through to Supabase — see runbook P2).
+   */
+  recordShareOpen(token: string) {
+    try {
+      const link = this.snapshot.shareLinks.find(
+        (candidate) => candidate.demo_token === token || candidate.token_hash === hashToken(token),
+      );
+      if (!link || link.revoked_at) return;
+      this.recordEvent({
+        workspace_id: link.workspace_id,
+        event_type: "opened_link",
+        target_type: link.target_type,
+        target_id: link.target_id,
+        song_id: link.target_type === "song" ? link.target_id : undefined,
+        link_id: link.link_id,
+        metadata: { access_mode: link.access_mode },
+      });
+    } catch {
+      /* opening must not depend on logging */
+    }
+  }
+
   private recordEvent(event: Omit<ActivityEvent, "event_id" | "created_at">) {
     this.snapshot.activityEvents = [
       ...this.snapshot.activityEvents,

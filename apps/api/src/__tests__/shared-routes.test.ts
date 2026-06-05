@@ -70,6 +70,17 @@ describe("POST /shared/:token/notes — scope enforcement", () => {
   });
 });
 
+describe("GET /shared/:token — records an opened_link event", () => {
+  it("logs opened_link to the workspace activity so the manager sees the open", async () => {
+    await app.inject({ method: "GET", url: `/shared/${TOKEN}` });
+    const activity = (
+      await app.inject({ method: "GET", url: `/workspaces/wsp-amf-private/activity` })
+    ).json<{ data: Array<{ event_type: string; link_id?: string }> }>();
+    const open = activity.data.find((e) => e.event_type === "opened_link" && e.link_id === "link-dana-history");
+    expect(open).toBeDefined();
+  });
+});
+
 describe("POST /shared/:token/approve — scope enforcement", () => {
   it("rejects approving a version NOT exposed by the link", async () => {
     // This link has allow_approval=false, but the scope guard runs after the

@@ -556,6 +556,8 @@ server.post("/assistant/ask", async (request, reply) => {
 server.get("/shared/:token", async (request) => {
   const { token } = request.params as { token: string };
   const payload = store.resolveShared(token);
+  // Log the open so the manager can see the link was opened (not just played).
+  store.recordShareOpen(token);
   return ok(payload);
 });
 server.get("/shared/:token/stream/:versionId", async (request, reply) => {

@@ -3335,6 +3335,89 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 .ed-tag.hot { background: var(--ed); border-color: var(--ed); color: #fff; }
 
+/* ================================================================
+   EDITORIAL SHELL SKIN — flip the ENTIRE app from dark-studio chrome
+   to the bone editorial language so the frame stops fighting the
+   content. One saturated orange-red, ink on bone, hairlines, big
+   grotesk nav. Appended last so it overrides the studio defaults.
+   ================================================================ */
+:root {
+  --ed-accent: #F5380F;
+  --ed-bone: #F3EEE3;
+  --ed-paper: #FAF6EC;
+  --ed-ink: #16120D;
+  --ed-mute: #7C766A;
+  --ed-line: #D7CEBD;
+}
+
+/* app ground + persistent chrome */
+.app-shell { background: var(--ed-bone); color: var(--ed-ink); }
+
+.top-bar {
+  background: rgba(243, 238, 227, 0.88);
+  border-bottom: 1.5px solid var(--ed-ink);
+  color: var(--ed-ink);
+}
+
+.sidebar {
+  background: var(--ed-bone);
+  border-right: 1.5px solid var(--ed-ink);
+}
+
+.nav-item, .song-rail-item {
+  color: var(--ed-mute);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  border-radius: 0;
+}
+.nav-item:hover, .song-rail-item:hover { background: transparent; color: var(--ed-ink); }
+.nav-item.selected, .song-rail-item.selected {
+  background: transparent;
+  color: var(--ed-accent);
+  border-left: 2px solid var(--ed-accent);
+  padding-left: 10px;
+}
+
+.side-rule { background: var(--ed-line); }
+.side-label { color: var(--ed-mute); }
+.side-label.smart { color: var(--ed-mute); }
+
+.side-list-item:hover { background: rgba(22, 18, 13, 0.04); }
+.side-list-item.selected { background: transparent; border-left-color: var(--ed-accent); }
+.side-list-item .side-title { color: var(--ed-ink); font-family: var(--font-display); font-weight: 600; }
+.side-list-item .side-meta { color: var(--ed-mute); }
+.side-list-item.smart .side-meta { color: var(--ed-mute); }
+.side-list-item.smart.selected { background: transparent; border-left-color: var(--ed-accent); }
+
+/* top-bar controls */
+.icon-button, .avatar-button {
+  border-color: var(--ed-line);
+  color: var(--ed-ink);
+  background: transparent;
+  border-radius: 999px;
+}
+.icon-button:hover, .avatar-button:hover, .icon-button.active {
+  background: rgba(22, 18, 13, 0.05);
+  border-color: var(--ed-ink);
+}
+.wordmark { color: var(--ed-ink); }
+.wordmark .cur { background: var(--ed-accent); }
+.notify-dot { background: var(--ed-accent); }
+
+/* content text flips so non-home views aren't invisible on bone */
+.app-shell h1, .app-shell h2, .app-shell h3 { color: var(--ed-ink); }
+.app-shell .song-title, .app-shell .row-title, .app-shell .mini-copy span { color: var(--ed-ink); }
+.app-shell .song-meta, .app-shell .row-subtitle, .app-shell .hero-meta,
+.app-shell .time-row, .app-shell .note-head, .app-shell .note-foot,
+.app-shell .mini-copy small, .app-shell .version-body small, .app-shell .metric small { color: var(--ed-mute); }
+.app-shell .note-item { border-bottom-color: var(--ed-line); }
+.app-shell .note-item p { color: var(--ed-ink); }
+
+/* the room-switcher chip in the top bar */
+.app-shell .room-switcher, .app-shell .room-chip { color: var(--ed-ink); }
+
 /* status strip — a quiet device header, hairline-ruled */
 .te-statusbar {
   display: flex;

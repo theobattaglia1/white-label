@@ -3230,17 +3230,110 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 @media (prefers-reduced-motion: reduce) { .home-skel { animation: none; } }
 
 /* ================================================================
-   INSTRUMENT — clean / elegant register (Rams "less but better").
-   Object-soul via precision, considered readouts and air — NOT heavy
-   borders or toy buttons. Monochrome, ONE quiet red, hairlines only,
-   generous negative space, light tabular-mono numerals.
+   EDITORIAL — bold Swiss × one saturated colour × giant numerals.
+   Derived from Theo's Lift board (Attica / Impact / re_ / amidigital):
+   oversized mixed-case grotesk, ONE confident orange-red used in
+   blocks not timid lines, giant tabular numerals as the hero, mono
+   data annotations, hairline editorial lists, bone + ink ground.
+   Interesting BECAUSE it's bold; clean BECAUSE it's disciplined.
    ================================================================ */
-.te-home {
-  background: var(--sleeve-cream);
-  color: var(--ink);
+.ed-home {
+  --ed: #F5380F;             /* the saturated orange-red lead */
+  --ed-ink: #16120D;
+  --ed-bone: #F3EEE3;
+  --ed-line: var(--sleeve-hairline);
+  --ed-mute: #7C766A;
+  background: var(--ed-bone);
+  color: var(--ed-ink);
   min-height: 100%;
-  padding: clamp(26px, 3.5vw, 46px) clamp(26px, 5vw, 76px) 88px;
+  padding: clamp(26px, 3.5vw, 46px) clamp(26px, 5vw, 76px) 96px;
 }
+
+/* masthead */
+.ed-masthead {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 20px;
+  border-bottom: 1.5px solid var(--ed-ink);
+  padding-bottom: 13px; margin-bottom: clamp(30px, 4vw, 56px);
+}
+.ed-mast-title {
+  font-family: var(--font-display); font-size: 14px; font-weight: 800;
+  letter-spacing: 0.02em; text-transform: uppercase; color: var(--ed-ink);
+}
+.ed-mast-meta {
+  display: flex; gap: 18px; align-items: center;
+  font-family: var(--font-readout); font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ed-mute);
+}
+.ed-mast-meta .on { color: var(--ed-ink); display: inline-flex; gap: 7px; align-items: center; }
+.ed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ed); display: inline-block; }
+
+/* HERO — the loaded mix as a bold statement */
+.ed-hero {
+  display: grid; grid-template-columns: clamp(150px, 17vw, 212px) 1fr;
+  gap: clamp(26px, 4vw, 56px); align-items: end; margin-bottom: clamp(40px, 5vw, 68px);
+}
+.ed-cover {
+  position: relative; aspect-ratio: 1; border-radius: 4px; overflow: hidden;
+  background: #1a1714; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+.ed-cover-img { position: absolute; inset: 0; background-size: cover; background-position: center; filter: grayscale(1) contrast(1.06) brightness(0.95); }
+.ed-play {
+  position: absolute; left: 14px; bottom: 14px; width: 50px; height: 50px; border-radius: 50%;
+  background: var(--ed); border: none; color: #fff; display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 6px 18px -4px rgba(245,56,15,0.5); transition: transform 130ms var(--easing);
+}
+.ed-play:hover { transform: scale(1.07); }
+.ed-play:active { transform: scale(0.96); }
+.ed-hero-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ed-eyebrow { font-family: var(--font-sans); font-size: 10px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ed-mute); }
+.ed-hero-title {
+  font-family: var(--font-display); font-size: clamp(36px, 5.2vw, 72px); font-weight: 700;
+  letter-spacing: -0.035em; line-height: 0.94; margin: 7px 0 2px; color: var(--ed-ink);
+}
+.ed-hero-artist { font-family: var(--font-sans); font-size: 15px; color: var(--ed-mute); }
+.ed-readouts { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 28px; margin-top: 20px; }
+.ed-readout { display: flex; flex-direction: column; gap: 6px; }
+.ed-readout-val { font-family: var(--font-readout); font-size: 21px; font-weight: 500; letter-spacing: -0.02em; color: var(--ed-ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.ed-readout-lab { font-family: var(--font-sans); font-size: 9px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ed-mute); }
+.ed-bignum {
+  font-family: var(--font-display); font-weight: 700; font-size: clamp(56px, 8vw, 116px);
+  letter-spacing: -0.05em; line-height: 0.74; color: var(--ed); font-variant-numeric: tabular-nums;
+}
+
+/* section header — big title + hairline rule */
+.ed-sec { margin-top: clamp(44px, 5vw, 72px); }
+.ed-sec-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  border-bottom: 1.5px solid var(--ed-ink); padding-bottom: 11px;
+}
+.ed-sec-title { font-family: var(--font-display); font-size: clamp(20px, 2.4vw, 30px); font-weight: 700; letter-spacing: -0.02em; color: var(--ed-ink); }
+.ed-sec-meta { font-family: var(--font-readout); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ed-mute); }
+
+/* editorial list rows (rooms + queue) */
+.ed-row {
+  width: 100%; appearance: none; background: transparent; border: none; cursor: pointer; text-align: left;
+  display: grid; grid-template-columns: 38px 1fr auto; gap: 20px; align-items: center;
+  padding: clamp(15px, 1.7vw, 24px) 0; border-bottom: 1px solid var(--ed-line);
+  transition: color 120ms var(--easing), padding-left 130ms var(--easing);
+}
+.ed-row:hover { color: var(--ed); padding-left: 10px; }
+.ed-row-idx { font-family: var(--font-readout); font-size: 13px; font-weight: 400; color: var(--ed-mute); font-variant-numeric: tabular-nums; }
+.ed-row:hover .ed-row-idx { color: var(--ed); }
+.ed-row-name { font-family: var(--font-display); font-size: clamp(22px, 3vw, 38px); font-weight: 700; letter-spacing: -0.03em; line-height: 1; color: inherit; }
+.ed-row.sm .ed-row-name { font-size: clamp(18px, 2.1vw, 26px); }
+.ed-row-meta { font-family: var(--font-readout); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ed-mute); display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+
+/* needs-your-ear giant count */
+.ed-queue { display: grid; grid-template-columns: auto 1fr; gap: clamp(28px, 4vw, 60px); align-items: start; }
+.ed-queue-num { font-family: var(--font-display); font-weight: 700; font-size: clamp(80px, 11vw, 152px); letter-spacing: -0.05em; line-height: 0.76; color: var(--ed-ink); font-variant-numeric: tabular-nums; }
+.ed-queue-lab { font-family: var(--font-sans); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ed-mute); margin-top: 8px; }
+
+/* pill tag */
+.ed-tag {
+  font-family: var(--font-readout); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 999px; border: 1.5px solid var(--ed-ink); color: var(--ed-ink); white-space: nowrap;
+}
+.ed-tag.hot { background: var(--ed); border-color: var(--ed); color: #fff; }
 
 /* status strip — a quiet device header, hairline-ruled */
 .te-statusbar {

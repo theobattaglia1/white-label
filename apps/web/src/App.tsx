@@ -665,26 +665,25 @@ function HomeView({
   }
 
   return (
-    <div className="te-home">
-      {/* device status strip */}
-      <div className="te-statusbar">
-        <span className="te-mark">WHITE LABEL · WORKSPACE</span>
-        <span className="te-status">
-          <span>{greeting.toUpperCase()}</span>
-          <span>{String(rooms.length).padStart(2, "0")} RM</span>
+    <div className="ed-home">
+      <div className="ed-masthead">
+        <span className="ed-mast-title">White Label</span>
+        <span className="ed-mast-meta">
+          <span>{greeting}</span>
+          <span>{String(rooms.length).padStart(2, "0")} Rooms</span>
           {needsAttention.length > 0 && (
-            <span className="te-on"><span className="te-led" />{String(needsAttention.length).padStart(2, "0")} IN REVIEW</span>
+            <span className="on"><span className="ed-dot" aria-hidden="true" />{needsAttention.length} in review</span>
           )}
         </span>
       </div>
 
-      {/* TRANSPORT — the loaded mix, as a player faceplate */}
+      {/* HERO — the loaded mix, a bold statement */}
       {continueItem ? (
-        <div className="te-transport">
-          <div className="te-deck">
-            <div className="te-deck-cover" aria-hidden="true" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }} />
+        <div className="ed-hero">
+          <div className="ed-cover">
+            <div className="ed-cover-img" aria-hidden="true" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }} />
             <button
-              className="te-key"
+              className="ed-play"
               aria-label={`Play ${continueItem.song.title}`}
               onClick={() => {
                 if (continueItem.current_version && continueItem.asset) {
@@ -695,51 +694,52 @@ function HomeView({
               {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={20} /> : <Play size={20} />}
             </button>
           </div>
-          <div className="te-deck-info">
-            <span className="te-label">{isResume ? "Resume" : "Latest mix"}</span>
-            <h1 className="te-now-title">{continueItem.song.title}</h1>
-            <span className="te-now-artist">{continueItem.song.artist_display_name}</span>
-            <div className="te-readout-row">
+          <div className="ed-hero-body">
+            <span className="ed-eyebrow">{isResume ? "Resume" : "Latest mix"}</span>
+            <h1 className="ed-hero-title">{continueItem.song.title}</h1>
+            <span className="ed-hero-artist">{continueItem.song.artist_display_name}</span>
+            <div className="ed-readouts">
               {typeof continueItem.song.bpm === "number" && (
-                <div className="te-readout"><span className="te-val">{continueItem.song.bpm}</span><span className="te-label">BPM</span></div>
+                <div className="ed-readout"><span className="ed-bignum">{continueItem.song.bpm}</span><span className="ed-readout-lab">BPM</span></div>
               )}
               {continueItem.song.song_key && (
-                <div className="te-readout"><span className="te-val">{continueItem.song.song_key}</span><span className="te-label">Key</span></div>
+                <div className="ed-readout"><span className="ed-readout-val">{continueItem.song.song_key}</span><span className="ed-readout-lab">Key</span></div>
               )}
               {continueItem.current_version && (
-                <div className="te-readout"><span className="te-val">{continueItem.current_version.version_label}</span><span className="te-label">Version</span></div>
+                <div className="ed-readout"><span className="ed-readout-val">{continueItem.current_version.version_label}</span><span className="ed-readout-lab">Version</span></div>
               )}
               {typeof continueItem.asset?.duration_ms === "number" && (
-                <div className="te-readout"><span className="te-val">{formatTimestamp(continueItem.asset.duration_ms)}</span><span className="te-label">Length</span></div>
+                <div className="ed-readout"><span className="ed-readout-val">{formatTimestamp(continueItem.asset.duration_ms)}</span><span className="ed-readout-lab">Length</span></div>
               )}
             </div>
           </div>
         </div>
       ) : (
-        <div className="te-transport">
-          <div className="te-deck" style={{ background: "var(--sleeve-elevated)" }} />
-          <div className="te-deck-info">
-            <span className="te-label">No mix loaded</span>
-            <h1 className="te-now-title">Add your first version</h1>
-            <span className="te-now-artist">Open a room below and upload a mix.</span>
+        <div className="ed-hero">
+          <div className="ed-cover" />
+          <div className="ed-hero-body">
+            <span className="ed-eyebrow">No mix loaded</span>
+            <h1 className="ed-hero-title">Add your first version</h1>
+            <span className="ed-hero-artist">Open a room below and upload a mix.</span>
           </div>
         </div>
       )}
 
-      {/* ROOMS — active projects as device tiles */}
+      {/* ROOMS — big-name editorial list */}
       {rooms.length > 0 && (
-        <section className="te-section">
-          <div className="te-section-head"><span className="te-section-num">01</span><span className="te-section-title">Rooms</span></div>
-          <div className="te-grid">
+        <section className="ed-sec">
+          <div className="ed-sec-head">
+            <span className="ed-sec-title">Rooms</span>
+            <span className="ed-sec-meta">{String(rooms.length).padStart(2, "0")} active</span>
+          </div>
+          <div>
             {rooms.map((r, i) => (
-              <button key={r.room_id} className="te-tile" onClick={() => onOpenRoom(r.room_id)}>
-                <span className="te-tile-idx">{String(i + 1).padStart(2, "0")}</span>
-                <span className="te-tile-name">{r.title}</span>
-                <span className="te-tile-meta">
-                  <span>{r.song_count} {r.song_count === 1 ? "SONG" : "SONGS"}</span>
-                  {r.open_note_count > 0 && (
-                    <><span className="te-led" aria-hidden="true" /><span>{r.open_note_count} OPEN</span></>
-                  )}
+              <button key={r.room_id} className="ed-row" onClick={() => onOpenRoom(r.room_id)}>
+                <span className="ed-row-idx">{String(i + 1).padStart(2, "0")}</span>
+                <span className="ed-row-name">{r.title}</span>
+                <span className="ed-row-meta">
+                  <span>{r.song_count} {r.song_count === 1 ? "song" : "songs"}</span>
+                  {r.open_note_count > 0 && (<><span className="ed-dot" aria-hidden="true" />{r.open_note_count} open</>)}
                 </span>
               </button>
             ))}
@@ -747,22 +747,24 @@ function HomeView({
         </section>
       )}
 
-      {/* NEEDS YOUR EAR — a queue with an oversized count readout */}
+      {/* NEEDS YOUR EAR — giant count + queue */}
       {needsAttention.length > 0 && (
-        <section className="te-section">
-          <div className="te-section-head"><span className="te-section-num">02</span><span className="te-section-title">Needs your ear</span></div>
-          <div className="te-queue">
-            <div className="te-queue-count">
-              <span className="te-hero-num">{String(needsAttention.length).padStart(2, "0")}</span>
-              <span className="te-label">In review</span>
+        <section className="ed-sec">
+          <div className="ed-sec-head"><span className="ed-sec-title">Needs your ear</span></div>
+          <div className="ed-queue">
+            <div>
+              <div className="ed-queue-num">{String(needsAttention.length).padStart(2, "0")}</div>
+              <div className="ed-queue-lab">In review</div>
             </div>
-            <div className="te-queue-list">
+            <div>
               {needsAttention.map((it, i) => (
-                <button key={it.song.song_id} className="te-queue-row" onClick={() => onOpenSong(it.song.song_id)}>
-                  <span className="te-queue-cat">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="te-queue-name"><b>{it.song.title}</b> <span className="te-queue-sub">· {it.song.artist_display_name}</span></span>
-                  <span className={`te-pill${it.song.status === "revision_requested" ? " is-back" : ""}`}>
-                    {it.song.status === "revision_requested" ? "Sent back" : "Awaiting"}
+                <button key={it.song.song_id} className="ed-row sm" onClick={() => onOpenSong(it.song.song_id)}>
+                  <span className="ed-row-idx">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="ed-row-name">{it.song.title}</span>
+                  <span className="ed-row-meta">
+                    <span className={`ed-tag${it.song.status === "revision_requested" ? " hot" : ""}`}>
+                      {it.song.status === "revision_requested" ? "Sent back" : "Awaiting"}
+                    </span>
                   </span>
                 </button>
               ))}

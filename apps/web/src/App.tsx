@@ -259,6 +259,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           {mode === "home" && (
             <HomeView
               onOpenSong={openSong}
+              onOpenRoom={openRoom}
               onOpenProject={(id) => { setSelectedSongID(id); setMode("song"); }}
               onOpenPlaylist={openPlaylist}
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
@@ -563,6 +564,7 @@ function LibEmptyState({ label, hint }: { label: string; hint: string }) {
 
 function HomeView({
   onOpenSong,
+  onOpenRoom,
   onOpenPlaylist,
   onToggleSongPin,
   onTogglePlaylistPin,
@@ -572,6 +574,7 @@ function HomeView({
   pinnedProjectIDs,
 }: {
   onOpenSong: (id: string) => void;
+  onOpenRoom: (id: string) => void;
   onOpenProject: (id: string) => void;
   onOpenPlaylist: (id: string) => void;
   onRefreshPlaylists: () => void;
@@ -582,42 +585,138 @@ function HomeView({
   onTogglePlaylistPin: (id: string) => void;
   onToggleProjectPin: (id: string) => void;
 }) {
+  const player = usePlayer();
   const [pins, setPins] = useState<MyPinsPayload | null>(null);
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  const [rooms, setRooms] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
+  const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.getMyPins().catch((): MyPinsPayload => ({ songs: [], playlists: [], projects: [] })),
       api.recent("wsp-amf-private", 20).catch((): RecentItem[] => []),
-    ]).then(([p, r]) => {
+      api.roomsSummary().catch(() => [] as Awaited<ReturnType<typeof api.roomsSummary>>),
+      api.workspaceLibrary().catch(() => [] as Awaited<ReturnType<typeof api.workspaceLibrary>>),
+    ]).then(([p, r, rm, lib]) => {
       setPins(p);
       setRecentItems(r);
+      setRooms(rm);
+      setLibrary(lib);
     }).finally(() => setIsLoading(false));
   }, []);
 
-  const totalPinned = pins ? pins.songs.length + pins.playlists.length + pins.projects.length : 0;
+  const totalPinned = pins ? pins.songs.length + pins.playlists.length : 0;
+
+  // Resume target: the most recently touched playable song, else the first one.
+  // Leads the page with the music instead of a giant meaningless headline.
+  const playable = library.filter((it) => it.current_version && it.asset);
+  const recentSongID = recentItems.find((it) => it.entity_type === "song")?.entity_id;
+  const continueItem =
+    (recentSongID ? playable.find((it) => it.song.song_id === recentSongID) : undefined) ?? playable[0];
+
+  // Songs waiting on the manager — still in review or sent back for changes.
+  const needsAttention = library.filter(
+    (it) => it.song.status === "in_review" || it.song.status === "revision_requested",
+  );
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  })();
 
   return (
     <div className="home-canvas">
-      <header className="lib-hero">
-        <span className="lib-kicker">HOME</span>
-        <h1 className="lib-headline">Workspace</h1>
-        {/* Piece 7 inserts the AMF Gallery here — do not remove this div */}
-        <div className="home-hero-gallery-slot" />
+      <header className="home-hero">
+        <span className="home-hero-kicker">
+          {greeting}{rooms.length > 0 ? ` · ${rooms.length} ${rooms.length === 1 ? "room" : "rooms"} in play` : ""}
+        </span>
+        {continueItem ? (
+          <button
+            className="home-continue"
+            onClick={() => {
+              if (continueItem.current_version && continueItem.asset) {
+                player.play(continueItem.song, continueItem.current_version, continueItem.asset);
+              }
+            }}
+          >
+            <div className="home-continue-cover" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }}>
+              <span className="home-continue-play" aria-hidden="true">
+                {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={20} /> : <Play size={20} />}
+              </span>
+            </div>
+            <div className="home-continue-text">
+              <span className="home-continue-label">Pick up where you left off</span>
+              <span className="home-continue-title">{continueItem.song.title}</span>
+              <span className="home-continue-meta">
+                {continueItem.song.artist_display_name}
+                {continueItem.current_version && <> · {continueItem.current_version.version_label}</>}
+              </span>
+            </div>
+          </button>
+        ) : (
+          <div className="home-continue home-continue--empty">
+            <div className="home-continue-text">
+              <span className="home-continue-label">Nothing to play yet</span>
+              <span className="home-continue-title">Add your first mix</span>
+              <span className="home-continue-meta">Open a room below and upload a version.</span>
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* PINNED section */}
-      <section className="home-section">
-        <h2 className="home-section-head">Pinned</h2>
-        {isLoading ? (
-          <LibEmptyState label="Loading" hint="Checking what you've pinned…" />
-        ) : totalPinned === 0 ? (
-          <LibEmptyState
-            label="Nothing pinned yet"
-            hint="Pin a song, playlist, or project to keep it within reach."
-          />
-        ) : (
+      {/* ROOMS — your active projects, always present */}
+      {rooms.length > 0 && (
+        <section className="home-section">
+          <h2 className="home-section-head">Rooms</h2>
+          <div className="home-room-grid">
+            {rooms.map((r) => (
+              <button key={r.room_id} className="home-room-card" onClick={() => onOpenRoom(r.room_id)}>
+                <div className="home-room-cover" aria-hidden="true" style={{ backgroundImage: coverGradient(r.room_id) }} />
+                <div className="home-room-body">
+                  <span className="home-room-title">{r.title}</span>
+                  <span className="home-room-meta">
+                    {r.song_count} {r.song_count === 1 ? "song" : "songs"}
+                    {r.open_note_count > 0 && <> · {r.open_note_count} open</>}
+                  </span>
+                </div>
+                {r.open_note_count > 0 && <span className="home-room-badge" aria-label={`${r.open_note_count} open notes`}>{r.open_note_count}</span>}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* NEEDS YOUR EAR — songs in review or sent back */}
+      {needsAttention.length > 0 && (
+        <section className="home-section">
+          <h2 className="home-section-head">Needs your ear</h2>
+          <div className="lib-grid">
+            {needsAttention.map((it) => (
+              <article key={it.song.song_id} className="lib-row">
+                <button className="lib-row-main" onClick={() => onOpenSong(it.song.song_id)}>
+                  <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(it.song.song_id) }} />
+                  <div className="lib-row-text">
+                    <span className="lib-title">{it.song.title}</span>
+                    <span className="lib-meta">
+                      {it.song.artist_display_name}
+                      {it.current_version && <> · {it.current_version.version_label}</>}
+                    </span>
+                  </div>
+                </button>
+                <span className="status-pill">{it.song.status.replace(/_/g, " ")}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* PINNED — only when you've actually pinned something */}
+      {totalPinned > 0 && pins && (
+        <section className="home-section">
+          <h2 className="home-section-head">Pinned</h2>
           <>
             {pins && pins.songs.length > 0 && (
               <div className="home-pin-group">
@@ -728,19 +827,15 @@ function HomeView({
               </div>
             )}
           </>
-        )}
-      </section>
+        </section>
+      )}
 
-      {/* RECENT section */}
-      <section className="home-section">
-        <h2 className="home-section-head">Recent</h2>
-        {isLoading ? (
-          <LibEmptyState label="Loading" hint="Fetching recent activity…" />
-        ) : recentItems.length === 0 ? (
-          <LibEmptyState label="Nothing recent" hint="Open a song, playlist, or project and it will appear here." />
-        ) : (
+      {/* RECENT — only when there's history */}
+      {recentItems.length > 0 && (
+        <section className="home-section">
+          <h2 className="home-section-head">Recent</h2>
           <div className="lib-grid">
-            {recentItems.slice(0, 12).map((item) => (
+            {recentItems.slice(0, 8).map((item) => (
               <article key={`${item.entity_type}-${item.entity_id}`} className="lib-row">
                 <button
                   className="lib-row-main"
@@ -779,12 +874,14 @@ function HomeView({
               </article>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      <footer className="lib-footer-metrics">
-        {totalPinned} pinned · {recentItems.length} recent
-      </footer>
+      {isLoading && (
+        <section className="home-section">
+          <LibEmptyState label="Loading" hint="Pulling your workspace together…" />
+        </section>
+      )}
     </div>
   );
 }

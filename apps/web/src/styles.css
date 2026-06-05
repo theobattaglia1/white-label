@@ -3044,6 +3044,163 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   /* Piece 7 will set a real height and inject gallery tiles here */
 }
 
+/* === Home hero — compact + content-forward (replaces the giant headline) === */
+.home-hero {
+  padding: 40px clamp(24px, 5vw, 72px) 8px;
+  position: relative;
+}
+.home-hero-kicker {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0 0 18px;
+}
+
+/* Continue / resume card — leads the page with the music, one click to play */
+.home-continue {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+  text-align: left;
+  background: var(--sleeve-card);
+  border: 1px solid var(--sleeve-hairline);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1), box-shadow 160ms cubic-bezier(.2,.6,.2,1);
+}
+.home-continue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -18px rgba(11,10,9,0.4);
+}
+.home-continue--empty,
+.home-continue--empty:hover {
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+.home-continue-cover {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex: 0 0 88px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(11,10,9,0.06);
+}
+.home-continue-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  opacity: 0;
+  background: rgba(11,10,9,0.34);
+  border-radius: 4px;
+  transition: opacity 140ms ease;
+}
+.home-continue:hover .home-continue-play { opacity: 1; }
+.home-continue-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.home-continue-label {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--redline);
+}
+.home-continue--empty .home-continue-label { color: var(--pencil-cool); }
+.home-continue-title {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.home-continue-meta {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--pencil-warm);
+}
+
+/* === Rooms grid — active projects as cards ========================== */
+.home-room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+.home-room-card {
+  position: relative;
+  appearance: none;
+  text-align: left;
+  background: var(--sleeve-card);
+  border: 1px solid var(--sleeve-hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: transform 160ms cubic-bezier(.2,.6,.2,1), box-shadow 160ms cubic-bezier(.2,.6,.2,1);
+}
+.home-room-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -18px rgba(11,10,9,0.4);
+}
+.home-room-cover {
+  height: 84px;
+  background-size: cover;
+  background-position: center;
+}
+.home-room-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px 14px;
+}
+.home-room-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.home-room-meta {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--pencil-warm);
+}
+.home-room-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  background: var(--redline);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+}
+
 /* === Sections ======================================================= */
 .home-section {
   padding: 48px clamp(24px, 5vw, 72px) 0;
@@ -3052,17 +3209,19 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   padding-bottom: 48px;
 }
 
-/* Section head — Fraunces serif at a smaller scale ("Pinned" / "Recent") */
+/* Section head — restrained editorial serif label ("Rooms" / "Recent").
+   Kept small + confident so it reads as a considered section marker, not a
+   shouting headline (the old 44px serif was the eyesore). */
 .home-section-head {
   font-family: "Fraunces", "Georgia", serif;
   font-weight: 400;
-  font-size: clamp(28px, 3.4vw, 44px);
+  font-size: clamp(20px, 2vw, 26px);
   font-optical-sizing: auto;
-  font-variation-settings: "opsz" 144, "SOFT" 50;
+  font-variation-settings: "opsz" 72, "SOFT" 50;
   letter-spacing: -0.005em;
-  line-height: 1.05;
+  line-height: 1.1;
   color: var(--ink);
-  margin: 0 0 28px;
+  margin: 0 0 18px;
 }
 
 /* === Pin groups (Songs / Playlists / Projects sub-sections) ========= */

@@ -13,6 +13,7 @@ struct NowPlayingView: View {
     var safeBottom: CGFloat = 0
     var onPull: () -> Void = {}
     var onExit: () -> Void = {}
+    var onMenu: () -> Void = {}
     var onQuickNote: () -> Void = {}
     private var track: Track { player.track }
 
@@ -30,7 +31,7 @@ struct NowPlayingView: View {
                     .padding(.top, safeTop + 6)
 
                 titleBlock
-                    .padding(.top, 64)
+                    .padding(.top, 44)
 
                 Spacer(minLength: 24)
 
@@ -64,17 +65,36 @@ struct NowPlayingView: View {
     // MARK: status bar
 
     private var statusRow: some View {
-        // centered exit grabber — tap to leave; swipe down hard also exits
-        VStack(spacing: 3) {
-            Capsule().fill(WL.cream.opacity(0.32)).frame(width: 34, height: 4)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(WL.cream.opacity(0.5))
+        TimelineView(.periodic(from: .now, by: 30)) { ctx in
+            HStack(spacing: 10) {
+                // the dot, now the menu button
+                Button { onMenu() } label: {
+                    Circle()
+                        .strokeBorder(WL.cream.opacity(0.7), lineWidth: 1.2)
+                        .frame(width: 17, height: 17)
+                        .overlay(Circle().fill(WL.cream.opacity(0.7)).frame(width: 4, height: 4))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                Text(ctx.date.formatted(.dateTime.hour().minute()))
+                    .font(WL.mono(12)).tracking(1)
+                Spacer()
+                // the little exit arrow
+                Button { onExit() } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(WL.cream.opacity(0.6))
+                        .frame(width: 28, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                MonoLabel(ctx.date.formatted(.dateTime.day().month(.twoDigits).year()),
+                          color: WL.cream.opacity(0.6), size: 10, tracking: 1.4)
+            }
+            .foregroundStyle(WL.cream.opacity(0.85))
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 26)
-        .contentShape(Rectangle())
-        .onTapGesture { onExit() }
+        .frame(height: 22)
     }
 
     // MARK: title

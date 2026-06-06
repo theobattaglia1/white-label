@@ -27,6 +27,7 @@ struct PlayerScreen: View {
                                 player: player, store: workspace, safeTop: top, safeBottom: bottom,
                                 onPull: { jump(proxy, "workspace") },
                                 onExit: { exit() },
+                                onMenu: { showMenu = true },
                                 onQuickNote: {
                                     markerMs = player.positionMs
                                     composeToken += 1
@@ -53,9 +54,6 @@ struct PlayerScreen: View {
                     .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                         if y < -95 && !didExit { didExit = true; exit() }
                     }
-                    .overlay(alignment: .topLeading) {
-                        menuButton.padding(.leading, 18).padding(.top, top + 4)
-                    }
                     .onAppear {
                         if CommandLine.arguments.contains("-openWorkspace") {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { jump(proxy, "workspace") }
@@ -70,22 +68,6 @@ struct PlayerScreen: View {
         .sheet(isPresented: $showMenu) {
             MenuSheet(player: player, store: workspace)
         }
-    }
-
-    private var menuButton: some View {
-        Button { showMenu = true } label: {
-            Circle()
-                .fill(.ultraThinMaterial)
-                .frame(width: 36, height: 36)
-                .overlay(
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(WL.cream)
-                )
-                .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
-        }
-        .buttonStyle(.plain)
     }
 
     private func jump(_ proxy: ScrollViewProxy, _ id: String) {

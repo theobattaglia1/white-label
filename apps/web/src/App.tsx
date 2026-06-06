@@ -2302,11 +2302,11 @@ function ComparisonMode({ payload, onRefresh }: { payload: SongPayload; onRefres
   const activeVersion = activeDeck === "A" ? left : right;
 
   return (
-    <div className="view-stack">
+    <div className="view-stack cmp-page">
       <div className="section-head">
         <div>
-          <p className="eyebrow">COMPARISON MODE</p>
-          <h1>{payload.song.title}</h1>
+          <p className="eyebrow">{payload.song.title}</p>
+          <h1>Compare</h1>
         </div>
         <ToggleSwitch
           label="Loudness Match"
@@ -2571,15 +2571,10 @@ function InboxView({
   };
 
   return (
-    <div className="view-stack">
-      <div className="section-head">
-        <div>
-          <p className="eyebrow">EXECUTIVE INBOX</p>
-          <h1>Submissions</h1>
-        </div>
-        <div className="metric-strip">
-          <Metric label="New" value={items.filter((item) => item.new_since_last_listen).length} />
-        </div>
+    <div className="view-stack ibx-page">
+      <div className="ibx-head">
+        <h1>Inbox</h1>
+        <div className="ibx-sub"><b>{items.filter((item) => item.new_since_last_listen).length} new</b> · routed to you</div>
       </div>
       <div className="inbox-filter">
         {(["open", "saved", "passed"] as const).map((f) => (
@@ -2816,10 +2811,10 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
   const overallHeard = useMemo(() => heardByCount(analytics), [analytics]);
 
   return (
-    <div className="view-stack">
+    <div className="view-stack share-page">
       <div className="section-head">
         <div>
-          <p className="eyebrow">SHARE LINKS</p>
+          <p className="eyebrow">Share · {song.title}</p>
           <h1>Share links</h1>
         </div>
         <button className="accent-button" onClick={createRoomLink}>
@@ -3058,11 +3053,11 @@ function AssistantPanel({
   }, [songID, versionID]);
 
   return (
-    <div className="view-stack">
+    <div className="view-stack ask-page">
       <div className="section-head">
         <div>
-          <p className="eyebrow">READ-ONLY</p>
-          <h1>Ask</h1>
+          <p className="eyebrow ask-tag">◇ Read-only</p>
+          <h1>Ask the workspace</h1>
         </div>
         <Shield size={22} aria-label="Read-only — Ask cannot modify workspace state" />
       </div>

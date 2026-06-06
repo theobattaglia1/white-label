@@ -101,15 +101,14 @@ struct NowPlayingView: View {
 
             scrubber
 
-            JogWheel(
-                progress: player.progress,
+            TransportBar(
                 isPlaying: player.isPlaying,
-                onToggle: { player.toggle() },
-                onScrub: { player.seek(to: $0) }
+                onBack: { player.prev() },
+                onPlay: { player.play() },
+                onPause: { player.pause() },
+                onForward: { player.next() }
             )
-            .frame(width: 172, height: 172)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+            .padding(.top, 6)
         }
     }
 

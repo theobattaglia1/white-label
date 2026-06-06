@@ -11,6 +11,7 @@
 		0F1022639FE5A79817C11C26 /* PlayerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D46EE875B4E7CA549425246E /* PlayerMenu.swift */; };
 		12BEA1B4E4EC4FFB61A0510D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92BCA1990D5642962D951B1 /* Models.swift */; };
 		1F89DD5184A6EAA6D06E521D /* UniversTE20-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B3DD384FE83D54AD391B0B1B /* UniversTE20-Light.ttf */; };
+		2F2402B2143045D354EB017C /* best-of-me-v2.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 2692E63D9F284D0439E51EB1 /* best-of-me-v2.mp3 */; };
 		37CC49609E111430B54534A5 /* BrowseViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C901E5DAF7A65DA32AD3AFD5 /* BrowseViews.swift */; };
 		3E01785F7737BA8CC1BF2DEF /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4659E32691DCE3AF37E88BAB /* HomeView.swift */; };
 		3F8B1E2876B47C88BD22FF89 /* WhiteLabelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CDE6A08C5B92AB31DB267FF /* WhiteLabelApp.swift */; };
@@ -20,24 +21,30 @@
 		5BA00C097237FDA31C1A4179 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8772B4828944758FB3138FCF /* ProfileView.swift */; };
 		5C0E1A6F681F1A36ECCDC1B3 /* Ndot-55.otf in Resources */ = {isa = PBXBuildFile; fileRef = 8C06D89D4B5FFE25D9EE3F5B /* Ndot-55.otf */; };
 		5FAFFCEDD17E77C6CCB235AB /* UniversTE40-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 921D0E8014BB1066CEB0F597 /* UniversTE40-Light.ttf */; };
+		6FD01126BCF7887EFBD71948 /* duel-v5.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 442E1DE635BF479D0DA3D94C /* duel-v5.m4a */; };
 		74A13A62CC1EDC6D0DFFA07F /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 045CB95567D33462F1AAF0E4 /* Player.swift */; };
 		75E23547095CB912A88346AF /* MeshCover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89816DC66E4E1EAF6250904B /* MeshCover.swift */; };
 		86A84FB742591877F6266150 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9B88AB33FC4050258ABC11 /* Theme.swift */; };
 		9EF910C47A35D4C5358CCC81 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CB69627FB54B90C6D335C5 /* RootView.swift */; };
 		B5A58C8581F17AA8B4C1DFF8 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01500CDFC93A3161D5E4FBB /* SampleData.swift */; };
 		C1AD78078B6B1A1DC6971D98 /* LetteraMonoLL-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = E16501FCB596C6CF35F31290 /* LetteraMonoLL-Regular.otf */; };
+		C4453C1F60F91AFC2E146729 /* the-first-night-v1-pitch.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 045759A2550FD0B12B1FA1E1 /* the-first-night-v1-pitch.mp3 */; };
 		EC011A3B89230F57F8CCCF12 /* JogWheel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29691F3FFBE4AD75FBC3BDD8 /* JogWheel.swift */; };
 		EE31464951371B3D6FC2ACDA /* Transport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C37B5181AD25C78655DD2C6 /* Transport.swift */; };
 		F2DA75EBE78C5378A44A9CD4 /* UniversTE20-Thin.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5461FEFD513999F2496AEDB8 /* UniversTE20-Thin.ttf */; };
+		F372B40161FD4E90AF00D1C2 /* lighting-the-fuse-v2.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = CC4DC6C09771636A06BCF014 /* lighting-the-fuse-v2.mp3 */; };
 		F460F9D91799A04EBCC4A343 /* WorkspaceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9D2EE37732DA77D8A30717 /* WorkspaceSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		045759A2550FD0B12B1FA1E1 /* the-first-night-v1-pitch.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "the-first-night-v1-pitch.mp3"; sourceTree = "<group>"; };
 		045CB95567D33462F1AAF0E4 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
 		1E322045B859027932230395 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
+		2692E63D9F284D0439E51EB1 /* best-of-me-v2.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "best-of-me-v2.mp3"; sourceTree = "<group>"; };
 		29691F3FFBE4AD75FBC3BDD8 /* JogWheel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JogWheel.swift; sourceTree = "<group>"; };
 		2C37B5181AD25C78655DD2C6 /* Transport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transport.swift; sourceTree = "<group>"; };
 		41CB69627FB54B90C6D335C5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		442E1DE635BF479D0DA3D94C /* duel-v5.m4a */ = {isa = PBXFileReference; path = "duel-v5.m4a"; sourceTree = "<group>"; };
 		4659E32691DCE3AF37E88BAB /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		47048DF173D44E761AC0C544 /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
 		4A610829D244BB63FE7494E2 /* PlayerScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerScreen.swift; sourceTree = "<group>"; };
@@ -54,6 +61,7 @@
 		B3DD384FE83D54AD391B0B1B /* UniversTE20-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Light.ttf"; sourceTree = "<group>"; };
 		C01500CDFC93A3161D5E4FBB /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		C901E5DAF7A65DA32AD3AFD5 /* BrowseViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseViews.swift; sourceTree = "<group>"; };
+		CC4DC6C09771636A06BCF014 /* lighting-the-fuse-v2.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "lighting-the-fuse-v2.mp3"; sourceTree = "<group>"; };
 		D2011914666E011B36F6F12D /* Waveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Waveform.swift; sourceTree = "<group>"; };
 		D46EE875B4E7CA549425246E /* PlayerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenu.swift; sourceTree = "<group>"; };
 		E16501FCB596C6CF35F31290 /* LetteraMonoLL-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LetteraMonoLL-Regular.otf"; sourceTree = "<group>"; };
@@ -94,6 +102,17 @@
 			);
 			sourceTree = "<group>";
 		};
+		8D5D7E0497135CFC7D85C95F /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				2692E63D9F284D0439E51EB1 /* best-of-me-v2.mp3 */,
+				442E1DE635BF479D0DA3D94C /* duel-v5.m4a */,
+				CC4DC6C09771636A06BCF014 /* lighting-the-fuse-v2.mp3 */,
+				045759A2550FD0B12B1FA1E1 /* the-first-night-v1-pitch.mp3 */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
 		9CAFA471CD3B6CE914862CBF /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
@@ -117,6 +136,7 @@
 		D547EEF22CCACA9A1074F563 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				8D5D7E0497135CFC7D85C95F /* Audio */,
 				9CAFA471CD3B6CE914862CBF /* Fonts */,
 			);
 			path = Resources;
@@ -186,6 +206,10 @@
 				1F89DD5184A6EAA6D06E521D /* UniversTE20-Light.ttf in Resources */,
 				F2DA75EBE78C5378A44A9CD4 /* UniversTE20-Thin.ttf in Resources */,
 				5FAFFCEDD17E77C6CCB235AB /* UniversTE40-Light.ttf in Resources */,
+				2F2402B2143045D354EB017C /* best-of-me-v2.mp3 in Resources */,
+				6FD01126BCF7887EFBD71948 /* duel-v5.m4a in Resources */,
+				F372B40161FD4E90AF00D1C2 /* lighting-the-fuse-v2.mp3 in Resources */,
+				C4453C1F60F91AFC2E146729 /* the-first-night-v1-pitch.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

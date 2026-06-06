@@ -31,6 +31,7 @@ enum SampleData {
     static let tracks: [Track] = [
         Track(
             id: "first-night",
+            audio: "the-first-night-v1-pitch.mp3",
             title: "The First Night",
             artist: "Hudson Ingram",
             label: "Hudson Ingram LP",
@@ -50,6 +51,7 @@ enum SampleData {
         ),
         Track(
             id: "lighting-the-fuse",
+            audio: "lighting-the-fuse-v2.mp3",
             title: "Lighting The Fuse",
             artist: "Hudson Ingram",
             label: "Hudson Ingram LP",
@@ -68,6 +70,7 @@ enum SampleData {
         ),
         Track(
             id: "duel",
+            audio: "duel-v5.m4a",
             title: "Duel",
             artist: "Ruby Plume",
             label: "Ruby Plume — Single",
@@ -86,6 +89,7 @@ enum SampleData {
         ),
         Track(
             id: "best-of-me",
+            audio: "best-of-me-v2.mp3",
             title: "Best Of Me",
             artist: "Daniel Price",
             label: "Daniel Price — EP",

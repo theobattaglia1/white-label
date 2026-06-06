@@ -1,35 +1,44 @@
 import SwiftUI
 import Observation
+import AVFoundation
 
-/// Virtual transport for the v1 prototype — advances position on a timer so the
-/// wheel and scrubber animate. AVPlayer + the real API come next; the surface
-/// (toggle / next / prev / seek / position) stays the same when that lands.
+/// Real audio transport backed by AVAudioPlayer over the bundled sample files.
+/// Falls back to a virtual timer for any track without a bundled file, so the
+/// UI (wheel/scrubber/marker) behaves identically either way.
 @Observable
 final class Player {
     var queue: [Track]
     var index: Int
     var isPlaying: Bool = false
     var positionMs: Int = 0
-    var started: Bool = false   // has the user opened a track this session
+    var started: Bool = false
 
-    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var audio: AVAudioPlayer?
+    @ObservationIgnored private var ticker: Timer?
 
     init(queue: [Track], index: Int = 0) {
         self.queue = queue
         self.index = index
+        configureSession()
     }
 
     var track: Track { queue[index] }
-    var progress: Double {
-        guard track.durationMs > 0 else { return 0 }
-        return min(1, max(0, Double(positionMs) / Double(track.durationMs)))
+
+    /// Real duration when audio is loaded, otherwise the track's declared length.
+    var durationMs: Int {
+        if let a = audio, a.duration > 0 { return Int(a.duration * 1000) }
+        return max(1, track.durationMs)
     }
 
-    /// Open a track by id and start it (used from Home/Library/Inbox/playlists).
+    var progress: Double {
+        min(1, max(0, Double(positionMs) / Double(durationMs)))
+    }
+
     func open(_ id: String) {
         if let i = queue.firstIndex(where: { $0.id == id }) { index = i }
         positionMs = 0
         started = true
+        load()
         play()
     }
 
@@ -39,36 +48,81 @@ final class Player {
     }
 
     func play() {
-        isPlaying = true
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.positionMs += 50
-            if self.positionMs >= self.track.durationMs { self.next() }
+        if audio == nil { load() }
+        if let a = audio {
+            a.play()
+            isPlaying = true
+            startTicker()
+        } else {
+            // virtual fallback
+            isPlaying = true
+            startTicker()
         }
     }
 
     func pause() {
+        audio?.pause()
         isPlaying = false
-        timer?.invalidate()
-        timer = nil
+        stopTicker()
     }
 
     func next() {
         index = (index + 1) % queue.count
         positionMs = 0
+        load()
         if isPlaying { play() }
     }
 
     func prev() {
-        if positionMs > 3000 { positionMs = 0; return } // restart if past intro
+        if positionMs > 3000 { seek(to: 0); return }
         index = (index - 1 + queue.count) % queue.count
         positionMs = 0
+        load()
         if isPlaying { play() }
     }
 
-    /// Seek to a 0…1 fraction of the track.
     func seek(to fraction: Double) {
-        positionMs = Int(min(1, max(0, fraction)) * Double(track.durationMs))
+        let f = min(1, max(0, fraction))
+        positionMs = Int(f * Double(durationMs))
+        audio?.currentTime = f * (audio?.duration ?? 0)
+    }
+
+    // MARK: internals
+
+    private func load() {
+        audio = nil
+        guard let file = track.audio else { return }
+        let name = (file as NSString).deletingPathExtension
+        let ext = (file as NSString).pathExtension
+        guard let url = Bundle.main.url(forResource: name, withExtension: ext) else { return }
+        audio = try? AVAudioPlayer(contentsOf: url)
+        audio?.prepareToPlay()
+    }
+
+    private func configureSession() {
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    private func startTicker() {
+        ticker?.invalidate()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if let a = self.audio {
+                self.positionMs = Int(a.currentTime * 1000)
+                if !a.isPlaying && self.isPlaying {
+                    // reached the end
+                    if self.positionMs >= self.durationMs - 200 { self.next() } else { self.pause() }
+                }
+            } else {
+                self.positionMs += 50
+                if self.positionMs >= self.durationMs { self.next() }
+            }
+        }
+    }
+
+    private func stopTicker() {
+        ticker?.invalidate()
+        ticker = nil
     }
 }

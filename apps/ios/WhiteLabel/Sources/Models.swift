@@ -10,6 +10,7 @@ struct Credit: Identifiable, Hashable {
 /// the living gradient cover; it stands in for the generative artwork.
 struct Track: Identifiable, Hashable {
     let id: String
+    var audio: String? = nil   // bundled file name, e.g. "duel-v5.m4a"
     let title: String
     let artist: String
     let label: String          // studio / room — the "Steelworks" slot

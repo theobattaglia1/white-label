@@ -17,7 +17,7 @@ struct WorkspacePage: View {
     @FocusState private var composing: Bool
 
     private var trackID: String { player.track.id }
-    private var duration: Int { max(1, player.track.durationMs) }
+    private var duration: Int { player.durationMs }
     private var markPos: Int { markerMs ?? player.positionMs }
     private var markFraction: Double { Double(markPos) / Double(duration) }
 

@@ -34,6 +34,8 @@ targets:
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UIViewControllerBasedStatusBarAppearance: false
         UIStatusBarHidden: true
+        UIBackgroundModes:
+          - audio
         UIAppFonts:
           - UniversTE40-Light.ttf
           - UniversTE20-Light.ttf

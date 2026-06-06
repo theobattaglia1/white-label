@@ -175,7 +175,7 @@ struct NowPlayingView: View {
                 )
             }
             .frame(height: 16)
-            Text(track.durationMs.clock)
+            Text(player.durationMs.clock)
                 .font(WL.mono(11)).foregroundStyle(WL.cream.opacity(0.7))
                 .monospacedDigit()
         }

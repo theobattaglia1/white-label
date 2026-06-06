@@ -1,6 +1,10 @@
 import SwiftUI
 import Observation
 import AVFoundation
+import MediaPlayer
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Real audio transport backed by AVAudioPlayer over the bundled sample files.
 /// Falls back to a virtual timer for any track without a bundled file, so the
@@ -20,6 +24,7 @@ final class Player {
         self.queue = queue
         self.index = index
         configureSession()
+        setupRemoteCommands()
     }
 
     var track: Track { queue[index] }
@@ -49,28 +54,24 @@ final class Player {
 
     func play() {
         if audio == nil { load() }
-        if let a = audio {
-            a.play()
-            isPlaying = true
-            startTicker()
-        } else {
-            // virtual fallback
-            isPlaying = true
-            startTicker()
-        }
+        audio?.play()
+        isPlaying = true
+        startTicker()
+        updateNowPlaying()
     }
 
     func pause() {
         audio?.pause()
         isPlaying = false
         stopTicker()
+        updateNowPlaying()
     }
 
     func next() {
         index = (index + 1) % queue.count
         positionMs = 0
         load()
-        if isPlaying { play() }
+        if isPlaying { play() } else { updateNowPlaying() }
     }
 
     func prev() {
@@ -78,13 +79,14 @@ final class Player {
         index = (index - 1 + queue.count) % queue.count
         positionMs = 0
         load()
-        if isPlaying { play() }
+        if isPlaying { play() } else { updateNowPlaying() }
     }
 
     func seek(to fraction: Double) {
         let f = min(1, max(0, fraction))
         positionMs = Int(f * Double(durationMs))
         audio?.currentTime = f * (audio?.duration ?? 0)
+        updateNowPlaying()
     }
 
     // MARK: internals
@@ -102,6 +104,51 @@ final class Player {
     private func configureSession() {
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    // MARK: lock screen / control center
+
+    private func setupRemoteCommands() {
+        let c = MPRemoteCommandCenter.shared()
+        c.playCommand.addTarget { [weak self] _ in self?.play(); return .success }
+        c.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
+        c.togglePlayPauseCommand.addTarget { [weak self] _ in self?.toggle(); return .success }
+        c.nextTrackCommand.addTarget { [weak self] _ in self?.next(); return .success }
+        c.previousTrackCommand.addTarget { [weak self] _ in self?.prev(); return .success }
+        c.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self, let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self.seek(to: e.positionTime / max(1, self.audio?.duration ?? Double(self.durationMs) / 1000))
+            return .success
+        }
+    }
+
+    private func updateNowPlaying() {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: track.title,
+            MPMediaItemPropertyArtist: track.artist,
+            MPMediaItemPropertyAlbumTitle: track.label,
+            MPMediaItemPropertyPlaybackDuration: Double(durationMs) / 1000.0,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: Double(positionMs) / 1000.0,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+        ]
+        if let art = artwork(for: track) { info[MPMediaItemPropertyArtwork] = art }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func artwork(for t: Track) -> MPMediaItemArtwork? {
+        #if canImport(UIKit)
+        let size = CGSize(width: 512, height: 512)
+        let img = UIGraphicsImageRenderer(size: size).image { ctx in
+            let colors = [UIColor(t.mesh[0]).cgColor, UIColor(t.mesh[4]).cgColor, UIColor(t.mesh[8]).cgColor]
+            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: colors as CFArray, locations: [0, 0.5, 1]) else { return }
+            ctx.cgContext.drawLinearGradient(grad, start: .zero,
+                                             end: CGPoint(x: size.width, y: size.height), options: [])
+        }
+        return MPMediaItemArtwork(boundsSize: size) { _ in img }
+        #else
+        return nil
+        #endif
     }
 
     private func startTicker() {

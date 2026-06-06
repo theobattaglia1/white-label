@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Bell,
   Bookmark,
@@ -30,7 +30,7 @@ import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Versio
 import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { catalogIdFor, catalogNumber, computeVersionDelta, coverGradient, formatHeardDisplay, formatVersionDelta, hashHue, heardByCount, humanizeVersionType, matchesSmart } from "./utils";
 import { usePlayer } from "./player";
-import { LivingCover, coverHue, hueAt } from "./LivingCover";
+import { LivingCover, coverHue, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import type { Session } from "@supabase/supabase-js";
@@ -322,7 +322,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           )}
         </section>
       </main>
-      <MiniPlayer />
+      <MiniPlayer onOpenSong={openSong} />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -1274,11 +1274,30 @@ function PlaylistView({
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [draggingID, setDraggingID] = useState<string | null>(null);
+  // Cover field controls — persisted per playlist so the look sticks.
+  const coverKey = `wl-pls-cover-${playlistID}`;
+  const [coverMode, setCoverMode] = useState<number>(5);
+  const [coverTone, setCoverTone] = useState<number>(0);
+  const [coverHex, setCoverHex] = useState<string>("#4663E8");
 
   useEffect(() => {
     void api.playlist(playlistID).then(setData);
     setShareToken(null);
+    let mode = 5, tone = 0, hex = "#4663E8";
+    try {
+      const raw = localStorage.getItem(coverKey);
+      if (raw) { const s = JSON.parse(raw); if (typeof s.mode === "number") mode = s.mode; if (typeof s.tone === "number") tone = s.tone; if (typeof s.hex === "string") hex = s.hex; }
+    } catch { /* ignore */ }
+    setCoverMode(mode); setCoverTone(tone); setCoverHex(hex);
   }, [playlistID]);
+
+  function persistCover(next: { mode?: number; tone?: number; hex?: string }) {
+    const merged = { mode: next.mode ?? coverMode, tone: next.tone ?? coverTone, hex: next.hex ?? coverHex };
+    try { localStorage.setItem(coverKey, JSON.stringify(merged)); } catch { /* ignore */ }
+  }
+  function chooseMotion(id: number) { setCoverMode(id); persistCover({ mode: id }); }
+  function chooseTone(id: number) { setCoverTone(id); persistCover({ tone: id }); }
+  function chooseHue(hex: string) { setCoverHex(hex); setCoverTone(3); persistCover({ tone: 3, hex }); }
 
   async function remove(itemID: string) {
     setRemoving(itemID);
@@ -1382,37 +1401,79 @@ function PlaylistView({
           ) : (
             data.items.map(({ item, song, current_version, asset }, idx) => {
               const isPlaying = !!(player.song?.song_id && song && player.song.song_id === song.song_id);
+              // Side dividers — split a longer order into Side A / Side B at the midpoint.
+              const splitAt = data.items.length >= 6 ? Math.ceil(data.items.length / 2) : 0;
+              const side = idx === 0
+                ? { label: "Side A", count: splitAt > 0 ? splitAt : data.items.length }
+                : (splitAt > 0 && idx === splitAt)
+                  ? { label: "Side B", count: data.items.length - splitAt }
+                  : null;
               return (
-                <li
-                  key={item.playlist_item_id}
-                  draggable
-                  className={`pls-row${isPlaying ? " now" : ""}${draggingID === item.playlist_item_id ? " dragging" : ""}`}
-                  onDragStart={(e) => { setDraggingID(item.playlist_item_id); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                  onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
-                  onDragEnd={() => setDraggingID(null)}
-                >
-                  <button className="pls-row-main" onClick={() => { if (song && current_version && asset) player.play(song, current_version, asset); }} aria-label={song ? `Play ${song.title}` : undefined} disabled={!song}>
-                    <span className="pls-idx">{isPlaying ? <span className="pls-eq" aria-hidden="true"><i /><i /><i /></span> : String(idx + 1).padStart(2, "0")}</span>
-                    <span className="pls-rtitle">{song ? song.title : "Song removed"}</span>
-                    <span className="pls-rartist">{song?.artist_display_name}{current_version && <> · {current_version.version_label}</>}</span>
-                  </button>
-                  <span className="pls-rdur">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
-                  <div className="pls-ractions">
-                    <button className="pls-icon" title="Open notes & versions" onClick={() => song && onOpenSong(song.song_id)} disabled={!song}><MessageSquare size={14} /></button>
-                    <button className="pls-icon" title="Remove from playlist" onClick={() => void remove(item.playlist_item_id)} disabled={removing === item.playlist_item_id}><X size={14} /></button>
-                  </div>
-                </li>
+                <Fragment key={item.playlist_item_id}>
+                  {side && (
+                    <li className="pls-side" aria-hidden="true">
+                      <span className="pls-side-lbl">{side.label}</span>
+                      <span className="pls-side-ln" />
+                      <span className="pls-side-ct">{String(side.count).padStart(2, "0")} Tracks</span>
+                    </li>
+                  )}
+                  <li
+                    draggable
+                    className={`pls-row${isPlaying ? " now" : ""}${draggingID === item.playlist_item_id ? " dragging" : ""}`}
+                    onDragStart={(e) => { setDraggingID(item.playlist_item_id); e.dataTransfer.effectAllowed = "move"; }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                    onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
+                    onDragEnd={() => setDraggingID(null)}
+                  >
+                    <button className="pls-row-main" onClick={() => { if (song && current_version && asset) player.play(song, current_version, asset); }} aria-label={song ? `Play ${song.title}` : undefined} disabled={!song}>
+                      <span className="pls-idx">{isPlaying ? <span className="pls-eq" aria-hidden="true"><i /><i /><i /></span> : String(idx + 1).padStart(2, "0")}</span>
+                      <span className="pls-rtitle">{song ? song.title : "Song removed"}</span>
+                      <span className="pls-rartist">{song?.artist_display_name}{current_version && <> · {current_version.version_label}</>}</span>
+                    </button>
+                    <span className="pls-rdur">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
+                    <div className="pls-ractions">
+                      <button className="pls-icon" title="Open notes & versions" onClick={() => song && onOpenSong(song.song_id)} disabled={!song}><MessageSquare size={14} /></button>
+                      <button className="pls-icon" title="Remove from playlist" onClick={() => void remove(item.playlist_item_id)} disabled={removing === item.playlist_item_id}><X size={14} /></button>
+                    </div>
+                  </li>
+                </Fragment>
               );
             })
           )}
         </ol>
       </div>
       <div className="pls-right">
-        <LivingCover style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+        <LivingCover
+          mode={coverMode}
+          tone={coverTone}
+          hue={coverTone === 3 ? hexToHue(coverHex) : undefined}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        />
         <div className="pls-cover-scrim" />
-        <div className="pls-cover-lab tp"><span className="cw-micro">Generative Cover</span></div>
-        <div className="pls-cover-lab bt"><span className="cw-micro">{data.playlist.title}</span></div>
+        <div className="pls-cover-lab tp">
+          <span className="cw-micro">Generative Cover</span>
+          <div className="pls-pickers">
+            <div className="pls-pick">
+              <span className="pls-pick-lab">Motion</span>
+              {MOTION_MODES.map((m) => (
+                <button key={m.id} className={`pls-pk${coverMode === m.id ? " active" : ""}`} onClick={() => chooseMotion(m.id)}>{m.label}</button>
+              ))}
+            </div>
+            <div className="pls-pick">
+              <span className="pls-pick-lab">Tone</span>
+              {TONE_MODES.map((t) => (
+                <button key={t.id} className={`pls-pk${coverTone === t.id ? " active" : ""}`} onClick={() => chooseTone(t.id)}>{t.label}</button>
+              ))}
+              <label className={`pls-swatch${coverTone === 3 ? " active" : ""}`} title="Pick a main color" style={{ ["--sw" as string]: coverHex }}>
+                <input type="color" value={coverHex} onChange={(e) => chooseHue(e.target.value)} />
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="pls-cover-lab bt">
+          <span className="cw-micro">Playlist № {String((parseInt(catalogNumber(data.playlist.playlist_id), 10) % 90) + 10).padStart(2, "0")} · Generative</span>
+          <span className="cw-micro pls-seed">Seed {seedLabel(data.playlist.playlist_id)}</span>
+        </div>
       </div>
     </div>
   );
@@ -3511,18 +3572,24 @@ function SharedListeningView({
   );
 }
 
-function MiniPlayer() {
+function MiniPlayer({ onOpenSong }: { onOpenSong?: (songID: string) => void } = {}) {
   const player = usePlayer();
   if (!player.song || !player.version || !player.asset) return null;
+  const songID = player.song.song_id;
   return (
     <aside className="mini-player">
       <button className="icon-button active" title={player.isPlaying ? "Pause" : "Play"} onClick={player.toggle}>
         {player.isPlaying ? <Pause size={16} /> : <Play size={16} />}
       </button>
-      <div className="mini-copy">
+      <button
+        className={`mini-copy${onOpenSong ? " linked" : ""}`}
+        onClick={onOpenSong ? () => onOpenSong(songID) : undefined}
+        disabled={!onOpenSong}
+        title={onOpenSong ? "Open song" : undefined}
+      >
         <span>{player.song.title}</span>
         <small>{player.version.version_label} · {formatTimestamp(player.positionMs)}</small>
-      </div>
+      </button>
       <Waveform peaks={player.asset.waveform_peaks} compact positionMs={player.positionMs} durationMs={player.asset.duration_ms} onSeek={player.seek} />
     </aside>
   );

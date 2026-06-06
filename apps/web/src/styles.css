@@ -4734,3 +4734,17 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 .cw-btn { font-size: 13px; }
 .pls-btn { font-size: 12px; }
+
+/* === v3.1b — neutral tracking + weighted display titles ==============
+   Univers TE doesn't need Helvetica's tight negative tracking, and the Light
+   cut blends into its section without help — so zero the tracking and add a
+   hairline stroke to give the titles weight and re-establish hierarchy. */
+.cw-feat-title, .cw-shead h2, .pls-title, .ibx-head h1,
+.cmp-page .section-head h1, .cmp-page .panel-topline h2,
+.ask-page .section-head h1, .share-page .section-head h1,
+.np-title, .section-head h1, .disp, .song-card-info .title,
+.panel-topline h2 {
+  letter-spacing: 0;
+  -webkit-text-stroke: .75px currentColor;
+  paint-order: stroke fill;
+}

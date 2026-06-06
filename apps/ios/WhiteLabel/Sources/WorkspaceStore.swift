@@ -9,6 +9,9 @@ final class WorkspaceStore {
     var currentByTrack: [String: String] = [:]
     var notesByTrack: [String: [Note]] = [:]
     var titleOverrides: [String: String] = [:]
+    var pins: [String] = []                          // ordered "type:id" refs
+    var playlists: [Playlist] = SampleData.playlists  // mutable
+    @ObservationIgnored private var draftIDs: Set<String> = []
 
     /// Taggable workspace members.
     let members = ["PomPom", "Liz Rose", "Mira Tan", "Hudson", "Alex", "TB"]
@@ -16,6 +19,53 @@ final class WorkspaceStore {
     private let notesKey = "wl.notes.v1"
     private let currentKey = "wl.current.v1"
     private let titlesKey = "wl.titles.v1"
+    private let pinsKey = "wl.pins.v1"
+    private let playlistsKey = "wl.playlists.v1"
+
+    // MARK: pins
+
+    func isPinned(_ ref: String) -> Bool { pins.contains(ref) }
+    func togglePin(_ ref: String) {
+        if let i = pins.firstIndex(of: ref) { pins.remove(at: i) } else { pins.append(ref) }
+        persist()
+    }
+    func movePin(from: IndexSet, to: Int) { pins.move(fromOffsets: from, toOffset: to); persist() }
+
+    // MARK: playlists (mutable; drafts aren't persisted until kept)
+
+    func playlist(_ id: String) -> Playlist? { playlists.first { $0.id == id } }
+    func isDraft(_ id: String) -> Bool { draftIDs.contains(id) }
+
+    func createPlaylist(trackIDs: [String], title: String = "New Playlist") -> Playlist {
+        let pl = Playlist(id: "pl-\(UUID().uuidString.prefix(6))", title: title, subtitle: "Draft", trackIDs: trackIDs)
+        playlists.insert(pl, at: 0)
+        draftIDs.insert(pl.id)
+        return pl
+    }
+    func keepPlaylist(_ id: String, title: String? = nil) {
+        if let title, let i = playlists.firstIndex(where: { $0.id == id }) {
+            playlists[i].title = title; playlists[i].subtitle = ""
+        } else if let i = playlists.firstIndex(where: { $0.id == id }) {
+            playlists[i].subtitle = ""
+        }
+        draftIDs.remove(id)
+        persist()
+    }
+    func discardPlaylist(_ id: String) {
+        playlists.removeAll { $0.id == id }
+        draftIDs.remove(id)
+        persist()
+    }
+    func addTrack(_ trackID: String, toPlaylist id: String) {
+        guard let i = playlists.firstIndex(where: { $0.id == id }), !playlists[i].trackIDs.contains(trackID) else { return }
+        playlists[i].trackIDs.append(trackID)
+        if !isDraft(id) { persist() }
+    }
+    func reorderPlaylist(_ id: String, _ trackIDs: [String]) {
+        guard let i = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[i].trackIDs = trackIDs
+        if !isDraft(id) { persist() }
+    }
 
     func displayTitle(_ id: String, _ fallback: String) -> String {
         titleOverrides[id] ?? fallback
@@ -89,6 +139,9 @@ final class WorkspaceStore {
         if let d = try? enc.encode(notesByTrack) { UserDefaults.standard.set(d, forKey: notesKey) }
         if let d = try? enc.encode(currentByTrack) { UserDefaults.standard.set(d, forKey: currentKey) }
         if let d = try? enc.encode(titleOverrides) { UserDefaults.standard.set(d, forKey: titlesKey) }
+        if let d = try? enc.encode(pins) { UserDefaults.standard.set(d, forKey: pinsKey) }
+        let keep = playlists.filter { !draftIDs.contains($0.id) }
+        if let d = try? enc.encode(keep) { UserDefaults.standard.set(d, forKey: playlistsKey) }
     }
 
     private func loadPersisted() {
@@ -104,6 +157,14 @@ final class WorkspaceStore {
         if let d = UserDefaults.standard.data(forKey: titlesKey),
            let v = try? dec.decode([String: String].self, from: d) {
             titleOverrides = v
+        }
+        if let d = UserDefaults.standard.data(forKey: pinsKey),
+           let v = try? dec.decode([String].self, from: d) {
+            pins = v
+        }
+        if let d = UserDefaults.standard.data(forKey: playlistsKey),
+           let v = try? dec.decode([Playlist].self, from: d), !v.isEmpty {
+            playlists = v
         }
     }
 

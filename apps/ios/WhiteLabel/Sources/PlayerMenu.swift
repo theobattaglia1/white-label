@@ -25,6 +25,12 @@ struct MenuSheet: View {
                     }
 
                     group {
+                        Button { store.togglePin(PinRef(kind: .song, targetID: track.id).id) } label: {
+                            let pinned = store.isPinned(PinRef(kind: .song, targetID: track.id).id)
+                            MenuRow(icon: pinned ? "pin.slash" : "pin",
+                                    title: pinned ? "Unpin from Home" : "Pin to Home", detail: nil,
+                                    tint: pinned ? WL.cobalt : WL.cream)
+                        }
                         NavigationLink { ShareView(track: track) } label: {
                             MenuRow(icon: "person.2", title: "Share", detail: "Set who can access")
                         }

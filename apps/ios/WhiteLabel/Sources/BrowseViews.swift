@@ -9,6 +9,38 @@ func trackSwatch(_ t: Track, _ s: CGFloat, radius: CGFloat = 8) -> some View {
         .frame(width: s, height: s)
 }
 
+// MARK: pinning helpers
+
+func pinnedCover(_ ref: PinRef, _ store: WorkspaceStore) -> Track? {
+    switch ref.kind {
+    case .song: return SampleData.track(ref.targetID)
+    case .playlist: return store.playlist(ref.targetID)?.trackIDs.compactMap { SampleData.track($0) }.first
+    case .room: return SampleData.rooms.first { $0.id == ref.targetID }?.trackIDs.compactMap { SampleData.track($0) }.first
+    }
+}
+
+func pinnedTitle(_ ref: PinRef, _ store: WorkspaceStore) -> String {
+    switch ref.kind {
+    case .song: return store.displayTitle(ref.targetID, SampleData.track(ref.targetID)?.title ?? "—")
+    case .playlist: return store.playlist(ref.targetID)?.title ?? "Playlist"
+    case .room: return SampleData.rooms.first { $0.id == ref.targetID }?.title ?? "Project"
+    }
+}
+
+extension View {
+    /// Long-press → pin / unpin from Home.
+    func pinMenu(_ store: WorkspaceStore, _ ref: PinRef) -> some View {
+        contextMenu {
+            Button {
+                store.togglePin(ref.id)
+            } label: {
+                Label(store.isPinned(ref.id) ? "Unpin from Home" : "Pin to Home",
+                      systemImage: store.isPinned(ref.id) ? "pin.slash" : "pin")
+            }
+        }
+    }
+}
+
 struct SongRow: View {
     var track: Track
     var store: WorkspaceStore
@@ -60,6 +92,7 @@ struct LibraryView: View {
     var player: Player
     var store: WorkspaceStore
     var openSong: (String) -> Void
+    var onDropOnSong: (String, String) -> Void = { _, _ in }
     @State private var query = ""
 
     private var results: [Track] {
@@ -90,7 +123,14 @@ struct LibraryView: View {
                                 SongRow(track: t, store: store,
                                         trailing: store.openCount(t.id) > 0 ? "\(store.openCount(t.id)) open" : nil,
                                         trailingColor: WL.redline)
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
+                            .pinMenu(store, PinRef(kind: .song, targetID: t.id))
+                            .draggable(t.id) { SongRow(track: t, store: store).frame(width: 280).opacity(0.9) }
+                            .dropDestination(for: String.self) { ids, _ in
+                                guard let dropped = ids.first, dropped != t.id else { return false }
+                                onDropOnSong(dropped, t.id); return true
+                            }
                         }
                     }
                 }
@@ -99,8 +139,10 @@ struct LibraryView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         MonoLabel("Playlists", color: WL.pencil, size: 10, tracking: 2)
                         VStack(spacing: 0) {
-                            ForEach(SampleData.playlists) { pl in
-                                NavigationLink(value: pl) { playlistRow(pl) }.buttonStyle(.plain)
+                            ForEach(store.playlists) { pl in
+                                NavigationLink(value: pl) { playlistRow(pl) }
+                                    .buttonStyle(.plain)
+                                    .pinMenu(store, PinRef(kind: .playlist, targetID: pl.id))
                             }
                         }
                     }
@@ -109,7 +151,9 @@ struct LibraryView: View {
                         MonoLabel("Projects", color: WL.pencil, size: 10, tracking: 2)
                         VStack(spacing: 0) {
                             ForEach(SampleData.rooms) { rm in
-                                NavigationLink(value: rm) { roomRow(rm) }.buttonStyle(.plain)
+                                NavigationLink(value: rm) { roomRow(rm) }
+                                    .buttonStyle(.plain)
+                                    .pinMenu(store, PinRef(kind: .room, targetID: rm.id))
                             }
                         }
                     }
@@ -220,8 +264,10 @@ struct PlaylistDetailView: View {
     var player: Player
     var store: WorkspaceStore
     var openSong: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
 
-    private var tracks: [Track] { playlist.trackIDs.compactMap { SampleData.track($0) } }
+    private var live: Playlist { store.playlist(playlist.id) ?? playlist }
+    private var tracks: [Track] { live.trackIDs.compactMap { SampleData.track($0) } }
     private var cover: Track { tracks.first ?? SampleData.tracks[0] }
     private var totalMs: Int { tracks.reduce(0) { $0 + $1.durationMs } }
 
@@ -237,8 +283,10 @@ struct PlaylistDetailView: View {
                     HStack { BackButton(); Spacer() }
                         .padding(.top, 4)
 
+                    if store.isDraft(live.id) { draftBanner.padding(.top, 12) }
+
                     titleBlock
-                        .padding(.top, 40)
+                        .padding(.top, store.isDraft(live.id) ? 18 : 40)
 
                     songs
                         .padding(.top, 30)
@@ -250,16 +298,38 @@ struct PlaylistDetailView: View {
         }
         .foregroundStyle(WL.cream)
         .toolbar(.hidden, for: .navigationBar)
+        .onDisappear {
+            // leaving a draft without keeping it = no changes
+            if store.isDraft(live.id) { store.discardPlaylist(live.id) }
+        }
+    }
+
+    private var draftBanner: some View {
+        HStack(spacing: 12) {
+            MonoLabel("New playlist", color: WL.cobalt, size: 10, tracking: 1.6)
+            Spacer()
+            Button { store.discardPlaylist(live.id); dismiss() } label: {
+                MonoLabel("Discard", color: WL.pencil, size: 10, tracking: 1.4)
+            }.buttonStyle(.plain)
+            Button { store.keepPlaylist(live.id) } label: {
+                Text("KEEP").font(WL.mono(10)).tracking(1.4).foregroundStyle(WL.black)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Capsule().fill(WL.cream))
+            }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(WL.cobalt.opacity(0.14)))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(WL.cobalt.opacity(0.4), lineWidth: 1))
     }
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             MonoLabel("Playlist", color: WL.cobalt, size: 11, tracking: 2.5)
-            Text(playlist.title)
+            Text(live.title)
                 .font(WL.thin(46))                       // thin cut — distinct from a song title
                 .foregroundStyle(WL.cream)
                 .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
-            MonoLabel("\(tracks.count) tracks · \(totalMs.clock)", color: WL.cream.opacity(0.7), size: 10, tracking: 1.6)
+            MonoLabel("\(tracks.count) tracks · \(totalMs.clock) · hold to reorder", color: WL.cream.opacity(0.7), size: 10, tracking: 1.6)
             Button { if let f = tracks.first { openSong(f.id) } } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "play.fill").font(.system(size: 11))
@@ -293,6 +363,18 @@ struct PlaylistDetailView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .draggable(t.id) {
+                    Text(store.displayTitle(t.id, t.title)).font(WL.display(16)).foregroundStyle(WL.cream)
+                        .padding(10).background(WL.panel)
+                }
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let dragged = ids.first, dragged != t.id else { return false }
+                    var order = live.trackIDs
+                    order.removeAll { $0 == dragged }
+                    if let at = order.firstIndex(of: t.id) { order.insert(dragged, at: at) } else { order.append(dragged) }
+                    store.reorderPlaylist(live.id, order)
+                    return true
+                }
             }
         }
     }

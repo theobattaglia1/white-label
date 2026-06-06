@@ -29,7 +29,11 @@ struct AppShell: View {
                     }
                 case .library:
                     NavigationStack(path: $libPath) {
-                        LibraryView(player: player, store: workspace, openSong: openSong)
+                        LibraryView(player: player, store: workspace, openSong: openSong,
+                                    onDropOnSong: { dropped, target in
+                                        let pl = workspace.createPlaylist(trackIDs: [target, dropped])
+                                        libPath.append(pl)
+                                    })
                             .navDestinations(player: player, store: workspace, openSong: openSong)
                     }
                 case .inbox:
@@ -66,7 +70,17 @@ struct AppShell: View {
         .onAppear {
             if CommandLine.arguments.contains("-openPlayer") { openSong("first-night") }
             if CommandLine.arguments.contains("-mini") { player.open("duel") }
-            if CommandLine.arguments.contains("-playlist") { tab = .library; libPath.append(SampleData.playlists[0]) }
+            if CommandLine.arguments.contains("-playlist") { tab = .library; libPath.append(workspace.playlists[0]) }
+            if CommandLine.arguments.contains("-draft") {
+                tab = .library
+                let pl = workspace.createPlaylist(trackIDs: ["first-night", "duel"])
+                libPath.append(pl)
+            }
+            if CommandLine.arguments.contains("-seedpins") {
+                ["song:first-night", "playlist:pl-friday", "room:rm-hudson"].forEach {
+                    if !workspace.isPinned($0) { workspace.togglePin($0) }
+                }
+            }
             if let i = CommandLine.arguments.firstIndex(of: "-tab"),
                i + 1 < CommandLine.arguments.count,
                let t = AppTab(rawValue: CommandLine.arguments[i + 1]) { tab = t }

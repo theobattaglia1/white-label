@@ -37,11 +37,25 @@ struct Note: Identifiable, Hashable, Codable {
     let versionLabel: String
 }
 
-struct Playlist: Identifiable, Hashable {
+struct Playlist: Identifiable, Hashable, Codable {
     let id: String
-    let title: String
-    let subtitle: String
-    let trackIDs: [String]
+    var title: String
+    var subtitle: String
+    var trackIDs: [String]
+}
+
+/// A pinned item on Home — encoded as "type:id" (song / playlist / room).
+enum PinKind: String { case song, playlist, room }
+struct PinRef: Identifiable, Hashable {
+    let kind: PinKind
+    let targetID: String
+    var id: String { "\(kind.rawValue):\(targetID)" }
+    init(kind: PinKind, targetID: String) { self.kind = kind; self.targetID = targetID }
+    init?(_ encoded: String) {
+        let parts = encoded.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let k = PinKind(rawValue: parts[0]) else { return nil }
+        kind = k; targetID = parts[1]
+    }
 }
 
 /// A project / room — a body of work for an artist.

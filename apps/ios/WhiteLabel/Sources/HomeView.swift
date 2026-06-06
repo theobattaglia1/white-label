@@ -19,12 +19,24 @@ struct HomeView: View {
 
                 hero
 
+                let refs = store.pins.compactMap { PinRef($0) }
+                if !refs.isEmpty {
+                    section("Pinned") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
+                                ForEach(refs) { ref in pinCard(ref) }
+                            }
+                        }
+                    }
+                }
+
                 if !needsEar.isEmpty {
                     section("Needs your ear") {
                         VStack(spacing: 0) {
                             ForEach(needsEar) { t in
                                 Button { openSong(t.id) } label: { trackRow(t, showOpen: true) }
                                     .buttonStyle(.plain)
+                                    .pinMenu(store, PinRef(kind: .song, targetID: t.id))
                             }
                         }
                     }
@@ -33,9 +45,10 @@ struct HomeView: View {
                 section("Playlists") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 14) {
-                            ForEach(SampleData.playlists) { pl in
+                            ForEach(store.playlists) { pl in
                                 NavigationLink(value: pl) { playlistCard(pl) }
                                     .buttonStyle(.plain)
+                                    .pinMenu(store, PinRef(kind: .playlist, targetID: pl.id))
                             }
                         }
                     }
@@ -46,6 +59,7 @@ struct HomeView: View {
                         ForEach(SampleData.rooms) { rm in
                             NavigationLink(value: rm) { roomRow(rm) }
                                 .buttonStyle(.plain)
+                                .pinMenu(store, PinRef(kind: .room, targetID: rm.id))
                         }
                     }
                 }
@@ -117,6 +131,40 @@ struct HomeView: View {
         .padding(.vertical, 10)
         .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private func pinCard(_ ref: PinRef) -> some View {
+        let cover = pinnedCover(ref, store) ?? featured
+        let card = VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LinearGradient(colors: [cover.mesh[0], cover.mesh[4], cover.mesh[8]],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 124, height: 124)
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "pin.fill").font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.85)).padding(8)
+                }
+            Text(pinnedTitle(ref, store)).font(WL.display(15)).foregroundStyle(WL.cream)
+                .lineLimit(1).frame(width: 124, alignment: .leading)
+            MonoLabel(ref.kind.rawValue, color: WL.pencil, size: 8, tracking: 1.4)
+        }
+        .frame(width: 124)
+
+        Group {
+            switch ref.kind {
+            case .song:
+                Button { openSong(ref.targetID) } label: { card }.buttonStyle(.plain)
+            case .playlist:
+                if let pl = store.playlist(ref.targetID) {
+                    NavigationLink(value: pl) { card }.buttonStyle(.plain)
+                } else { card }
+            case .room:
+                if let rm = SampleData.rooms.first(where: { $0.id == ref.targetID }) {
+                    NavigationLink(value: rm) { card }.buttonStyle(.plain)
+                } else { card }
+            }
+        }
+        .pinMenu(store, ref)
     }
 
     private func playlistCard(_ pl: Playlist) -> some View {

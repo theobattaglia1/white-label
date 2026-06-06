@@ -70,6 +70,9 @@ struct WorkspacePage: View {
                 peaks: wavePeaks(trackID),
                 progress: player.progress,
                 marker: markFraction,
+                noteMarks: store.notes(trackID).compactMap { n in
+                    n.positionMs.map { NoteMark(id: n.id, fraction: Double($0) / Double(duration), resolved: n.resolved) }
+                },
                 onScrub: { markerMs = Int($0 * Double(duration)) }
             )
             .frame(height: 46)
@@ -248,7 +251,9 @@ struct WorkspacePage: View {
     }
 
     private func resetComposer() {
-        noteText = ""; editing = nil; markerMs = nil; composing = false
+        // keep markerMs where the user placed it, so consecutive notes don't snap
+        // back to one spot — drag the waveform marker to set each note's time.
+        noteText = ""; editing = nil; composing = false
     }
 
     private func styled(_ body: String) -> AttributedString {

@@ -12,7 +12,13 @@ final class WorkspaceStore {
     /// Taggable workspace members.
     let members = ["PomPom", "Liz Rose", "Mira Tan", "Hudson", "Alex", "TB"]
 
-    init() { seed() }
+    private let notesKey = "wl.notes.v1"
+    private let currentKey = "wl.current.v1"
+
+    init() {
+        seed()
+        loadPersisted()
+    }
 
     func versions(_ track: String) -> [Version] { versionsByTrack[track] ?? [] }
 
@@ -31,6 +37,7 @@ final class WorkspaceStore {
 
     func setCurrent(_ track: String, _ versionID: String) {
         currentByTrack[track] = versionID
+        persist()
     }
 
     func addNote(track: String, positionMs: Int?, body: String) {
@@ -39,12 +46,14 @@ final class WorkspaceStore {
         let v = currentVersion(track)?.label ?? "—"
         let note = Note(id: UUID(), positionMs: positionMs, author: "TB", body: trimmed, resolved: false, versionLabel: v)
         notesByTrack[track, default: []].append(note)
+        persist()
     }
 
     func toggleResolved(_ track: String, _ id: UUID) {
         guard var arr = notesByTrack[track], let i = arr.firstIndex(where: { $0.id == id }) else { return }
         arr[i].resolved.toggle()
         notesByTrack[track] = arr
+        persist()
     }
 
     func updateNote(_ track: String, _ id: UUID, body: String, positionMs: Int?) {
@@ -53,10 +62,32 @@ final class WorkspaceStore {
         let old = arr[i]
         arr[i] = Note(id: old.id, positionMs: positionMs, author: old.author, body: trimmed, resolved: old.resolved, versionLabel: old.versionLabel)
         notesByTrack[track] = arr
+        persist()
     }
 
     func deleteNote(_ track: String, _ id: UUID) {
         notesByTrack[track]?.removeAll { $0.id == id }
+        persist()
+    }
+
+    // MARK: persistence (local; real API later)
+
+    private func persist() {
+        let enc = JSONEncoder()
+        if let d = try? enc.encode(notesByTrack) { UserDefaults.standard.set(d, forKey: notesKey) }
+        if let d = try? enc.encode(currentByTrack) { UserDefaults.standard.set(d, forKey: currentKey) }
+    }
+
+    private func loadPersisted() {
+        let dec = JSONDecoder()
+        if let d = UserDefaults.standard.data(forKey: notesKey),
+           let v = try? dec.decode([String: [Note]].self, from: d) {
+            notesByTrack = v
+        }
+        if let d = UserDefaults.standard.data(forKey: currentKey),
+           let v = try? dec.decode([String: String].self, from: d) {
+            currentByTrack = v
+        }
     }
 
     private func seed() {

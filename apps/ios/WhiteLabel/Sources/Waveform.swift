@@ -12,12 +12,20 @@ func wavePeaks(_ seed: String, count: Int = 72) -> [CGFloat] {
     }
 }
 
-/// A scrubbable waveform with the live playhead and a draggable note marker.
+struct NoteMark: Identifiable {
+    let id: UUID
+    let fraction: Double
+    let resolved: Bool
+}
+
+/// A scrubbable waveform with the live playhead, a draggable note marker, and a
+/// dot for every existing note.
 struct WaveStrip: View {
     var peaks: [CGFloat]
-    var progress: Double          // 0…1 live playhead
-    var marker: Double            // 0…1 note marker
-    var onScrub: (Double) -> Void // drag → set marker fraction
+    var progress: Double            // 0…1 live playhead
+    var marker: Double              // 0…1 note marker
+    var noteMarks: [NoteMark] = []  // existing notes
+    var onScrub: (Double) -> Void   // drag → set marker fraction
 
     var body: some View {
         GeometryReader { g in
@@ -36,6 +44,14 @@ struct WaveStrip: View {
                         ctx.fill(Path(roundedRect: rect, cornerRadius: bw / 2),
                                  with: .color(.white.opacity(played ? 0.85 : 0.26)))
                     }
+                }
+                // existing-note dots, along the bottom edge
+                ForEach(noteMarks) { m in
+                    Circle()
+                        .fill(m.resolved ? WL.green : WL.redline)
+                        .frame(width: 6, height: 6)
+                        .overlay(Circle().strokeBorder(WL.black.opacity(0.4), lineWidth: 0.5))
+                        .offset(x: w * m.fraction - 3, y: h / 2 - 1)
                 }
                 // playhead
                 Rectangle().fill(.white.opacity(0.7)).frame(width: 1.5, height: h)

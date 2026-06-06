@@ -27,7 +27,7 @@ struct Version: Identifiable, Hashable {
     var approved: Bool = false
 }
 
-struct Note: Identifiable, Hashable {
+struct Note: Identifiable, Hashable, Codable {
     let id: UUID
     let positionMs: Int?   // nil = general note, otherwise pinned to a timestamp
     let author: String

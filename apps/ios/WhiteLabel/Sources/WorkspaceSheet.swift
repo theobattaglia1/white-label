@@ -34,7 +34,12 @@ struct WorkspacePage: View {
         .padding(.bottom, safeBottom + 28)
         .frame(maxWidth: .infinity, alignment: .top)
         .foregroundStyle(WL.cream)
-        .onChange(of: composeToken) { _, _ in composing = true }
+        .contentShape(Rectangle())
+        .onTapGesture { composing = false }   // tap anywhere empty to dismiss the keyboard
+        .onChange(of: composeToken) { _, _ in
+            // focus after the slide-up settles, so the keyboard doesn't fight the scroll
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { composing = true }
+        }
     }
 
     private var grabber: some View {
@@ -142,6 +147,13 @@ struct WorkspacePage: View {
                           text: $noteText, axis: .vertical)
                     .font(WL.text(14)).foregroundStyle(WL.cream).tint(WL.cobalt)
                     .focused($composing).lineLimit(1...5)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") { composing = false }
+                                .font(WL.mono(13)).foregroundStyle(WL.cobalt)
+                        }
+                    }
             }
             HStack(spacing: 12) {
                 Menu {

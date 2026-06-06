@@ -1,13 +1,17 @@
 import SwiftUI
 
-/// Two stacked full-height pages: Now Playing on top, the workspace directly
-/// beneath. Swipe up and the whole player slides up to reveal the workspace;
-/// it snaps page-to-page. Tapping either handle jumps between them.
+/// The player: Now Playing on top, workspace beneath (swipe up). A floating
+/// menu button persists top-left; swipe down hard (or tap the top grabber) to
+/// exit back to where you came from.
 struct PlayerScreen: View {
     var player: Player
     var workspace: WorkspaceStore
+    var onExit: () -> Void
+
     @State private var markerMs: Int? = nil
     @State private var composeToken = 0
+    @State private var showMenu = false
+    @State private var didExit = false
 
     var body: some View {
         ZStack {
@@ -20,8 +24,9 @@ struct PlayerScreen: View {
                     ScrollView(.vertical) {
                         VStack(spacing: 0) {
                             NowPlayingView(
-                                player: player, safeTop: top, safeBottom: bottom,
+                                player: player, store: workspace, safeTop: top, safeBottom: bottom,
                                 onPull: { jump(proxy, "workspace") },
+                                onExit: { exit() },
                                 onQuickNote: {
                                     markerMs = player.positionMs
                                     composeToken += 1
@@ -44,19 +49,50 @@ struct PlayerScreen: View {
                     .scrollIndicators(.hidden)
                     .scrollDismissesKeyboard(.immediately)
                     .ignoresSafeArea()
+                    // swipe down hard at the top → exit
+                    .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                        if y < -95 && !didExit { didExit = true; exit() }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        menuButton.padding(.leading, 18).padding(.top, top + 4)
+                    }
                     .onAppear {
                         if CommandLine.arguments.contains("-openWorkspace") {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                jump(proxy, "workspace")
-                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { jump(proxy, "workspace") }
+                        }
+                        if CommandLine.arguments.contains("-openMenu") {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showMenu = true }
                         }
                     }
                 }
             }
         }
+        .sheet(isPresented: $showMenu) {
+            MenuSheet(player: player, store: workspace)
+        }
+    }
+
+    private var menuButton: some View {
+        Button { showMenu = true } label: {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(WL.cream)
+                )
+                .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+        }
+        .buttonStyle(.plain)
     }
 
     private func jump(_ proxy: ScrollViewProxy, _ id: String) {
         withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(id, anchor: .top) }
+    }
+
+    private func exit() {
+        onExit()
     }
 }

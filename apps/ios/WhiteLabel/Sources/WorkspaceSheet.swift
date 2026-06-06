@@ -56,7 +56,7 @@ struct WorkspacePage: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 7) {
             MonoLabel("Workspace", color: WL.pencil, size: 10, tracking: 2.2)
-            Text(player.track.title).font(WL.display(26)).foregroundStyle(WL.cream)
+            Text(store.displayTitle(trackID, player.track.title)).font(WL.display(26)).foregroundStyle(WL.cream)
             MonoLabel("\(player.track.artist) · \(store.currentVersion(trackID)?.label ?? player.track.versionLabel)",
                       color: WL.pencil, size: 10, tracking: 1.4)
         }

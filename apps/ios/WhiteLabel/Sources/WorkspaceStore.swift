@@ -8,12 +8,24 @@ final class WorkspaceStore {
     var versionsByTrack: [String: [Version]] = [:]
     var currentByTrack: [String: String] = [:]
     var notesByTrack: [String: [Note]] = [:]
+    var titleOverrides: [String: String] = [:]
 
     /// Taggable workspace members.
     let members = ["PomPom", "Liz Rose", "Mira Tan", "Hudson", "Alex", "TB"]
 
     private let notesKey = "wl.notes.v1"
     private let currentKey = "wl.current.v1"
+    private let titlesKey = "wl.titles.v1"
+
+    func displayTitle(_ id: String, _ fallback: String) -> String {
+        titleOverrides[id] ?? fallback
+    }
+
+    func rename(_ id: String, _ title: String) {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { titleOverrides[id] = nil } else { titleOverrides[id] = t }
+        persist()
+    }
 
     init() {
         seed()
@@ -76,6 +88,7 @@ final class WorkspaceStore {
         let enc = JSONEncoder()
         if let d = try? enc.encode(notesByTrack) { UserDefaults.standard.set(d, forKey: notesKey) }
         if let d = try? enc.encode(currentByTrack) { UserDefaults.standard.set(d, forKey: currentKey) }
+        if let d = try? enc.encode(titleOverrides) { UserDefaults.standard.set(d, forKey: titlesKey) }
     }
 
     private func loadPersisted() {
@@ -87,6 +100,10 @@ final class WorkspaceStore {
         if let d = UserDefaults.standard.data(forKey: currentKey),
            let v = try? dec.decode([String: String].self, from: d) {
             currentByTrack = v
+        }
+        if let d = UserDefaults.standard.data(forKey: titlesKey),
+           let v = try? dec.decode([String: String].self, from: d) {
+            titleOverrides = v
         }
     }
 

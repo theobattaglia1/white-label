@@ -8,9 +8,11 @@ import UIKit
 /// to reveal the workspace (versions + timestamped notes) without leaving here.
 struct NowPlayingView: View {
     @Bindable var player: Player
+    var store: WorkspaceStore
     var safeTop: CGFloat = 0
     var safeBottom: CGFloat = 0
     var onPull: () -> Void = {}
+    var onExit: () -> Void = {}
     var onQuickNote: () -> Void = {}
     private var track: Track { player.track }
 
@@ -28,7 +30,7 @@ struct NowPlayingView: View {
                     .padding(.top, safeTop + 6)
 
                 titleBlock
-                    .padding(.top, 44)
+                    .padding(.top, 64)
 
                 Spacer(minLength: 24)
 
@@ -62,28 +64,24 @@ struct NowPlayingView: View {
     // MARK: status bar
 
     private var statusRow: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { ctx in
-            HStack {
-                Circle()
-                    .strokeBorder(WL.cream.opacity(0.7), lineWidth: 1.2)
-                    .frame(width: 17, height: 17)
-                    .overlay(Circle().fill(WL.cream.opacity(0.7)).frame(width: 4, height: 4))
-                Text(ctx.date.formatted(.dateTime.hour().minute()))
-                    .font(WL.mono(12)).tracking(1)
-                Spacer()
-                MonoLabel(ctx.date.formatted(.dateTime.day().month(.twoDigits).year()),
-                          color: WL.cream.opacity(0.6), size: 10, tracking: 1.4)
-            }
-            .foregroundStyle(WL.cream.opacity(0.85))
+        // centered exit grabber — tap to leave; swipe down hard also exits
+        VStack(spacing: 3) {
+            Capsule().fill(WL.cream.opacity(0.32)).frame(width: 34, height: 4)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(WL.cream.opacity(0.5))
         }
-        .frame(height: 20)
+        .frame(maxWidth: .infinity)
+        .frame(height: 26)
+        .contentShape(Rectangle())
+        .onTapGesture { onExit() }
     }
 
     // MARK: title
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(track.title)
+            Text(store.displayTitle(track.id, track.title))
                 .foregroundStyle(WL.cream)
             Text("— \(track.artist)")
                 .foregroundStyle(WL.cream.opacity(0.9))

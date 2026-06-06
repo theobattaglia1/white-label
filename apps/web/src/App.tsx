@@ -22,6 +22,8 @@ import {
   Search,
   Send,
   Shield,
+  SkipBack,
+  SkipForward,
   Upload,
   UserRound,
   X,
@@ -35,7 +37,7 @@ import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import type { Session } from "@supabase/supabase-js";
 
-type ViewMode = "home" | "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist";
+type ViewMode = "home" | "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist" | "nowplaying";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
@@ -220,6 +222,13 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
     void refresh(songID, activeRoomID);
   }
 
+  // The immersive "now playing" surface — what the dock opens.
+  function openNowPlaying(songID: string) {
+    setSelectedSongID(songID);
+    setMode("nowplaying");
+    void refresh(songID, activeRoomID);
+  }
+
   function openRoom(roomID: string) {
     setActiveRoomID(roomID);
     setMode("room");
@@ -320,9 +329,12 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
             />
           )}
+          {mode === "nowplaying" && songPayload && (
+            <NowPlayingView payload={songPayload} onOpenWorkspace={openSong} />
+          )}
         </section>
       </main>
-      <MiniPlayer onOpenSong={openSong} />
+      {mode !== "nowplaying" && <MiniPlayer onOpenSong={openNowPlaying} />}
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -1473,6 +1485,126 @@ function PlaylistView({
         <div className="pls-cover-lab bt">
           <span className="cw-micro">Playlist № {String((parseInt(catalogNumber(data.playlist.playlist_id), 10) % 90) + 10).padStart(2, "0")} · Generative</span>
           <span className="cw-micro pls-seed">Seed {seedLabel(data.playlist.playlist_id)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* The immersive now-playing surface — matches white-label-nowplaying.html:
+   a dark editorial field (huge title, credits, integrated transport) beside a
+   full-bleed generative cover with the motion/tone pickers. */
+function NowPlayingView({ payload, onOpenWorkspace }: { payload: SongPayload; onOpenWorkspace: (songID: string) => void }) {
+  const player = usePlayer();
+  const song = payload.song;
+  const isThis = player.song?.song_id === song.song_id;
+  const version = (isThis && player.version) ? player.version : (payload.currentVersion ?? payload.versions.at(-1));
+  const asset = (isThis && player.asset) ? player.asset : assetForVersion(payload.assets, version);
+  const durationMs = asset?.duration_ms ?? 0;
+  const positionMs = isThis ? player.positionMs : 0;
+  const progress = durationMs > 0 ? Math.max(0, Math.min(1, positionMs / durationMs)) : 0;
+  const playing = isThis && player.isPlaying;
+
+  // Cover field controls — persisted per song.
+  const coverKey = `wl-np-cover-${song.song_id}`;
+  const [coverMode, setCoverMode] = useState<number>(5);
+  const [coverTone, setCoverTone] = useState<number>(0);
+  const [coverHex, setCoverHex] = useState<string>("#4663E8");
+  useEffect(() => {
+    let mode = 5, tone = 0, hex = "#4663E8";
+    try {
+      const raw = localStorage.getItem(coverKey);
+      if (raw) { const s = JSON.parse(raw); if (typeof s.mode === "number") mode = s.mode; if (typeof s.tone === "number") tone = s.tone; if (typeof s.hex === "string") hex = s.hex; }
+    } catch { /* ignore */ }
+    setCoverMode(mode); setCoverTone(tone); setCoverHex(hex);
+  }, [song.song_id]);
+  function persistCover(next: { mode?: number; tone?: number; hex?: string }) {
+    const merged = { mode: next.mode ?? coverMode, tone: next.tone ?? coverTone, hex: next.hex ?? coverHex };
+    try { localStorage.setItem(coverKey, JSON.stringify(merged)); } catch { /* ignore */ }
+  }
+
+  function togglePlay() {
+    if (isThis) player.toggle();
+    else if (version && asset) player.play(song, version, asset);
+  }
+
+  return (
+    <div className="np-stage">
+      <div className="np-left">
+        <header className="np-top">
+          <span className="np-wm">WHITE&nbsp;LABEL <span className="np-cat">{catalogIdFor(song.song_id)}</span></span>
+          <button className="np-link" onClick={() => onOpenWorkspace(song.song_id)}>Open workspace →</button>
+        </header>
+        <div className="np-hero">
+          <span className="np-eyebrow">Now Playing{version?.version_label ? ` · ${version.version_label}` : ""}{song.project_name ? ` · ${song.project_name}` : ""}</span>
+          <h1 className="np-title">{song.title}</h1>
+          <div className="np-artist">{song.artist_display_name}</div>
+          {version && (
+            <div className="np-flag"><span className="np-dot" />{version.version_label}{version.is_approved ? " · Approved" : version.is_current ? " · Current" : ""}</div>
+          )}
+        </div>
+        <footer className="np-foot">
+          <div className="np-credits">
+            {song.bpm != null && <div className="np-c"><span className="k">Tempo</span><span className="v">{song.bpm} BPM</span></div>}
+            {song.song_key && <div className="np-c"><span className="k">Key</span><span className="v">{song.song_key}</span></div>}
+            {asset?.loudness_lufs != null && <div className="np-c"><span className="k">Loudness</span><span className="v">{asset.loudness_lufs} LUFS</span></div>}
+            {durationMs > 0 && <div className="np-c"><span className="k">Length</span><span className="v">{formatTimestamp(durationMs)}</span></div>}
+            {asset?.mime_type && <div className="np-c"><span className="k">Format</span><span className="v">{asset.mime_type.replace("audio/", "").toUpperCase()}</span></div>}
+          </div>
+          <div className="np-transport">
+            <div className="np-keys">
+              <button onClick={() => player.seek(0)} disabled={!isThis} title="Restart"><SkipBack size={15} /></button>
+              <button className="play" onClick={togglePlay} disabled={!version || !asset} title={playing ? "Pause" : "Play"}>
+                {playing ? <Pause size={17} /> : <Play size={17} />}
+              </button>
+              <button disabled title="No next track"><SkipForward size={15} /></button>
+            </div>
+            <div className="np-scrub">
+              <span className="np-time">{formatTimestamp(positionMs)}</span>
+              <button
+                className="np-bar"
+                aria-label="Seek"
+                disabled={!isThis || durationMs === 0}
+                onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); player.seek(((e.clientX - r.left) / r.width) * durationMs); }}
+              >
+                <i style={{ width: `${progress * 100}%` }} />
+              </button>
+              <span className="np-time">{formatTimestamp(durationMs)}</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+      <div className="np-right">
+        <LivingCover
+          mode={coverMode}
+          tone={coverTone}
+          hue={coverTone === 3 ? hexToHue(coverHex) : undefined}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        />
+        <div className="np-seam" />
+        <div className="np-lab tp">
+          <span className="cw-micro">Generative Cover</span>
+          <div className="pls-pickers">
+            <div className="pls-pick">
+              <span className="pls-pick-lab">Motion</span>
+              {MOTION_MODES.map((m) => (
+                <button key={m.id} className={`pls-pk${coverMode === m.id ? " active" : ""}`} onClick={() => { setCoverMode(m.id); persistCover({ mode: m.id }); }}>{m.label}</button>
+              ))}
+            </div>
+            <div className="pls-pick">
+              <span className="pls-pick-lab">Tone</span>
+              {TONE_MODES.map((t) => (
+                <button key={t.id} className={`pls-pk${coverTone === t.id ? " active" : ""}`} onClick={() => { setCoverTone(t.id); persistCover({ tone: t.id }); }}>{t.label}</button>
+              ))}
+              <label className={`pls-swatch${coverTone === 3 ? " active" : ""}`} title="Pick a main color" style={{ ["--sw" as string]: coverHex }}>
+                <input type="color" value={coverHex} onChange={(e) => { setCoverHex(e.target.value); setCoverTone(3); persistCover({ tone: 3, hex: e.target.value }); }} />
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="np-lab bt">
+          <span className="cw-micro">No artwork on file</span>
+          <span className="cw-micro pls-seed">Seed {seedLabel(song.song_id)}</span>
         </div>
       </div>
     </div>

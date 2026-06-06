@@ -4581,3 +4581,17 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .share-page .link-activity .when { margin-left: auto; font-size: 10px; color: var(--pencil-faint, rgba(243,236,222,.3)); }
 .share-page .link-activity-empty { font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--pencil-warm); margin-top: 10px; }
 .cmp-page .compare-deck.active::before { background: var(--notes-blue); }
+
+/* === v3 song hero — match the mockup: title block LEFT, square cover RIGHT === */
+.song-card-body { grid-template-columns: 1fr 300px; gap: 40px; align-items: end; }
+.song-card-cover { grid-column: 2; grid-row: 1; min-height: 0; aspect-ratio: 1 / 1; border-radius: 16px; align-self: end; box-shadow: 0 1px 0 rgba(255,255,255,.12) inset, 0 30px 60px -30px rgba(0,0,0,.85); }
+.song-card-cover .cat-strip { border-radius: 6px; }
+.song-card-info { grid-column: 1; grid-row: 1; padding-left: 0; padding-bottom: 6px; }
+@media (max-width: 900px) {
+  .song-card-body { grid-template-columns: 1fr; }
+  .song-card-cover { grid-column: 1; aspect-ratio: 16 / 9; }
+  .song-card-info { padding-left: clamp(18px,3vw,32px); }
+}
+
+/* === v3 playlist — cover field fills the full height (kill dead space) === */
+.pls-right { align-self: stretch; margin: 6px 0 0; min-height: calc(100vh - 168px); }

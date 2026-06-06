@@ -86,7 +86,12 @@ enum DotGlyphKind {
         case .pause:   return ["XX.XX", "XX.XX", "XX.XX", "XX.XX", "XX.XX", "XX.XX", "XX.XX"]
         case .back:    return ["X....X", "X...XX", "X..XXX", "X.XXXX", "X..XXX", "X...XX", "X....X"]
         case .forward: return ["X....X", "XX...X", "XXX..X", "XXXX.X", "XXX..X", "XX...X", "X....X"]
-        case .note:    return ["..X..", "..X..", "XXXXX", "..X..", "..X.."]
+        // a note (text lines) with a small + beside it = "add note"
+        case .note:    return ["XXXXX....",
+                               ".......X.",
+                               "XXXXX.XXX",
+                               ".......X.",
+                               "XXX......"]
         }
     }
 }

@@ -50,7 +50,7 @@ struct WorkspacePage: View {
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .onTapGesture { onCollapse() }
+        .onTapGesture { composing = false; onCollapse() }
     }
 
     private var header: some View {

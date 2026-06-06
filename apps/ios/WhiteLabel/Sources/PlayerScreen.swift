@@ -42,7 +42,7 @@ struct PlayerScreen: View {
                         }
                     }
                     .scrollIndicators(.hidden)
-                    .scrollDismissesKeyboard(.interactively)
+                    .scrollDismissesKeyboard(.immediately)
                     .ignoresSafeArea()
                     .onAppear {
                         if CommandLine.arguments.contains("-openWorkspace") {

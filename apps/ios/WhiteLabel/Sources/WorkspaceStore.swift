@@ -9,6 +9,9 @@ final class WorkspaceStore {
     var currentByTrack: [String: String] = [:]
     var notesByTrack: [String: [Note]] = [:]
 
+    /// Taggable workspace members.
+    let members = ["PomPom", "Liz Rose", "Mira Tan", "Hudson", "Alex", "TB"]
+
     init() { seed() }
 
     func versions(_ track: String) -> [Version] { versionsByTrack[track] ?? [] }
@@ -42,6 +45,18 @@ final class WorkspaceStore {
         guard var arr = notesByTrack[track], let i = arr.firstIndex(where: { $0.id == id }) else { return }
         arr[i].resolved.toggle()
         notesByTrack[track] = arr
+    }
+
+    func updateNote(_ track: String, _ id: UUID, body: String, positionMs: Int?) {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var arr = notesByTrack[track], let i = arr.firstIndex(where: { $0.id == id }) else { return }
+        let old = arr[i]
+        arr[i] = Note(id: old.id, positionMs: positionMs, author: old.author, body: trimmed, resolved: old.resolved, versionLabel: old.versionLabel)
+        notesByTrack[track] = arr
+    }
+
+    func deleteNote(_ track: String, _ id: UUID) {
+        notesByTrack[track]?.removeAll { $0.id == id }
     }
 
     private func seed() {

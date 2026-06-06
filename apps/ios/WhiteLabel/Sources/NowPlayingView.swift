@@ -11,6 +11,7 @@ struct NowPlayingView: View {
     var safeTop: CGFloat = 0
     var safeBottom: CGFloat = 0
     var onPull: () -> Void = {}
+    var onQuickNote: () -> Void = {}
     private var track: Track { player.track }
 
     var body: some View {
@@ -130,7 +131,8 @@ struct NowPlayingView: View {
                 onBack: { player.prev() },
                 onPlay: { player.play() },
                 onPause: { player.pause() },
-                onForward: { player.next() }
+                onForward: { player.next() },
+                onNote: { onQuickNote() }
             )
             .padding(.top, 6)
         }

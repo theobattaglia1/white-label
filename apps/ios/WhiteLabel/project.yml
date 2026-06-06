@@ -33,6 +33,7 @@ targets:
           - UIInterfaceOrientationPortrait
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UIViewControllerBasedStatusBarAppearance: false
+        UIStatusBarHidden: true
         UIAppFonts:
           - UniversTE40-Light.ttf
           - UniversTE20-Light.ttf

@@ -1,41 +1,46 @@
 import SwiftUI
 
-/// The workspace page that lives directly beneath Now Playing — scroll up to
-/// reveal it. Switch versions and drop notes pinned to the moment you're
-/// hearing. (No inner scroll: the outer pager owns scrolling.)
+/// The workspace page beneath Now Playing. A waveform with a draggable marker
+/// to place notes precisely, a mini-transport, version switching, and notes you
+/// can tag, edit, resolve, and delete.
 struct WorkspacePage: View {
     var player: Player
     var store: WorkspaceStore
     var safeTop: CGFloat = 0
     var safeBottom: CGFloat = 0
+    @Binding var markerMs: Int?
+    var composeToken: Int
     var onCollapse: () -> Void
+
     @State private var noteText = ""
+    @State private var editing: UUID? = nil
     @FocusState private var composing: Bool
 
     private var trackID: String { player.track.id }
+    private var duration: Int { max(1, player.track.durationMs) }
+    private var markPos: Int { markerMs ?? player.positionMs }
+    private var markFraction: Double { Double(markPos) / Double(duration) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 22) {
             grabber
             header
+            waveSection
             versionsSection
             notesSection
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 22)
         .padding(.top, safeTop + 12)
-        .padding(.bottom, safeBottom + 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(WL.black)
-        .clipped()
+        .padding(.bottom, safeBottom + 28)
+        .frame(maxWidth: .infinity, alignment: .top)
         .foregroundStyle(WL.cream)
+        .onChange(of: composeToken) { _, _ in composing = true }
     }
 
     private var grabber: some View {
         VStack(spacing: 6) {
             Image(systemName: "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(WL.cream.opacity(0.45))
+                .font(.system(size: 11, weight: .semibold)).foregroundStyle(WL.cream.opacity(0.45))
             Capsule().fill(WL.cream.opacity(0.18)).frame(width: 38, height: 4)
         }
         .frame(maxWidth: .infinity)
@@ -43,16 +48,42 @@ struct WorkspacePage: View {
         .onTapGesture { onCollapse() }
     }
 
-    // MARK: header
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 7) {
             MonoLabel("Workspace", color: WL.pencil, size: 10, tracking: 2.2)
-            Text(player.track.title)
-                .font(WL.display(26))
-                .foregroundStyle(WL.cream)
+            Text(player.track.title).font(WL.display(26)).foregroundStyle(WL.cream)
             MonoLabel("\(player.track.artist) · \(store.currentVersion(trackID)?.label ?? player.track.versionLabel)",
                       color: WL.pencil, size: 10, tracking: 1.4)
+        }
+    }
+
+    // MARK: waveform + mini transport
+
+    private var waveSection: some View {
+        VStack(spacing: 10) {
+            WaveStrip(
+                peaks: wavePeaks(trackID),
+                progress: player.progress,
+                marker: markFraction,
+                onScrub: { markerMs = Int($0 * Double(duration)) }
+            )
+            .frame(height: 46)
+
+            HStack(spacing: 12) {
+                Button { player.toggle() } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(WL.black)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(WL.cream))
+                }
+                .buttonStyle(.plain)
+                Text(player.positionMs.clock).font(WL.mono(11)).foregroundStyle(WL.cream.opacity(0.7)).monospacedDigit()
+                Spacer()
+                Text("MARK \(markPos.clock)").font(WL.mono(10)).tracking(1).foregroundStyle(WL.cobalt)
+                Spacer()
+                Text(duration.clock).font(WL.mono(11)).foregroundStyle(WL.cream.opacity(0.7)).monospacedDigit()
+            }
         }
     }
 
@@ -103,26 +134,43 @@ struct WorkspacePage: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Text("+ \(player.positionMs.clock)")
-                .font(WL.mono(11)).foregroundStyle(WL.cobalt)
-            TextField("Leave a note at this moment…", text: $noteText, axis: .vertical)
-                .font(WL.text(14))
-                .foregroundStyle(WL.cream)
-                .tint(WL.cobalt)
-                .focused($composing)
-                .lineLimit(1...4)
-            if !noteText.trimmingCharacters(in: .whitespaces).isEmpty {
-                Button {
-                    store.addNote(track: trackID, positionMs: player.positionMs, body: noteText)
-                    noteText = ""; composing = false
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("\(editing == nil ? "+" : "✎") \(markPos.clock)")
+                    .font(WL.mono(11)).foregroundStyle(WL.cobalt)
+                TextField(editing == nil ? "Leave a note at the marker…" : "Edit note…",
+                          text: $noteText, axis: .vertical)
+                    .font(WL.text(14)).foregroundStyle(WL.cream).tint(WL.cobalt)
+                    .focused($composing).lineLimit(1...5)
+            }
+            HStack(spacing: 12) {
+                Menu {
+                    ForEach(store.members, id: \.self) { m in
+                        Button(m) { insertMention(m) }
+                    }
                 } label: {
-                    Text("ADD").font(WL.mono(10)).tracking(1)
-                        .padding(.horizontal, 11).padding(.vertical, 7)
-                        .background(Capsule().fill(WL.cream))
-                        .foregroundStyle(WL.black)
+                    Text("@ Tag").font(WL.mono(10)).tracking(1).foregroundStyle(WL.cobalt)
                 }
-                .buttonStyle(.plain)
+                if editing != nil {
+                    Button("Cancel") { resetComposer() }
+                        .font(WL.mono(10)).foregroundStyle(WL.pencil)
+                }
+                Spacer()
+                if !noteText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button {
+                        if let id = editing {
+                            store.updateNote(trackID, id, body: noteText, positionMs: markPos)
+                        } else {
+                            store.addNote(track: trackID, positionMs: markPos, body: noteText)
+                        }
+                        resetComposer()
+                    } label: {
+                        Text(editing == nil ? "ADD" : "SAVE").font(WL.mono(10)).tracking(1)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Capsule().fill(WL.cream)).foregroundStyle(WL.black)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(14)
@@ -132,33 +180,74 @@ struct WorkspacePage: View {
 
     private func noteRow(_ note: Note) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Rectangle()
-                .fill(note.resolved ? WL.green : WL.redline)
-                .frame(width: 2)
+            Rectangle().fill(note.resolved ? WL.green : WL.redline).frame(width: 2)
                 .opacity(note.resolved ? 0.5 : 1)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 9) {
-                    Text(note.positionMs.map { $0.clock } ?? "general")
-                        .font(WL.mono(11))
-                        .foregroundStyle(note.resolved ? WL.green : WL.cobalt)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(WL.cream.opacity(0.06)))
-                    MonoLabel(note.author, color: WL.pencil, size: 9, tracking: 1.2)
-                    Spacer()
-                    Button { store.toggleResolved(trackID, note.id) } label: {
-                        Text(note.resolved ? "Reopen" : "Resolve")
-                            .font(WL.mono(9)).tracking(1)
-                            .foregroundStyle(note.resolved ? WL.pencil : WL.green)
+                    Button {
+                        if let ms = note.positionMs { player.seek(to: Double(ms) / Double(duration)) }
+                    } label: {
+                        Text(note.positionMs.map { $0.clock } ?? "general")
+                            .font(WL.mono(11))
+                            .foregroundStyle(note.resolved ? WL.green : WL.cobalt)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(WL.cream.opacity(0.06)))
                     }
                     .buttonStyle(.plain)
+                    MonoLabel(note.author, color: WL.pencil, size: 9, tracking: 1.2)
+                    Spacer()
+                    Menu {
+                        Button { startEdit(note) } label: { Label("Edit", systemImage: "pencil") }
+                        Button { store.toggleResolved(trackID, note.id) } label: {
+                            Label(note.resolved ? "Reopen" : "Resolve", systemImage: note.resolved ? "arrow.uturn.backward" : "checkmark")
+                        }
+                        Button(role: .destructive) { store.deleteNote(trackID, note.id) } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(WL.pencil)
+                            .frame(width: 28, height: 20)
+                    }
                 }
-                Text(note.body)
+                Text(styled(note.body))
                     .font(WL.text(14))
                     .foregroundStyle(note.resolved ? WL.pencil : WL.cream.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 2)
-        .opacity(note.resolved ? 0.7 : 1)
+        .opacity(note.resolved ? 0.75 : 1)
+    }
+
+    // MARK: helpers
+
+    private func insertMention(_ member: String) {
+        let first = member.split(separator: " ").first.map(String.init) ?? member
+        if !noteText.isEmpty && !noteText.hasSuffix(" ") { noteText += " " }
+        noteText += "@\(first) "
+        composing = true
+    }
+
+    private func startEdit(_ note: Note) {
+        editing = note.id
+        noteText = note.body
+        markerMs = note.positionMs
+        composing = true
+    }
+
+    private func resetComposer() {
+        noteText = ""; editing = nil; markerMs = nil; composing = false
+    }
+
+    private func styled(_ body: String) -> AttributedString {
+        var out = AttributedString()
+        let parts = body.split(separator: " ", omittingEmptySubsequences: false)
+        for (i, p) in parts.enumerated() {
+            var a = AttributedString(String(p))
+            if p.hasPrefix("@") { a.foregroundColor = WL.cobalt }
+            out += a
+            if i < parts.count - 1 { out += AttributedString(" ") }
+        }
+        return out
     }
 }

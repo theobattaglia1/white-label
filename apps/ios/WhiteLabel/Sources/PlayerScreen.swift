@@ -6,6 +6,8 @@ import SwiftUI
 struct PlayerScreen: View {
     var player: Player
     var workspace: WorkspaceStore
+    @State private var markerMs: Int? = nil
+    @State private var composeToken = 0
 
     var body: some View {
         ZStack {
@@ -17,37 +19,43 @@ struct PlayerScreen: View {
                 ScrollViewReader { proxy in
                     ScrollView(.vertical) {
                         VStack(spacing: 0) {
-                            NowPlayingView(player: player, safeTop: top, safeBottom: bottom) {
-                                withAnimation(.easeInOut(duration: 0.45)) {
-                                    proxy.scrollTo("workspace", anchor: .top)
+                            NowPlayingView(
+                                player: player, safeTop: top, safeBottom: bottom,
+                                onPull: { jump(proxy, "workspace") },
+                                onQuickNote: {
+                                    markerMs = player.positionMs
+                                    composeToken += 1
+                                    jump(proxy, "workspace")
                                 }
-                            }
+                            )
                             .frame(height: fullHeight)
                             .id("nowplaying")
 
-                            WorkspacePage(player: player, store: workspace, safeTop: top, safeBottom: bottom) {
-                                withAnimation(.easeInOut(duration: 0.45)) {
-                                    proxy.scrollTo("nowplaying", anchor: .top)
-                                }
-                            }
-                            .frame(height: fullHeight)
+                            WorkspacePage(
+                                player: player, store: workspace, safeTop: top, safeBottom: bottom,
+                                markerMs: $markerMs, composeToken: composeToken,
+                                onCollapse: { jump(proxy, "nowplaying") }
+                            )
+                            .frame(minHeight: fullHeight, alignment: .top)
+                            .background(WL.black)
                             .id("workspace")
                         }
-                        .scrollTargetLayout()
                     }
-                    .scrollTargetBehavior(.paging)
                     .scrollIndicators(.hidden)
                     .ignoresSafeArea()
                     .onAppear {
-                        // Debug hook: launch with -openWorkspace to land on the workspace page.
                         if CommandLine.arguments.contains("-openWorkspace") {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                proxy.scrollTo("workspace", anchor: .top)
+                                jump(proxy, "workspace")
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    private func jump(_ proxy: ScrollViewProxy, _ id: String) {
+        withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(id, anchor: .top) }
     }
 }

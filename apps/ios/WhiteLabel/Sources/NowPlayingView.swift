@@ -18,17 +18,17 @@ struct NowPlayingView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 statusRow
-                    .padding(.top, 4)
+                    .padding(.top, 6)
 
                 titleBlock
-                    .padding(.top, 34)
+                    .padding(.top, 48)
 
                 Spacer(minLength: 24)
 
                 lowerCluster
             }
-            .padding(.horizontal, 26)
-            .padding(.bottom, 18)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 20)
         }
         .foregroundStyle(WL.cream)
         .preferredColorScheme(.dark)
@@ -57,44 +57,46 @@ struct NowPlayingView: View {
     // MARK: title
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            MonoLabel("Now Playing · \(track.versionLabel)",
-                      color: WL.cream.opacity(0.7), size: 10, tracking: 2.0)
+        VStack(alignment: .leading, spacing: 1) {
             Text(track.title)
-                .font(WL.display(46))
-                .tracking(0)
-                .lineLimit(3)
-                .minimumScaleFactor(0.7)
-                .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
-            Text(track.artist)
-                .font(WL.mono(12)).tracking(2)
-                .foregroundStyle(WL.cream.opacity(0.8))
+                .foregroundStyle(WL.cream)
+            Text("— \(track.artist)")
+                .foregroundStyle(WL.cream.opacity(0.9))
         }
+        .font(WL.display(52))
+        .tracking(0)
+        .lineLimit(1)
+        .minimumScaleFactor(0.55)
+        .shadow(color: .black.opacity(0.28), radius: 18, y: 6)
     }
 
     // MARK: label + credits + scrubber + wheel
 
     private var lowerCluster: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(track.label)
-                        .font(WL.display(17))
+                        .font(WL.display(18))
                         .foregroundStyle(WL.cream.opacity(0.92))
-                    MonoLabel(track.catalog, color: WL.cream.opacity(0.55), size: 9, tracking: 1.4)
+                    MonoLabel(track.catalog, color: WL.cream.opacity(0.5), size: 9, tracking: 1.4)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    ForEach(track.credits) { c in
-                        VStack(alignment: .trailing, spacing: 1) {
-                            MonoLabel(c.key, color: WL.cream.opacity(0.45), size: 8, tracking: 1.2)
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        MonoLabel(track.versionLabel, color: WL.cream.opacity(0.6), size: 9, tracking: 1.4)
+                        ForEach(track.credits.prefix(2)) { c in
                             Text(c.value)
-                                .font(WL.mono(10)).tracking(0.4)
-                                .foregroundStyle(WL.cream.opacity(0.8))
+                                .font(WL.mono(10)).tracking(0.3)
+                                .foregroundStyle(WL.cream.opacity(0.7))
                         }
                     }
+                    Image(systemName: "triangle")
+                        .font(.system(size: 10, weight: .light))
+                        .rotationEffect(.degrees(90))
+                        .foregroundStyle(WL.cream.opacity(0.5))
+                        .padding(.bottom, 1)
                 }
-                .frame(maxWidth: 150, alignment: .trailing)
             }
 
             scrubber
@@ -105,9 +107,9 @@ struct NowPlayingView: View {
                 onToggle: { player.toggle() },
                 onScrub: { player.seek(to: $0) }
             )
-            .frame(width: 168, height: 168)
+            .frame(width: 172, height: 172)
             .frame(maxWidth: .infinity)
-            .padding(.top, 6)
+            .padding(.top, 8)
         }
     }
 

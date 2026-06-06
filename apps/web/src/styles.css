@@ -10,6 +10,32 @@
    ===================================================================== */
 @import url('https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800;900&display=swap');
 
+/* === v3.1 type system — Teenage Engineering Univers + Lettera Mono + Ndot ===
+   Univers TE (Swiss grotesque) for display + body, Lettera Mono for labels,
+   Ndot (dot-matrix) sparingly on prominent action buttons. The TE cuts ship
+   Light/Thin only — weight ranges are claimed so existing weight:700 rules map
+   to the single master and font-synthesis stays off (no muddy faux-bold). */
+@font-face {
+  font-family: "Univers TE40"; src: url("/fonts/UniversTE40-Light.ttf") format("truetype");
+  font-weight: 100 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Univers TE20"; src: url("/fonts/UniversTE20-Light.ttf") format("truetype");
+  font-weight: 200 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Univers TE20"; src: url("/fonts/UniversTE20-Thin.ttf") format("truetype");
+  font-weight: 100 199; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Lettera Mono LL"; src: url("/fonts/LetteraMonoLL-Regular.otf") format("opentype");
+  font-weight: 100 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Ndot 55"; src: url("/fonts/Ndot-55.otf") format("opentype");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+
 :root {
   color-scheme: light;
 
@@ -54,10 +80,11 @@
      not from novelty fonts. Mono is reserved for *genuine* instrument
      readouts (LUFS, BPM, ms timestamps, dB). Stamps, eyebrows, catalog
      labels all live in Helvetica with tight tracking. */
-  --font-display: "Helvetica Neue", "Helvetica", "Arial", sans-serif;
-  --font-sans: "Helvetica Neue", "Helvetica", -apple-system, BlinkMacSystemFont, "Arial", sans-serif;
-  --font-mono: "Schibsted Grotesk", "Helvetica Neue", "Arial", sans-serif; /* small-cap labels */
-  --font-readout: ui-monospace, "SF Mono", "Menlo", monospace; /* ONLY instrument readouts */
+  --font-display: "Univers TE40", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+  --font-sans: "Univers TE20", "Helvetica Neue", "Helvetica", -apple-system, BlinkMacSystemFont, "Arial", sans-serif;
+  --font-mono: "Lettera Mono LL", "Schibsted Grotesk", ui-monospace, "Menlo", monospace; /* small-cap labels */
+  --font-dot: "Ndot 55", "Univers TE40", "Helvetica Neue", sans-serif; /* dot-matrix — action buttons only, sparingly */
+  --font-readout: "Lettera Mono LL", ui-monospace, "SF Mono", "Menlo", monospace; /* instrument readouts */
 
   --motion-fast: 120ms;
   --motion-mid: 220ms;
@@ -4687,3 +4714,23 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .np-lab { position: absolute; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; padding: 26px 30px; z-index: 3; }
 .np-lab.tp { top: 0; } .np-lab.bt { bottom: 0; align-items: flex-end; }
 .np-lab .cw-micro { color: rgba(255,255,255,.82); mix-blend-mode: overlay; }
+
+/* === v3.1 type system wiring ======================================== */
+/* The TE Univers cuts are single-weight masters — never synthesize bold/italic. */
+* { font-synthesis: none; }
+/* Display headings were stroked to fake Helvetica bold; Univers TE40 is Light by
+   design, so the stroke only muddies it. Drop it across the v3 display titles. */
+.cw-feat-title, .cw-shead h2, .pls-title, .ibx-head h1,
+.cmp-page .section-head h1, .cmp-page .panel-topline h2,
+.ask-page .section-head h1, .share-page .section-head h1,
+.np-title, .section-head h1, .disp, .song-card-info .title { -webkit-text-stroke: 0; }
+
+/* Ndot (dot-matrix) — sparingly, on the prominent action buttons only. */
+.cw-btn, .pls-btn, .song-card-info .actions .btn.primary, .song-card-info .actions .btn.red {
+  font-family: var(--font-dot);
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-weight: 400;
+}
+.cw-btn { font-size: 13px; }
+.pls-btn { font-size: 12px; }

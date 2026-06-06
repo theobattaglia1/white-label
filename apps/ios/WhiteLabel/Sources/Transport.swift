@@ -3,9 +3,9 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Old-school hardware transport: raised dot-matrix keys that press in.
-/// Symbols are drawn as dot grids (the media glyphs aren't in the Ndot font)
-/// so they read in the same dotted language as the rest of the system.
+/// Old-school hardware transport: round, greyscale dot-matrix keys that press
+/// in. The active mode latches down — while playing, the play key stays
+/// recessed; while paused, the pause key does.
 struct TransportBar: View {
     var isPlaying: Bool
     var onBack: () -> Void
@@ -14,16 +14,16 @@ struct TransportBar: View {
     var onForward: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
-            key(.back, WL.paleCobalt, onBack)
-            key(.play, WL.cream, onPlay)
-            key(.pause, WL.paleCoral, onPause)
-            key(.forward, WL.paleGreen, onForward)
+        HStack(spacing: 18) {
+            key(.back, held: false, onBack)
+            key(.play, held: isPlaying, onPlay)
+            key(.pause, held: !isPlaying, onPause)
+            key(.forward, held: false, onForward)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func key(_ glyph: DotGlyphKind, _ fill: Color, _ action: @escaping () -> Void) -> some View {
+    private func key(_ glyph: DotGlyphKind, held: Bool, _ action: @escaping () -> Void) -> some View {
         Button {
             #if canImport(UIKit)
             UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
@@ -32,43 +32,48 @@ struct TransportBar: View {
         } label: {
             DotGlyph(kind: glyph)
         }
-        .buttonStyle(RaisedKeyStyle(fill: fill))
+        .buttonStyle(RaisedKeyStyle(held: held))
     }
 }
 
 // MARK: - Raised key
 
-/// A physical key: raised (soft drop + light top edge) at rest, recessed
-/// (inner shadow + slight shrink) while pressed.
+/// A round physical key: raised (domed grey + light top edge) at rest,
+/// recessed (inner shadow + shrink) while pressed OR while latched `held`.
 private struct RaisedKeyStyle: ButtonStyle {
-    var fill: Color
+    var held: Bool = false
     var side: CGFloat = 58
 
     func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let down = held || configuration.isPressed
         return configuration.label
             .frame(width: side, height: side)
             .background {
-                if pressed {
-                    shape.fill(
-                        fill.shadow(.inner(color: .black.opacity(0.45), radius: 5, x: 0, y: 3))
-                            .shadow(.inner(color: .white.opacity(0.20), radius: 3, x: 0, y: -2))
+                if down {
+                    Circle().fill(
+                        LinearGradient(colors: [Color(hex: 0xAEAAA1), Color(hex: 0xC4C0B6)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .shadow(.inner(color: .black.opacity(0.50), radius: 5, x: 0, y: 3))
+                            .shadow(.inner(color: .white.opacity(0.22), radius: 2, x: 0, y: -2))
                     )
                 } else {
-                    shape
-                        .fill(fill.shadow(.drop(color: .black.opacity(0.40), radius: 7, x: 1, y: 6)))
+                    Circle()
+                        .fill(
+                            LinearGradient(colors: [Color(hex: 0xDAD6CC), Color(hex: 0xBCB8AE)],
+                                           startPoint: .top, endPoint: .bottom)
+                                .shadow(.drop(color: .black.opacity(0.38), radius: 7, x: 1, y: 6))
+                        )
                         .overlay(
-                            shape.strokeBorder(
-                                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
+                            Circle().strokeBorder(
+                                LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.04)],
                                                startPoint: .top, endPoint: .bottom),
                                 lineWidth: 1
                             )
                         )
                 }
             }
-            .scaleEffect(pressed ? 0.94 : 1)
-            .animation(.spring(response: 0.16, dampingFraction: 0.6), value: pressed)
+            .scaleEffect(down ? 0.95 : 1)
+            .animation(.spring(response: 0.16, dampingFraction: 0.6), value: down)
     }
 }
 
@@ -88,7 +93,7 @@ enum DotGlyphKind {
 
 private struct DotGlyph: View {
     let kind: DotGlyphKind
-    var color: Color = WL.black
+    var color: Color = Color(hex: 0x33302B)
     var pitch: CGFloat = 3.1
 
     var body: some View {

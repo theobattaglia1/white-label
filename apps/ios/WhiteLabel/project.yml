@@ -1,0 +1,41 @@
+name: WhiteLabel
+options:
+  bundleIdPrefix: inc.allmyfriends
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    DEVELOPMENT_TEAM: ""
+targets:
+  WhiteLabel:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: inc.allmyfriends.whitelabel
+    info:
+      path: Generated-Info.plist
+      properties:
+        CFBundleDisplayName: WHITE LABEL
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        UIAppFonts:
+          - UniversTE40-Light.ttf
+          - UniversTE20-Light.ttf
+          - UniversTE20-Thin.ttf
+          - LetteraMonoLL-Regular.otf
+          - Ndot-55.otf

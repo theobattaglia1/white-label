@@ -72,7 +72,9 @@ private struct FlatKeyStyle: ButtonStyle {
         .frame(width: side, height: side)
         // even, top-down shadow when raised; none when recessed
         .shadow(color: .black.opacity(down ? 0 : 0.22), radius: down ? 0 : 5, x: 0, y: 0)
-        .animation(.spring(response: 0.14, dampingFraction: 0.75), value: down)
+        // push-in; momentary keys bounce back on release, latched keys settle in
+        .scaleEffect(down ? 0.92 : 1)
+        .animation(.spring(response: 0.22, dampingFraction: 0.5), value: down)
     }
 }
 

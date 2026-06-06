@@ -11,6 +11,7 @@
 		0F1022639FE5A79817C11C26 /* PlayerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D46EE875B4E7CA549425246E /* PlayerMenu.swift */; };
 		12BEA1B4E4EC4FFB61A0510D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92BCA1990D5642962D951B1 /* Models.swift */; };
 		1F89DD5184A6EAA6D06E521D /* UniversTE20-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B3DD384FE83D54AD391B0B1B /* UniversTE20-Light.ttf */; };
+		37CC49609E111430B54534A5 /* BrowseViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C901E5DAF7A65DA32AD3AFD5 /* BrowseViews.swift */; };
 		3E01785F7737BA8CC1BF2DEF /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4659E32691DCE3AF37E88BAB /* HomeView.swift */; };
 		3F8B1E2876B47C88BD22FF89 /* WhiteLabelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CDE6A08C5B92AB31DB267FF /* WhiteLabelApp.swift */; };
 		46038C26BFDAC7D72CB81416 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E322045B859027932230395 /* NowPlayingView.swift */; };
@@ -50,6 +51,7 @@
 		AC9D2EE37732DA77D8A30717 /* WorkspaceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSheet.swift; sourceTree = "<group>"; };
 		B3DD384FE83D54AD391B0B1B /* UniversTE20-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Light.ttf"; sourceTree = "<group>"; };
 		C01500CDFC93A3161D5E4FBB /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
+		C901E5DAF7A65DA32AD3AFD5 /* BrowseViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseViews.swift; sourceTree = "<group>"; };
 		D2011914666E011B36F6F12D /* Waveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Waveform.swift; sourceTree = "<group>"; };
 		D46EE875B4E7CA549425246E /* PlayerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenu.swift; sourceTree = "<group>"; };
 		E16501FCB596C6CF35F31290 /* LetteraMonoLL-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LetteraMonoLL-Regular.otf"; sourceTree = "<group>"; };
@@ -59,6 +61,7 @@
 		745B0DC3ACE29381EB909FD6 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				C901E5DAF7A65DA32AD3AFD5 /* BrowseViews.swift */,
 				4659E32691DCE3AF37E88BAB /* HomeView.swift */,
 				29691F3FFBE4AD75FBC3BDD8 /* JogWheel.swift */,
 				89816DC66E4E1EAF6250904B /* MeshCover.swift */,
@@ -190,6 +193,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				37CC49609E111430B54534A5 /* BrowseViews.swift in Sources */,
 				3E01785F7737BA8CC1BF2DEF /* HomeView.swift in Sources */,
 				EC011A3B89230F57F8CCCF12 /* JogWheel.swift in Sources */,
 				75E23547095CB912A88346AF /* MeshCover.swift in Sources */,

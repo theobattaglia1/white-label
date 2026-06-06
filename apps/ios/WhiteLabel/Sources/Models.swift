@@ -36,6 +36,30 @@ struct Note: Identifiable, Hashable, Codable {
     let versionLabel: String
 }
 
+struct Playlist: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let trackIDs: [String]
+}
+
+/// A project / room — a body of work for an artist.
+struct Room: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let artist: String
+    let trackIDs: [String]
+}
+
+/// An inbox item — something shared with / routed to you.
+struct InboxItem: Identifiable, Hashable {
+    let id: String
+    let trackID: String
+    let sharedBy: String
+    let context: String   // room / playlist name
+    var isNew: Bool
+}
+
 extension Int {
     /// ms → "m:ss"
     var clock: String {

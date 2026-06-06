@@ -10,6 +10,7 @@ final class Player {
     var index: Int
     var isPlaying: Bool = false
     var positionMs: Int = 0
+    var started: Bool = false   // has the user opened a track this session
 
     @ObservationIgnored private var timer: Timer?
 
@@ -24,7 +25,16 @@ final class Player {
         return min(1, max(0, Double(positionMs) / Double(track.durationMs)))
     }
 
+    /// Open a track by id and start it (used from Home/Library/Inbox/playlists).
+    func open(_ id: String) {
+        if let i = queue.firstIndex(where: { $0.id == id }) { index = i }
+        positionMs = 0
+        started = true
+        play()
+    }
+
     func toggle() {
+        started = true
         isPlaying ? pause() : play()
     }
 

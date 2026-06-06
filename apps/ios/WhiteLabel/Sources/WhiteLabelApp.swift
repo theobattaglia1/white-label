@@ -4,7 +4,7 @@ import SwiftUI
 struct WhiteLabelApp: App {
     var body: some Scene {
         WindowGroup {
-            RootView()
+            AppShell()
         }
     }
 }

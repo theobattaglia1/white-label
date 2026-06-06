@@ -1,6 +1,33 @@
 import SwiftUI
 
 enum SampleData {
+    static let playlists: [Playlist] = [
+        Playlist(id: "pl-friday", title: "Friday Session", subtitle: "What to play through on the train home",
+                 trackIDs: ["first-night", "duel", "lighting-the-fuse", "best-of-me"]),
+        Playlist(id: "pl-pitch", title: "Pitch — Mira", subtitle: "For the Tuesday A&R call",
+                 trackIDs: ["duel", "first-night"]),
+        Playlist(id: "pl-ear", title: "Needs Your Ear", subtitle: "Flagged for review",
+                 trackIDs: ["first-night", "best-of-me"]),
+    ]
+
+    static let rooms: [Room] = [
+        Room(id: "rm-hudson", title: "Hudson Ingram LP", artist: "Hudson Ingram",
+             trackIDs: ["first-night", "lighting-the-fuse"]),
+        Room(id: "rm-ruby", title: "Ruby Plume — Single", artist: "Ruby Plume",
+             trackIDs: ["duel"]),
+        Room(id: "rm-daniel", title: "Daniel Price — EP", artist: "Daniel Price",
+             trackIDs: ["best-of-me"]),
+    ]
+
+    static let inbox: [InboxItem] = [
+        InboxItem(id: "ib-1", trackID: "first-night", sharedBy: "Maya Chen", context: "Hudson Ingram LP", isNew: true),
+        InboxItem(id: "ib-2", trackID: "lighting-the-fuse", sharedBy: "Maya Chen", context: "Hudson Ingram LP", isNew: true),
+        InboxItem(id: "ib-3", trackID: "duel", sharedBy: "Mira Tan", context: "Ruby Plume — Single", isNew: true),
+        InboxItem(id: "ib-4", trackID: "best-of-me", sharedBy: "Olmo", context: "Daniel Price — EP", isNew: false),
+    ]
+
+    static func track(_ id: String) -> Track? { tracks.first { $0.id == id } }
+
     static let tracks: [Track] = [
         Track(
             id: "first-night",

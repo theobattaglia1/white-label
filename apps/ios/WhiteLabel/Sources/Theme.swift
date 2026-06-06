@@ -14,6 +14,11 @@ enum WL {
     static let cobalt  = Color(hex: 0x4663E8) // current / structure
     static let green   = Color(hex: 0x5FD08A) // approved
 
+    // Pale transport tints — soft hardware-button colors.
+    static let paleCobalt = Color(hex: 0xBAC3EC)
+    static let paleCoral  = Color(hex: 0xEDB29B)
+    static let paleGreen  = Color(hex: 0xAFDBC3)
+
     // Type — PostScript names of the bundled faces.
     static func display(_ size: CGFloat) -> Font { .custom("UniversTE40-Light", size: size) }
     static func text(_ size: CGFloat)    -> Font { .custom("UniversTE20", size: size) }

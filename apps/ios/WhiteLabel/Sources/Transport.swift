@@ -3,9 +3,8 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Old-school hardware transport: a row of square buttons, each its own color.
-/// PLAY carries the Ndot dot-matrix label (the desktop home button); pause,
-/// skip-back and skip-forward sit beside it.
+/// Old-school hardware transport: a row of small square buttons, all in the
+/// Ndot dot-matrix face with pale, color-differentiated fills.
 struct TransportBar: View {
     var isPlaying: Bool
     var onBack: () -> Void
@@ -14,29 +13,29 @@ struct TransportBar: View {
     var onForward: () -> Void
 
     var body: some View {
-        HStack(spacing: 11) {
-            SquareButton(fill: WL.panel, fg: WL.cream, bordered: true, action: onBack) {
-                Image(systemName: "backward.end.fill").font(.system(size: 17, weight: .medium))
+        HStack(spacing: 14) {
+            SquareButton(fill: WL.paleCobalt, action: onBack) {
+                Text("<<").font(WL.dot(19)).tracking(0.5)
             }
-            SquareButton(fill: WL.cream, fg: WL.black, action: onPlay) {
-                Text("PLAY").font(WL.dot(15)).tracking(1.5)
+            SquareButton(fill: WL.cream, action: onPlay) {
+                Text("PLAY").font(WL.dot(12)).tracking(1).minimumScaleFactor(0.6).lineLimit(1)
             }
-            .opacity(isPlaying ? 0.6 : 1)
-            SquareButton(fill: WL.redline, fg: WL.cream, action: onPause) {
-                Image(systemName: "pause.fill").font(.system(size: 17, weight: .medium))
+            .opacity(isPlaying ? 0.55 : 1)
+            SquareButton(fill: WL.paleCoral, action: onPause) {
+                Text("II").font(WL.dot(19)).tracking(2.5)
             }
-            .opacity(isPlaying ? 1 : 0.6)
-            SquareButton(fill: WL.cobalt, fg: WL.cream, action: onForward) {
-                Image(systemName: "forward.end.fill").font(.system(size: 17, weight: .medium))
+            .opacity(isPlaying ? 1 : 0.55)
+            SquareButton(fill: WL.paleGreen, action: onForward) {
+                Text(">>").font(WL.dot(19)).tracking(0.5)
             }
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
 private struct SquareButton<Label: View>: View {
     var fill: Color
-    var fg: Color
-    var bordered: Bool = false
+    var side: CGFloat = 58
     var action: () -> Void
     @ViewBuilder var label: Label
 
@@ -48,19 +47,12 @@ private struct SquareButton<Label: View>: View {
             action()
         } label: {
             label
-                .foregroundStyle(fg)
-                .frame(maxWidth: .infinity)
-                .frame(height: 68)
+                .foregroundStyle(WL.black)
+                .frame(width: side, height: side)
                 .background(
-                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(fill)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(fill)
                 )
-                .overlay {
-                    if bordered {
-                        RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            .strokeBorder(WL.cream.opacity(0.14), lineWidth: 1)
-                    }
-                }
-                .shadow(color: .black.opacity(0.28), radius: 10, y: 5)
+                .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
         }
         .buttonStyle(PressStyle())
     }
@@ -69,7 +61,7 @@ private struct SquareButton<Label: View>: View {
 private struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.93 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(.spring(response: 0.2, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }

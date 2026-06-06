@@ -44,32 +44,35 @@ struct TransportBar: View {
 
 // MARK: - Flat extruded key
 
-/// Flat round top + a hard side-wall beneath it. Raised at rest (wall shows as
-/// a crisp crescent under the face); flush when pressed/held.
+/// Head-on flat key. Raised at rest: a flat top with a crisp rim and an even
+/// (non-directional) shadow. Pressed/held: the face recesses — an inner shadow
+/// makes it read as a well punched into the screen.
 private struct FlatKeyStyle: ButtonStyle {
     var face: Color
-    var wall: Color
+    var wall: Color   // recessed (pressed) fill — a darker shade of the face
     var held: Bool = false
     var side: CGFloat = 54
-    var lift: CGFloat = 4
 
     func makeBody(configuration: Configuration) -> some View {
         let down = held || configuration.isPressed
         return ZStack {
-            // side-wall: a darker disc that peeks below the face
-            Circle().fill(wall)
-                .offset(y: down ? 1.5 : lift)
-            // flat top face with a crisp dark rim
-            ZStack {
-                Circle().fill(face)
-                Circle().strokeBorder(.black.opacity(0.30), lineWidth: 1)
-                configuration.label
-            }
-            .offset(y: down ? 1.5 : 0)
+            Circle().fill(
+                down
+                ? AnyShapeStyle(
+                    wall
+                        .shadow(.inner(color: .black.opacity(0.55), radius: 4, x: 0, y: 2))
+                        .shadow(.inner(color: .white.opacity(0.10), radius: 3, x: 0, y: -2))
+                  )
+                : AnyShapeStyle(face)
+            )
+            Circle().strokeBorder(.black.opacity(0.32), lineWidth: 1)
+            configuration.label
+                .opacity(down ? 0.85 : 1)
         }
         .frame(width: side, height: side)
-        .shadow(color: .black.opacity(down ? 0.10 : 0.26), radius: down ? 1.5 : 3, x: 0, y: down ? 1 : 2)
-        .animation(.spring(response: 0.15, dampingFraction: 0.7), value: down)
+        // even, top-down shadow when raised; none when recessed
+        .shadow(color: .black.opacity(down ? 0 : 0.22), radius: down ? 0 : 5, x: 0, y: 0)
+        .animation(.spring(response: 0.14, dampingFraction: 0.75), value: down)
     }
 }
 

@@ -1,9 +1,15 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The core heart — Now Playing. Full-bleed living gradient, big Univers title
-/// pinned high, a label/credits block, the scrubber, and the jog wheel.
+/// pinned high, a label/credits block, the scrubber, and the transport. Pull up
+/// to reveal the workspace (versions + timestamped notes) without leaving here.
 struct NowPlayingView: View {
     @Bindable var player: Player
+    var workspace: WorkspaceStore
+    @State private var showWorkspace = false
     private var track: Track { player.track }
 
     var body: some View {
@@ -26,12 +32,50 @@ struct NowPlayingView: View {
                 Spacer(minLength: 24)
 
                 lowerCluster
+
+                pullHandle
+                    .padding(.top, 16)
             }
             .padding(.horizontal, 28)
-            .padding(.bottom, 20)
+            .padding(.bottom, 12)
         }
         .foregroundStyle(WL.cream)
         .preferredColorScheme(.dark)
+        .onAppear {
+            // Debug hook: launch with -openWorkspace to land on the sheet.
+            if CommandLine.arguments.contains("-openWorkspace") { showWorkspace = true }
+        }
+        .sheet(isPresented: $showWorkspace) {
+            WorkspaceSheet(player: player, store: workspace)
+                .presentationDetents([.fraction(0.62), .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(WL.black)
+        }
+    }
+
+    private func openWorkspace() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        #endif
+        showWorkspace = true
+    }
+
+    /// The deliberate pull-up affordance — tap or drag up (with intent) to
+    /// raise the workspace layer.
+    private var pullHandle: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(WL.cream.opacity(0.5))
+            MonoLabel("Notes & Versions", color: WL.cream.opacity(0.5), size: 9, tracking: 1.6)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { openWorkspace() }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 12)
+                .onEnded { v in if v.translation.height < -36 { openWorkspace() } }
+        )
     }
 
     // MARK: status bar

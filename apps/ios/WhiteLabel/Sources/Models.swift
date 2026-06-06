@@ -20,6 +20,22 @@ struct Track: Identifiable, Hashable {
     let mesh: [Color]          // 9 colors, row-major 3×3
 }
 
+struct Version: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let loudness: String
+    var approved: Bool = false
+}
+
+struct Note: Identifiable, Hashable {
+    let id: UUID
+    let positionMs: Int?   // nil = general note, otherwise pinned to a timestamp
+    let author: String
+    let body: String
+    var resolved: Bool
+    let versionLabel: String
+}
+
 extension Int {
     /// ms → "m:ss"
     var clock: String {

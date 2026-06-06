@@ -9,6 +9,7 @@ import {
   History,
   Home,
   Inbox,
+  Menu,
   Link2,
   ListMusic,
   LockKeyhole,
@@ -29,6 +30,7 @@ import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Versio
 import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { catalogIdFor, catalogNumber, computeVersionDelta, coverGradient, formatHeardDisplay, formatVersionDelta, hashHue, heardByCount, humanizeVersionType, matchesSmart } from "./utils";
 import { usePlayer } from "./player";
+import { LivingCover, coverHue, hueAt } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import type { Session } from "@supabase/supabase-js";
@@ -75,6 +77,17 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [mode, setMode] = useState<ViewMode>("home");
   const [selectedSongID, setSelectedSongID] = useState("song-midnight");
   const [activeRoomID, setActiveRoomID] = useState("room-hudson-ingram-lp");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [activePlaylistID, setActivePlaylistID] = useState<string | null>(null);
   const [inboxItems, setInboxItems] = useState<Awaited<ReturnType<typeof api.inbox>>>([]);
   const [roomsSummary, setRoomsSummary] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
@@ -232,9 +245,10 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         roomTitle={roomPayload?.room.title ?? "Private Workspace"}
         error={error}
         onSignOut={onSignOut}
+        onOpenSearch={() => setPaletteOpen(true)}
+        mode={mode}
+        setMode={setMode}
         rooms={roomsSummary}
-        activeRoomID={activeRoomID}
-        onPickRoom={openRoom}
       />
       <main className="workspace-grid">
         <Sidebar
@@ -309,86 +323,175 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         </section>
       </main>
       <MiniPlayer />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        rooms={roomsSummary}
+        playlists={playlists}
+        savedViews={savedViews}
+        onOpenSong={openSong}
+        onOpenRoom={openRoom}
+        onOpenPlaylist={openPlaylist}
+        onSetMode={setMode}
+      />
+    </div>
+  );
+}
+
+type CmdItem = { id: string; label: string; sub?: string; kind: string; run: () => void };
+
+function CommandPalette({
+  open,
+  onClose,
+  rooms,
+  playlists,
+  savedViews,
+  onOpenSong,
+  onOpenRoom,
+  onOpenPlaylist,
+  onSetMode,
+}: {
+  open: boolean;
+  onClose: () => void;
+  rooms: Awaited<ReturnType<typeof api.roomsSummary>>;
+  playlists: Awaited<ReturnType<typeof api.playlists>>;
+  savedViews: Awaited<ReturnType<typeof api.savedViews>>;
+  onOpenSong: (id: string) => void;
+  onOpenRoom: (id: string) => void;
+  onOpenPlaylist: (id: string) => void;
+  onSetMode: (m: ViewMode) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setQ("");
+    setSel(0);
+    api.workspaceLibrary().then(setLibrary).catch(() => {});
+    const t = setTimeout(() => inputRef.current?.focus(), 20);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  const nav: CmdItem[] = [
+    { id: "go-home", label: "Home", kind: "Go to", run: () => onSetMode("home") },
+    { id: "go-library", label: "All Songs", kind: "Go to", run: () => onSetMode("library") },
+    { id: "go-inbox", label: "Inbox", kind: "Go to", run: () => onSetMode("inbox") },
+    { id: "go-compare", label: "Compare", kind: "Go to", run: () => onSetMode("compare") },
+    { id: "go-links", label: "Links", kind: "Go to", run: () => onSetMode("links") },
+    { id: "go-ask", label: "Ask", kind: "Go to", run: () => onSetMode("assistant") },
+  ];
+  const roomItems: CmdItem[] = rooms.map((r) => ({ id: `room-${r.room_id}`, label: r.title, sub: `${r.song_count} song${r.song_count === 1 ? "" : "s"}`, kind: "Room", run: () => onOpenRoom(r.room_id) }));
+  const songItems: CmdItem[] = library.map((it) => ({ id: `song-${it.song.song_id}`, label: it.song.title, sub: it.song.artist_display_name, kind: "Song", run: () => onOpenSong(it.song.song_id) }));
+  const plItems: CmdItem[] = playlists.map((p) => ({ id: `pl-${p.playlist_id}`, label: p.title, sub: `${p.item_count} track${p.item_count === 1 ? "" : "s"}`, kind: "Playlist", run: () => onOpenPlaylist(p.playlist_id) }));
+  const svItems: CmdItem[] = savedViews.map((v) => ({ id: `sv-${v.view_id}`, label: v.name, sub: "Smart view", kind: "View", run: () => onSetMode("library") }));
+
+  const ql = q.trim().toLowerCase();
+  const all = [...nav, ...roomItems, ...songItems, ...plItems, ...svItems];
+  const results = ql
+    ? all.filter((it) => it.label.toLowerCase().includes(ql) || (it.sub ?? "").toLowerCase().includes(ql) || it.kind.toLowerCase().includes(ql)).slice(0, 40)
+    : all.slice(0, 24);
+
+  if (!open) return null;
+
+  const choose = (it?: CmdItem) => { if (it) it.run(); onClose(); };
+
+  return (
+    <div className="cmdk-overlay" onClick={onClose}>
+      <div className="cmdk" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
+        <div className="cmdk-input">
+          <Search size={16} />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setSel(0); }}
+            placeholder="Search rooms, songs, playlists…"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") onClose();
+              else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+              else if (e.key === "Enter") { e.preventDefault(); choose(results[sel]); }
+            }}
+          />
+          <kbd>esc</kbd>
+        </div>
+        <div className="cmdk-results">
+          {results.length === 0 && <div className="cmdk-empty">No matches</div>}
+          {results.map((it, i) => (
+            <button key={it.id} className={`cmdk-item ${i === sel ? "on" : ""}`} onMouseEnter={() => setSel(i)} onClick={() => choose(it)}>
+              <span className="cmdk-kind">{it.kind}</span>
+              <span className="cmdk-label">{it.label}</span>
+              {it.sub && <span className="cmdk-sub">{it.sub}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 function TopBar({
-  roomTitle,
   error,
   onSignOut,
+  onOpenSearch,
+  mode,
+  setMode,
   rooms = [],
-  activeRoomID,
-  onPickRoom,
 }: {
   roomTitle: string;
   error: string | null;
   onSignOut?: () => void;
+  onOpenSearch?: () => void;
+  mode?: ViewMode;
+  setMode?: (m: ViewMode) => void;
   rooms?: Awaited<ReturnType<typeof api.roomsSummary>>;
-  activeRoomID?: string;
-  onPickRoom?: (id: string) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const activeRoom = rooms.find((r) => r.room_id === activeRoomID);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const nav: Array<[ViewMode, string, typeof Home]> = [
+    ["home", "Home", Home],
+    ["library", "All Songs", ListMusic],
+    ["inbox", "Inbox", Inbox],
+    ["compare", "Compare", GitCompare],
+    ["links", "Links", Link2],
+    ["assistant", "Ask", MessageSquare],
+  ];
+  const openRooms = rooms.reduce((a, r) => a + (r.open_note_count > 0 ? 1 : 0), 0);
   return (
-    <header className="top-bar">
-      <div className="icon-run">
-        <button className="icon-button active" title="Notifications" aria-label="Notifications, unread">
-          <Bell size={17} />
-          <span className="notify-dot" />
+    <header className="top-bar v3-bar">
+      <div className="tb-left">
+        <button className={`tb-burger ${menuOpen ? "on" : ""}`} onClick={() => setMenuOpen((o) => !o)} aria-label="Menu" aria-expanded={menuOpen}>
+          <Menu size={18} />
         </button>
-        <button className="icon-button" title="Search" aria-label="Search workspace">
-          <Search size={17} />
-        </button>
-        {rooms.length > 0 && onPickRoom && (
-          <div className="room-picker">
-            <button
-              className="room-picker-trigger"
-              onClick={() => setPickerOpen((o) => !o)}
-              aria-expanded={pickerOpen}
-              aria-haspopup="listbox"
-            >
-              <span className="dot" />
-              <span className="label">{activeRoom?.title ?? roomTitle}</span>
-              <span className="chev">▾</span>
-            </button>
-            {pickerOpen && (
-              <ul className="room-picker-menu" role="listbox">
-                {rooms.map((r) => (
-                  <li key={r.room_id}>
-                    <button
-                      type="button"
-                      className={`room-picker-item ${r.room_id === activeRoomID ? "on" : ""}`}
-                      onClick={() => { onPickRoom(r.room_id); setPickerOpen(false); }}
-                      role="option"
-                      aria-selected={r.room_id === activeRoomID}
-                    >
-                      <span className="who">
-                        <span className="title">{r.title}</span>
-                        <span className="meta">{r.type.replace(/_/g, " ")} · {r.song_count} song{r.song_count === 1 ? "" : "s"}</span>
-                      </span>
-                      {r.open_note_count > 0 && (
-                        <span className="cue">{r.open_note_count} open</span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <span className="tb-wm"><span className="tb-chip" aria-hidden="true" />WHITE&nbsp;LABEL<span className="tb-cat">WL-014</span></span>
+        {menuOpen && (
+          <>
+            <div className="tb-menu-scrim" onClick={() => setMenuOpen(false)} />
+            <nav className="tb-menu">
+              {nav.map(([id, label, Icon]) => (
+                <button key={id} className={`tb-menu-item ${mode === id ? "on" : ""}`} onClick={() => { setMode?.(id); setMenuOpen(false); }}>
+                  <Icon size={15} /><span>{label}</span>
+                </button>
+              ))}
+              <div className="tb-menu-rule" />
+              <button className="tb-menu-item dim" onClick={() => { setMenuOpen(false); onOpenSearch?.(); }}>
+                <Search size={15} /><span>Search</span><kbd>⌘K</kbd>
+              </button>
+            </nav>
+          </>
         )}
       </div>
-      <Wordmark size="sm" title={roomTitle} />
-      <div className="top-right">
+      <button className="tb-search" onClick={onOpenSearch} aria-label="Search rooms, songs, links">
+        <Search size={15} />
+        <span>Search rooms, songs, links</span>
+        <kbd>⌘K</kbd>
+      </button>
+      <div className="tb-right">
         {error && <span className="error-pill">{error}</span>}
-        <button className="avatar-button" title="Account" aria-label="Theo Battaglia — account">
-          TB
-        </button>
-        {onSignOut && (
-          <button className="signout-chip" title="Sign out" onClick={onSignOut}>
-            Sign out
-          </button>
-        )}
+        <span className="tb-status">{String(rooms.length).padStart(2, "0")} Rooms{openRooms > 0 && <> · <span className="tb-on">{openRooms} in review</span></>}</span>
+        <button className="avatar-button" title="Account" aria-label="Theo Battaglia — account">TB</button>
+        {onSignOut && (<button className="signout-chip" title="Sign out" onClick={onSignOut}>Sign out</button>)}
       </div>
     </header>
   );
@@ -591,6 +694,8 @@ function HomeView({
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   const [rooms, setRooms] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
   const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
+  const [playlists, setPlaylists] = useState<Awaited<ReturnType<typeof api.playlists>>>([]);
+  const [savedViews, setSavedViews] = useState<Awaited<ReturnType<typeof api.savedViews>>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -599,11 +704,15 @@ function HomeView({
       api.recent("wsp-amf-private", 20).catch((): RecentItem[] => []),
       api.roomsSummary().catch(() => [] as Awaited<ReturnType<typeof api.roomsSummary>>),
       api.workspaceLibrary().catch(() => [] as Awaited<ReturnType<typeof api.workspaceLibrary>>),
-    ]).then(([p, r, rm, lib]) => {
+      api.playlists().catch(() => [] as Awaited<ReturnType<typeof api.playlists>>),
+      api.savedViews().catch(() => [] as Awaited<ReturnType<typeof api.savedViews>>),
+    ]).then(([p, r, rm, lib, pls, svs]) => {
       setPins(p);
       setRecentItems(r);
       setRooms(rm);
       setLibrary(lib);
+      setPlaylists(pls);
+      setSavedViews(svs);
     }).finally(() => setIsLoading(false));
   }, []);
 
@@ -665,113 +774,107 @@ function HomeView({
   }
 
   return (
-    <div className="ed-home">
-      <div className="ed-masthead">
-        <span className="ed-mast-title">White Label</span>
-        <span className="ed-mast-meta">
-          <span>{greeting}</span>
-          <span>{String(rooms.length).padStart(2, "0")} Rooms</span>
-          {needsAttention.length > 0 && (
-            <span className="on"><span className="ed-dot" aria-hidden="true" />{needsAttention.length} in review</span>
-          )}
-        </span>
-      </div>
-
-      {/* HERO — the loaded mix, a bold statement */}
-      {continueItem ? (
-        <div className="ed-hero">
-          <div className="ed-cover">
-            <div className="ed-cover-img" aria-hidden="true" style={{ backgroundImage: coverGradient(continueItem.song.song_id) }} />
-            <button
-              className="ed-play"
-              aria-label={`Play ${continueItem.song.title}`}
-              onClick={() => {
-                if (continueItem.current_version && continueItem.asset) {
-                  player.play(continueItem.song, continueItem.current_version, continueItem.asset);
-                }
-              }}
-            >
-              {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={20} /> : <Play size={20} />}
-            </button>
-          </div>
-          <div className="ed-hero-body">
-            <span className="ed-eyebrow">{isResume ? "Resume" : "Latest mix"}</span>
-            <h1 className="ed-hero-title">{continueItem.song.title}</h1>
-            <span className="ed-hero-artist">{continueItem.song.artist_display_name}</span>
-            <div className="ed-readouts">
-              {typeof continueItem.song.bpm === "number" && (
-                <div className="ed-readout"><span className="ed-bignum">{continueItem.song.bpm}</span><span className="ed-readout-lab">BPM</span></div>
-              )}
-              {continueItem.song.song_key && (
-                <div className="ed-readout"><span className="ed-readout-val">{continueItem.song.song_key}</span><span className="ed-readout-lab">Key</span></div>
-              )}
-              {continueItem.current_version && (
-                <div className="ed-readout"><span className="ed-readout-val">{continueItem.current_version.version_label}</span><span className="ed-readout-lab">Version</span></div>
-              )}
-              {typeof continueItem.asset?.duration_ms === "number" && (
-                <div className="ed-readout"><span className="ed-readout-val">{formatTimestamp(continueItem.asset.duration_ms)}</span><span className="ed-readout-lab">Length</span></div>
+    <div className="cw-home">
+      {/* FEATURED — the latest mix as a living-cover banner */}
+      {continueItem && (
+        <div className="cw-featured">
+          <LivingCover hue={coverHue(continueItem.song.artist_display_name)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+          <div className="cw-feat-scrim" />
+          <div className="cw-feat-corner"><span className="cw-micro">{isResume ? "Resume" : "Latest mix"} · Generative cover</span></div>
+          <div className="cw-feat-body">
+            <span className="cw-feat-eyebrow">{isResume ? "Resume" : "Latest mix"}{continueItem.current_version ? ` · ${continueItem.current_version.version_label}` : ""}</span>
+            <h1 className="cw-feat-title">{continueItem.song.title}</h1>
+            <div className="cw-feat-meta">
+              {continueItem.song.artist_display_name}
+              {typeof continueItem.song.bpm === "number" && <> · {continueItem.song.bpm} BPM</>}
+              {continueItem.song.song_key && <> · {continueItem.song.song_key}</>}
+              {typeof continueItem.asset?.duration_ms === "number" && <> · {formatTimestamp(continueItem.asset.duration_ms)}</>}
+            </div>
+            <div className="cw-feat-row">
+              <button
+                className="cw-btn play"
+                onClick={() => {
+                  if (continueItem.current_version && continueItem.asset) {
+                    player.play(continueItem.song, continueItem.current_version, continueItem.asset);
+                  }
+                }}
+              >
+                {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={14} /> : <Play size={14} />} Play
+              </button>
+              <button className="cw-btn ghost" onClick={() => onOpenSong(continueItem.song.song_id)}>Open Song</button>
+              {needsAttention.length > 0 && (
+                <span className="cw-flag"><span className="ed-dot" aria-hidden="true" />{needsAttention.length} in review</span>
               )}
             </div>
           </div>
         </div>
-      ) : (
-        <div className="ed-hero">
-          <div className="ed-cover" />
-          <div className="ed-hero-body">
-            <span className="ed-eyebrow">No mix loaded</span>
-            <h1 className="ed-hero-title">Add your first version</h1>
-            <span className="ed-hero-artist">Open a room below and upload a mix.</span>
-          </div>
-        </div>
       )}
 
-      {/* ROOMS — big-name editorial list */}
+      {/* ROOMS — catalog wall of living-cover cards, one per artist world */}
       {rooms.length > 0 && (
-        <section className="ed-sec">
-          <div className="ed-sec-head">
-            <span className="ed-sec-title">Rooms</span>
-            <span className="ed-sec-meta">{String(rooms.length).padStart(2, "0")} active</span>
-          </div>
-          <div>
+        <>
+          <div className="cw-shead"><h2>Rooms</h2><span className="cw-ln" /><span className="cw-ct">{String(rooms.length).padStart(2, "0")} Active</span></div>
+          <div className="cw-grid">
             {rooms.map((r, i) => (
-              <button key={r.room_id} className="ed-row" onClick={() => onOpenRoom(r.room_id)}>
-                <span className="ed-row-idx">{String(i + 1).padStart(2, "0")}</span>
-                <span className="ed-row-name">{r.title}</span>
-                <span className="ed-row-meta">
-                  <span>{r.song_count} {r.song_count === 1 ? "song" : "songs"}</span>
-                  {r.open_note_count > 0 && (<><span className="ed-dot" aria-hidden="true" />{r.open_note_count} open</>)}
-                </span>
+              <button key={r.room_id} className="cw-card" onClick={() => onOpenRoom(r.room_id)}>
+                <div className="cw-cover">
+                  <LivingCover hue={hueAt(i)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+                  <div className="cw-clab"><span className="cw-micro">{String(i + 1).padStart(2, "0")}</span><span className="cw-micro">Generative</span></div>
+                </div>
+                <div className="cw-cbody">
+                  <div className="cw-ctitle">{r.title}</div>
+                  <div className="cw-cmeta">
+                    {r.song_count} {r.song_count === 1 ? "Song" : "Songs"}
+                    {r.open_note_count > 0 && (<> · <span className="cw-unres">{r.open_note_count} Open</span></>)}
+                  </div>
+                </div>
               </button>
             ))}
           </div>
-        </section>
+        </>
       )}
 
-      {/* NEEDS YOUR EAR — giant count + queue */}
-      {needsAttention.length > 0 && (
-        <section className="ed-sec">
-          <div className="ed-sec-head"><span className="ed-sec-title">Needs your ear</span></div>
-          <div className="ed-queue">
-            <div>
-              <div className="ed-queue-num">{String(needsAttention.length).padStart(2, "0")}</div>
-              <div className="ed-queue-lab">In review</div>
-            </div>
-            <div>
-              {needsAttention.map((it, i) => (
-                <button key={it.song.song_id} className="ed-row sm" onClick={() => onOpenSong(it.song.song_id)}>
-                  <span className="ed-row-idx">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="ed-row-name">{it.song.title}</span>
-                  <span className="ed-row-meta">
-                    <span className={`ed-tag${it.song.status === "revision_requested" ? " hot" : ""}`}>
-                      {it.song.status === "revision_requested" ? "Sent back" : "Awaiting"}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
+      {/* COLUMNS — playlists, smart views, and the review queue */}
+      <div className="cw-cols">
+        <div>
+          <div className="cw-shead"><h2>Playlists</h2><span className="cw-ln" /><span className="cw-ct">{String(playlists.length).padStart(2, "0")}</span></div>
+          <div className="cw-clist">
+            {playlists.map((pl) => (
+              <button key={pl.playlist_id} className="cw-row" onClick={() => onOpenPlaylist(pl.playlist_id)}>
+                <span className="cw-rt">{pl.title}</span>
+                <span className="cw-rm">{pl.item_count} {pl.item_count === 1 ? "Track" : "Tracks"}</span>
+                <span className="cw-ar">→</span>
+              </button>
+            ))}
+            {playlists.length === 0 && <div className="cw-empty">No playlists yet</div>}
           </div>
-        </section>
-      )}
+        </div>
+        <div>
+          <div className="cw-shead"><h2>{needsAttention.length > 0 ? "Needs Your Ear" : "Smart Views"}</h2><span className="cw-ln" /><span className="cw-ct">{String(needsAttention.length > 0 ? needsAttention.length : savedViews.length).padStart(2, "0")}</span></div>
+          <div className="cw-clist">
+            {needsAttention.length > 0
+              ? needsAttention.map((it) => (
+                  <button key={it.song.song_id} className="cw-row" onClick={() => onOpenSong(it.song.song_id)}>
+                    <span className="cw-rt">{it.song.title}</span>
+                    <span className="cw-rm">
+                      <span className={it.song.status === "revision_requested" ? "cw-unres" : ""}>
+                        {it.song.status === "revision_requested" ? "Sent back" : "Awaiting"}
+                      </span>
+                    </span>
+                    <span className="cw-ar">→</span>
+                  </button>
+                ))
+              : savedViews.map((sv) => (
+                  <div key={sv.view_id} className="cw-row static">
+                    <span className="cw-rt">{sv.name}</span>
+                    <span className="cw-rm">Saved query</span>
+                    <span className="cw-ar">→</span>
+                  </div>
+                ))}
+            {needsAttention.length === 0 && savedViews.length === 0 && <div className="cw-empty">All clear</div>}
+          </div>
+        </div>
+      </div>
 
       {/* PINNED — only when you've actually pinned something */}
       {totalPinned > 0 && pins && (
@@ -1150,12 +1253,8 @@ function LibraryView({
 function LivingGradient({ seed, className = "" }: { seed: string; className?: string }) {
   const hue = hashHue(seed);
   return (
-    <div className={`living-grad ${className}`} style={{ "--lg-h": hue } as CSSProperties} aria-hidden="true">
-      <span className="lg-blob lg-b1" />
-      <span className="lg-blob lg-b2" />
-      <span className="lg-blob lg-b3" />
-      <span className="lg-blob lg-b4" />
-      <span className="lg-sheen" />
+    <div className={`living-grad ${className}`} style={{ "--lg-h": hue, position: "relative" } as CSSProperties} aria-hidden="true">
+      <LivingCover style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
     </div>
   );
 }
@@ -1240,98 +1339,81 @@ function PlaylistView({
   const firstPlayable = data.items.find((it) => it.song && it.current_version && it.asset);
 
   return (
-    <div className="pl-page">
-      <header className="pl-hero">
-        <div className="pl-cover">
-          <LivingGradient seed={data.playlist.cover_seed || data.playlist.playlist_id} />
-        </div>
-        <div className="pl-hero-info">
-          <span className="pl-eyebrow">Playlist</span>
-          <h1 className="pl-title">{data.playlist.title}</h1>
-          {data.playlist.description && <p className="pl-desc">{data.playlist.description}</p>}
-          <div className="pl-meta">
-            <span>{data.items.length} {data.items.length === 1 ? "song" : "songs"}</span>
-            <span className="pl-dot" aria-hidden="true" />
-            <span>{formatTimestamp(totalDuration)}</span>
-          </div>
-          <div className="pl-actions">
+    <div className="pls-page">
+      <div className="pls-left">
+        <div className="pls-head">
+          <span className="pls-eyebrow">Playlist</span>
+          <h1 className="pls-title">{data.playlist.title}</h1>
+          {data.playlist.description && <p className="pls-desc">{data.playlist.description}</p>}
+          <div className="pls-meta">{data.items.length} {data.items.length === 1 ? "Track" : "Tracks"} · {formatTimestamp(totalDuration)}</div>
+          <div className="pls-actions">
             <button
-              className="pl-play"
+              className="pls-btn play"
               disabled={!firstPlayable}
+              onClick={() => { if (firstPlayable?.song && firstPlayable.current_version && firstPlayable.asset) player.play(firstPlayable.song, firstPlayable.current_version, firstPlayable.asset); }}
+            >
+              <Play size={14} /> Play All
+            </button>
+            <button
+              className="pls-btn ghost"
+              disabled={data.items.length === 0}
               onClick={() => {
-                if (firstPlayable?.song && firstPlayable.current_version && firstPlayable.asset) {
-                  player.play(firstPlayable.song, firstPlayable.current_version, firstPlayable.asset);
-                }
+                const ps = data.items.filter((it) => it.song && it.current_version && it.asset);
+                const r = ps[Math.floor(Math.random() * ps.length)];
+                if (r?.song && r.current_version && r.asset) player.play(r.song, r.current_version, r.asset);
               }}
             >
-              <Play size={18} /> Play
+              Shuffle
             </button>
-            <button className="pl-share" onClick={() => void sharePlaylist()} disabled={sharing || data.items.length === 0}>
-              <Link2 size={15} /> {sharing ? "Creating link…" : shareToken ? "Link created" : "Share"}
+            <button className="pls-btn ghost" onClick={() => void sharePlaylist()} disabled={sharing || data.items.length === 0}>
+              <Link2 size={14} /> {sharing ? "Creating…" : shareToken ? "Link created" : "Share"}
             </button>
           </div>
           {shareUrl && (
-            <div className="pl-share-cue">
+            <div className="pls-share">
               <code>{shareUrl}</code>
               <button className="text-button" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy</button>
             </div>
           )}
         </div>
-      </header>
-
-      <ol className="pl-list">
-        {data.items.length === 0 ? (
-          <li className="pl-empty">Nothing here yet. Add songs from your library.</li>
-        ) : (
-          data.items.map(({ item, song, current_version, asset }, idx) => {
-            const isPlaying = !!(player.song?.song_id && song && player.song.song_id === song.song_id);
-            return (
-              <li
-                key={item.playlist_item_id}
-                draggable
-                className={`pl-row${isPlaying ? " is-playing" : ""}${draggingID === item.playlist_item_id ? " dragging" : ""}`}
-                onDragStart={(e) => { setDraggingID(item.playlist_item_id); e.dataTransfer.effectAllowed = "move"; }}
-                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
-                onDragEnd={() => setDraggingID(null)}
-              >
-                <button
-                  className="pl-row-main"
-                  onClick={() => { if (song && current_version && asset) player.play(song, current_version, asset); }}
-                  aria-label={song ? `Play ${song.title}` : undefined}
-                  disabled={!song}
+        <ol className="pls-list">
+          {data.items.length === 0 ? (
+            <li className="pls-empty">Nothing here yet. Add songs from your library.</li>
+          ) : (
+            data.items.map(({ item, song, current_version, asset }, idx) => {
+              const isPlaying = !!(player.song?.song_id && song && player.song.song_id === song.song_id);
+              return (
+                <li
+                  key={item.playlist_item_id}
+                  draggable
+                  className={`pls-row${isPlaying ? " now" : ""}${draggingID === item.playlist_item_id ? " dragging" : ""}`}
+                  onDragStart={(e) => { setDraggingID(item.playlist_item_id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                  onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
+                  onDragEnd={() => setDraggingID(null)}
                 >
-                  <span className="pl-row-num">
-                    {isPlaying ? (
-                      <span className="pl-eq" aria-hidden="true"><i /><i /><i /></span>
-                    ) : (
-                      <span className="pl-num">{String(idx + 1).padStart(2, "0")}</span>
-                    )}
-                  </span>
-                  <span className="pl-row-cover" style={{ backgroundImage: song ? coverGradient(song.song_id) : undefined }} aria-hidden="true" />
-                  <span className="pl-row-text">
-                    <span className="pl-row-title">{song ? song.title : "Song removed"}</span>
-                    {song && (
-                      <span className="pl-row-artist">
-                        {song.artist_display_name}{current_version && <> · {current_version.version_label}</>}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                <span className="pl-row-dur">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
-                <div className="pl-row-actions">
-                  <button className="pl-icon" title="Open notes & versions" aria-label={song ? `Open ${song.title}` : "Open song"} onClick={() => song && onOpenSong(song.song_id)} disabled={!song}>
-                    <MessageSquare size={15} />
+                  <button className="pls-row-main" onClick={() => { if (song && current_version && asset) player.play(song, current_version, asset); }} aria-label={song ? `Play ${song.title}` : undefined} disabled={!song}>
+                    <span className="pls-idx">{isPlaying ? <span className="pls-eq" aria-hidden="true"><i /><i /><i /></span> : String(idx + 1).padStart(2, "0")}</span>
+                    <span className="pls-rtitle">{song ? song.title : "Song removed"}</span>
+                    <span className="pls-rartist">{song?.artist_display_name}{current_version && <> · {current_version.version_label}</>}</span>
                   </button>
-                  <button className="pl-icon" title="Remove from playlist" onClick={() => void remove(item.playlist_item_id)} disabled={removing === item.playlist_item_id}>
-                    <X size={15} />
-                  </button>
-                </div>
-              </li>
-            );
-          })
-        )}
-      </ol>
+                  <span className="pls-rdur">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
+                  <div className="pls-ractions">
+                    <button className="pls-icon" title="Open notes & versions" onClick={() => song && onOpenSong(song.song_id)} disabled={!song}><MessageSquare size={14} /></button>
+                    <button className="pls-icon" title="Remove from playlist" onClick={() => void remove(item.playlist_item_id)} disabled={removing === item.playlist_item_id}><X size={14} /></button>
+                  </div>
+                </li>
+              );
+            })
+          )}
+        </ol>
+      </div>
+      <div className="pls-right">
+        <LivingCover style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+        <div className="pls-cover-scrim" />
+        <div className="pls-cover-lab tp"><span className="cw-micro">Generative Cover</span></div>
+        <div className="pls-cover-lab bt"><span className="cw-micro">{data.playlist.title}</span></div>
+      </div>
     </div>
   );
 }
@@ -1488,7 +1570,8 @@ function SongWorkspace({
             )}
           </div>
           <div className="song-card-body">
-            <div className="song-card-cover" style={{ backgroundImage: coverGradient(payload.song.song_id) }}>
+            <div className="song-card-cover">
+              <LivingCover style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
               <div className="grain" />
               <span className="cat-strip">{catalogId} · {versionLabel}</span>
               <div className="mono-corner">

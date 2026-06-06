@@ -3,8 +3,9 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Old-school hardware transport: round, greyscale dot-matrix keys that press
-/// in, plus a cobalt quick-note key on the right. The active mode latches down.
+/// Old-school hardware transport: round keys with a flat top and a sharp,
+/// extruded side-wall. They sit raised and drop flush when pressed. Greyscale
+/// dot-matrix media keys plus a cobalt quick-note key on the right.
 struct TransportBar: View {
     var isPlaying: Bool
     var onBack: () -> Void
@@ -13,22 +14,22 @@ struct TransportBar: View {
     var onForward: () -> Void
     var onNote: () -> Void
 
-    private let greyTop = Color(hex: 0xDAD6CC), greyBottom = Color(hex: 0xBCB8AE)
-    private let noteTop = Color(hex: 0x8597EE), noteBottom = Color(hex: 0x556FE3)
+    private let greyFace = Color(hex: 0xD3CFC5), greyWall = Color(hex: 0x8C887D)
+    private let noteFace = Color(hex: 0x6E86EC), noteWall = Color(hex: 0x3A52C4)
     private let darkInk = Color(hex: 0x33302B)
 
     var body: some View {
         HStack(spacing: 13) {
-            key(.back, held: false, top: greyTop, bottom: greyBottom, ink: darkInk, onBack)
-            key(.play, held: isPlaying, top: greyTop, bottom: greyBottom, ink: darkInk, onPlay)
-            key(.pause, held: !isPlaying, top: greyTop, bottom: greyBottom, ink: darkInk, onPause)
-            key(.forward, held: false, top: greyTop, bottom: greyBottom, ink: darkInk, onForward)
-            key(.note, held: false, top: noteTop, bottom: noteBottom, ink: WL.cream, onNote)
+            key(.back, held: false, face: greyFace, wall: greyWall, ink: darkInk, onBack)
+            key(.play, held: isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onPlay)
+            key(.pause, held: !isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onPause)
+            key(.forward, held: false, face: greyFace, wall: greyWall, ink: darkInk, onForward)
+            key(.note, held: false, face: noteFace, wall: noteWall, ink: WL.cream, onNote)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func key(_ glyph: DotGlyphKind, held: Bool, top: Color, bottom: Color, ink: Color, _ action: @escaping () -> Void) -> some View {
+    private func key(_ glyph: DotGlyphKind, held: Bool, face: Color, wall: Color, ink: Color, _ action: @escaping () -> Void) -> some View {
         Button {
             #if canImport(UIKit)
             UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
@@ -37,46 +38,38 @@ struct TransportBar: View {
         } label: {
             DotGlyph(kind: glyph, color: ink)
         }
-        .buttonStyle(RaisedKeyStyle(top: top, bottom: bottom, held: held))
+        .buttonStyle(FlatKeyStyle(face: face, wall: wall, held: held))
     }
 }
 
-// MARK: - Raised key
+// MARK: - Flat extruded key
 
-private struct RaisedKeyStyle: ButtonStyle {
-    var top: Color
-    var bottom: Color
+/// Flat round top + a hard side-wall beneath it. Raised at rest (wall shows as
+/// a crisp crescent under the face); flush when pressed/held.
+private struct FlatKeyStyle: ButtonStyle {
+    var face: Color
+    var wall: Color
     var held: Bool = false
     var side: CGFloat = 54
+    var lift: CGFloat = 4
 
     func makeBody(configuration: Configuration) -> some View {
         let down = held || configuration.isPressed
-        return configuration.label
-            .frame(width: side, height: side)
-            .background {
-                if down {
-                    Circle().fill(
-                        LinearGradient(colors: [bottom, top], startPoint: .top, endPoint: .bottom)
-                            .shadow(.inner(color: .black.opacity(0.50), radius: 5, x: 0, y: 3))
-                            .shadow(.inner(color: .white.opacity(0.20), radius: 2, x: 0, y: -2))
-                    )
-                } else {
-                    Circle()
-                        .fill(
-                            LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
-                                .shadow(.drop(color: .black.opacity(0.38), radius: 7, x: 1, y: 6))
-                        )
-                        .overlay(
-                            Circle().strokeBorder(
-                                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
-                                               startPoint: .top, endPoint: .bottom),
-                                lineWidth: 1
-                            )
-                        )
-                }
+        return ZStack {
+            // side-wall: a darker disc that peeks below the face
+            Circle().fill(wall)
+                .offset(y: down ? 1.5 : lift)
+            // flat top face with a crisp dark rim
+            ZStack {
+                Circle().fill(face)
+                Circle().strokeBorder(.black.opacity(0.30), lineWidth: 1)
+                configuration.label
             }
-            .scaleEffect(down ? 0.95 : 1)
-            .animation(.spring(response: 0.16, dampingFraction: 0.6), value: down)
+            .offset(y: down ? 1.5 : 0)
+        }
+        .frame(width: side, height: side)
+        .shadow(color: .black.opacity(down ? 0.10 : 0.26), radius: down ? 1.5 : 3, x: 0, y: down ? 1 : 2)
+        .animation(.spring(response: 0.15, dampingFraction: 0.7), value: down)
     }
 }
 

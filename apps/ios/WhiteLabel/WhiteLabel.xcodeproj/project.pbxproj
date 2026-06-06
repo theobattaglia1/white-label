@@ -7,10 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0EB46A57F1B4113619B7C5E4 /* PlayerScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A610829D244BB63FE7494E2 /* PlayerScreen.swift */; };
 		12BEA1B4E4EC4FFB61A0510D /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92BCA1990D5642962D951B1 /* Models.swift */; };
 		1F89DD5184A6EAA6D06E521D /* UniversTE20-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B3DD384FE83D54AD391B0B1B /* UniversTE20-Light.ttf */; };
 		3F8B1E2876B47C88BD22FF89 /* WhiteLabelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CDE6A08C5B92AB31DB267FF /* WhiteLabelApp.swift */; };
 		46038C26BFDAC7D72CB81416 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E322045B859027932230395 /* NowPlayingView.swift */; };
+		51BC09AB16A728F3ADD23F3B /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47048DF173D44E761AC0C544 /* WorkspaceStore.swift */; };
 		5C0E1A6F681F1A36ECCDC1B3 /* Ndot-55.otf in Resources */ = {isa = PBXBuildFile; fileRef = 8C06D89D4B5FFE25D9EE3F5B /* Ndot-55.otf */; };
 		5FAFFCEDD17E77C6CCB235AB /* UniversTE40-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 921D0E8014BB1066CEB0F597 /* UniversTE40-Light.ttf */; };
 		74A13A62CC1EDC6D0DFFA07F /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 045CB95567D33462F1AAF0E4 /* Player.swift */; };
@@ -19,13 +21,18 @@
 		B5A58C8581F17AA8B4C1DFF8 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01500CDFC93A3161D5E4FBB /* SampleData.swift */; };
 		C1AD78078B6B1A1DC6971D98 /* LetteraMonoLL-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = E16501FCB596C6CF35F31290 /* LetteraMonoLL-Regular.otf */; };
 		EC011A3B89230F57F8CCCF12 /* JogWheel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29691F3FFBE4AD75FBC3BDD8 /* JogWheel.swift */; };
+		EE31464951371B3D6FC2ACDA /* Transport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C37B5181AD25C78655DD2C6 /* Transport.swift */; };
 		F2DA75EBE78C5378A44A9CD4 /* UniversTE20-Thin.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5461FEFD513999F2496AEDB8 /* UniversTE20-Thin.ttf */; };
+		F460F9D91799A04EBCC4A343 /* WorkspaceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9D2EE37732DA77D8A30717 /* WorkspaceSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		045CB95567D33462F1AAF0E4 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
 		1E322045B859027932230395 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
 		29691F3FFBE4AD75FBC3BDD8 /* JogWheel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JogWheel.swift; sourceTree = "<group>"; };
+		2C37B5181AD25C78655DD2C6 /* Transport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transport.swift; sourceTree = "<group>"; };
+		47048DF173D44E761AC0C544 /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
+		4A610829D244BB63FE7494E2 /* PlayerScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerScreen.swift; sourceTree = "<group>"; };
 		51FE31DB81B003237C3D5F09 /* WhiteLabel.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WhiteLabel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5461FEFD513999F2496AEDB8 /* UniversTE20-Thin.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Thin.ttf"; sourceTree = "<group>"; };
 		6B9B88AB33FC4050258ABC11 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -34,6 +41,7 @@
 		921D0E8014BB1066CEB0F597 /* UniversTE40-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE40-Light.ttf"; sourceTree = "<group>"; };
 		9CDE6A08C5B92AB31DB267FF /* WhiteLabelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhiteLabelApp.swift; sourceTree = "<group>"; };
 		A92BCA1990D5642962D951B1 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AC9D2EE37732DA77D8A30717 /* WorkspaceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSheet.swift; sourceTree = "<group>"; };
 		B3DD384FE83D54AD391B0B1B /* UniversTE20-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Light.ttf"; sourceTree = "<group>"; };
 		C01500CDFC93A3161D5E4FBB /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		E16501FCB596C6CF35F31290 /* LetteraMonoLL-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LetteraMonoLL-Regular.otf"; sourceTree = "<group>"; };
@@ -48,9 +56,13 @@
 				A92BCA1990D5642962D951B1 /* Models.swift */,
 				1E322045B859027932230395 /* NowPlayingView.swift */,
 				045CB95567D33462F1AAF0E4 /* Player.swift */,
+				4A610829D244BB63FE7494E2 /* PlayerScreen.swift */,
 				C01500CDFC93A3161D5E4FBB /* SampleData.swift */,
 				6B9B88AB33FC4050258ABC11 /* Theme.swift */,
+				2C37B5181AD25C78655DD2C6 /* Transport.swift */,
 				9CDE6A08C5B92AB31DB267FF /* WhiteLabelApp.swift */,
+				AC9D2EE37732DA77D8A30717 /* WorkspaceSheet.swift */,
+				47048DF173D44E761AC0C544 /* WorkspaceStore.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -171,9 +183,13 @@
 				12BEA1B4E4EC4FFB61A0510D /* Models.swift in Sources */,
 				46038C26BFDAC7D72CB81416 /* NowPlayingView.swift in Sources */,
 				74A13A62CC1EDC6D0DFFA07F /* Player.swift in Sources */,
+				0EB46A57F1B4113619B7C5E4 /* PlayerScreen.swift in Sources */,
 				B5A58C8581F17AA8B4C1DFF8 /* SampleData.swift in Sources */,
 				86A84FB742591877F6266150 /* Theme.swift in Sources */,
+				EE31464951371B3D6FC2ACDA /* Transport.swift in Sources */,
 				3F8B1E2876B47C88BD22FF89 /* WhiteLabelApp.swift in Sources */,
+				F460F9D91799A04EBCC4A343 /* WorkspaceSheet.swift in Sources */,
+				51BC09AB16A728F3ADD23F3B /* WorkspaceStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

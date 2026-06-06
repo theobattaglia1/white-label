@@ -7,7 +7,7 @@ struct WhiteLabelApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NowPlayingView(player: player, workspace: workspace)
+            PlayerScreen(player: player, workspace: workspace)
                 .preferredColorScheme(.dark)
                 .statusBarHidden(true)
         }

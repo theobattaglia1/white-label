@@ -1,29 +1,46 @@
 import SwiftUI
 
-/// The workspace layer that slides up over Now Playing: switch versions and
-/// drop notes pinned to the moment you're hearing.
-struct WorkspaceSheet: View {
+/// The workspace page that lives directly beneath Now Playing — scroll up to
+/// reveal it. Switch versions and drop notes pinned to the moment you're
+/// hearing. (No inner scroll: the outer pager owns scrolling.)
+struct WorkspacePage: View {
     var player: Player
     var store: WorkspaceStore
+    var safeTop: CGFloat = 0
+    var safeBottom: CGFloat = 0
+    var onCollapse: () -> Void
     @State private var noteText = ""
     @FocusState private var composing: Bool
 
     private var trackID: String { player.track.id }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                header
-                versionsSection
-                notesSection
-            }
-            .padding(.horizontal, 22)
-            .padding(.top, 22)
-            .padding(.bottom, 48)
+        VStack(alignment: .leading, spacing: 24) {
+            grabber
+            header
+            versionsSection
+            notesSection
+            Spacer(minLength: 0)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .padding(.horizontal, 22)
+        .padding(.top, safeTop + 12)
+        .padding(.bottom, safeBottom + 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(WL.black)
+        .clipped()
         .foregroundStyle(WL.cream)
+    }
+
+    private var grabber: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(WL.cream.opacity(0.45))
+            Capsule().fill(WL.cream.opacity(0.18)).frame(width: 38, height: 4)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { onCollapse() }
     }
 
     // MARK: header
@@ -57,17 +74,14 @@ struct WorkspaceSheet: View {
                                 Text(v.loudness).font(WL.mono(9)).foregroundStyle(isCurrent ? WL.cream.opacity(0.7) : WL.pencil)
                             }
                             .padding(.horizontal, 13).padding(.vertical, 9)
-                            .background(
-                                Capsule().fill(isCurrent ? WL.cobalt.opacity(0.18) : .clear)
-                            )
-                            .overlay(
-                                Capsule().strokeBorder(isCurrent ? WL.cobalt : WL.cream.opacity(0.16), lineWidth: 1)
-                            )
+                            .background(Capsule().fill(isCurrent ? WL.cobalt.opacity(0.18) : .clear))
+                            .overlay(Capsule().strokeBorder(isCurrent ? WL.cobalt : WL.cream.opacity(0.16), lineWidth: 1))
                             .foregroundStyle(isCurrent ? WL.cream : WL.pencil)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, 1)
             }
         }
     }
@@ -81,9 +95,7 @@ struct WorkspaceSheet: View {
                 Spacer()
                 MonoLabel("\(store.openCount(trackID)) open", color: WL.redline, size: 9, tracking: 1.4)
             }
-
             composer
-
             ForEach(store.notes(trackID)) { note in
                 noteRow(note)
             }
@@ -94,7 +106,6 @@ struct WorkspaceSheet: View {
         HStack(alignment: .center, spacing: 10) {
             Text("+ \(player.positionMs.clock)")
                 .font(WL.mono(11)).foregroundStyle(WL.cobalt)
-                .padding(.top, 2)
             TextField("Leave a note at this moment…", text: $noteText, axis: .vertical)
                 .font(WL.text(14))
                 .foregroundStyle(WL.cream)

@@ -8,26 +8,26 @@ import UIKit
 /// to reveal the workspace (versions + timestamped notes) without leaving here.
 struct NowPlayingView: View {
     @Bindable var player: Player
-    var workspace: WorkspaceStore
-    @State private var showWorkspace = false
+    var safeTop: CGFloat = 0
+    var safeBottom: CGFloat = 0
+    var onPull: () -> Void = {}
     private var track: Track { player.track }
 
     var body: some View {
         ZStack {
-            WL.black.ignoresSafeArea()
+            WL.black
 
             MeshCover(colors: track.mesh)
                 .overlay(legibilityScrim)
-                .ignoresSafeArea()
                 // re-render the gradient when the track changes
                 .id(track.id)
 
             VStack(alignment: .leading, spacing: 0) {
                 statusRow
-                    .padding(.top, 6)
+                    .padding(.top, safeTop + 6)
 
                 titleBlock
-                    .padding(.top, 48)
+                    .padding(.top, 44)
 
                 Spacer(minLength: 24)
 
@@ -37,31 +37,15 @@ struct NowPlayingView: View {
                     .padding(.top, 16)
             }
             .padding(.horizontal, 28)
-            .padding(.bottom, 12)
+            .padding(.bottom, safeBottom + 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .foregroundStyle(WL.cream)
         .preferredColorScheme(.dark)
-        .onAppear {
-            // Debug hook: launch with -openWorkspace to land on the sheet.
-            if CommandLine.arguments.contains("-openWorkspace") { showWorkspace = true }
-        }
-        .sheet(isPresented: $showWorkspace) {
-            WorkspaceSheet(player: player, store: workspace)
-                .presentationDetents([.fraction(0.62), .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(WL.black)
-        }
     }
 
-    private func openWorkspace() {
-        #if canImport(UIKit)
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        #endif
-        showWorkspace = true
-    }
-
-    /// The deliberate pull-up affordance — tap or drag up (with intent) to
-    /// raise the workspace layer.
+    /// Pull-up hint — the pager handles the actual swipe; a tap jumps up too.
     private var pullHandle: some View {
         VStack(spacing: 6) {
             Image(systemName: "chevron.up")
@@ -71,11 +55,7 @@ struct NowPlayingView: View {
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .onTapGesture { openWorkspace() }
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 12)
-                .onEnded { v in if v.translation.height < -36 { openWorkspace() } }
-        )
+        .onTapGesture { onPull() }
     }
 
     // MARK: status bar
@@ -186,6 +166,5 @@ struct NowPlayingView: View {
             colors: [.black.opacity(0.28), .clear, .clear, .black.opacity(0.42)],
             startPoint: .top, endPoint: .bottom
         )
-        .ignoresSafeArea()
     }
 }

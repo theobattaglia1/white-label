@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Bell,
   Bookmark,
@@ -1141,6 +1141,25 @@ function LibraryView({
   );
 }
 
+/**
+ * Living gradient — the default cover when there's no artwork. Four blobs morph
+ * continuously (form in motion, noticeable) while the whole field hue-rotates
+ * slowly (colour drifts). Seeded off an id so each playlist/song gets its own
+ * melange. Respects prefers-reduced-motion.
+ */
+function LivingGradient({ seed, className = "" }: { seed: string; className?: string }) {
+  const hue = hashHue(seed);
+  return (
+    <div className={`living-grad ${className}`} style={{ "--lg-h": hue } as CSSProperties} aria-hidden="true">
+      <span className="lg-blob lg-b1" />
+      <span className="lg-blob lg-b2" />
+      <span className="lg-blob lg-b3" />
+      <span className="lg-blob lg-b4" />
+      <span className="lg-sheen" />
+    </div>
+  );
+}
+
 function PlaylistView({
   playlistID,
   onOpenSong,
@@ -1216,109 +1235,101 @@ function PlaylistView({
   }
 
   const totalDuration = data.items.reduce((sum, it) => sum + (it.asset?.duration_ms ?? 0), 0);
-  const cover = coverGradient(data.playlist.cover_seed);
-
   const shareUrl = shareToken ? `${window.location.origin}/shared/${shareToken}` : null;
 
+  const firstPlayable = data.items.find((it) => it.song && it.current_version && it.asset);
+
   return (
-    <div className="view-stack">
-      <div className="playlist-hero">
-        <div className="playlist-cover" style={{ backgroundImage: cover }} aria-hidden="true" />
-        <div className="playlist-info">
-          <p className="eyebrow">PLAYLIST</p>
-          <h1>{data.playlist.title}</h1>
-          {data.playlist.description && <p className="playlist-desc">{data.playlist.description}</p>}
-          <div className="playlist-meta">
+    <div className="pl-page">
+      <header className="pl-hero">
+        <div className="pl-cover">
+          <LivingGradient seed={data.playlist.cover_seed || data.playlist.playlist_id} />
+        </div>
+        <div className="pl-hero-info">
+          <span className="pl-eyebrow">Playlist</span>
+          <h1 className="pl-title">{data.playlist.title}</h1>
+          {data.playlist.description && <p className="pl-desc">{data.playlist.description}</p>}
+          <div className="pl-meta">
             <span>{data.items.length} {data.items.length === 1 ? "song" : "songs"}</span>
+            <span className="pl-dot" aria-hidden="true" />
             <span>{formatTimestamp(totalDuration)}</span>
           </div>
-          <div className="playlist-actions">
+          <div className="pl-actions">
             <button
-              className="accent-button"
-              onClick={() => void sharePlaylist()}
-              disabled={sharing || data.items.length === 0}
-            >
-              <Link2 size={15} />
-              {sharing ? "Minting link…" : shareToken ? "Share again" : "Share as one link"}
-            </button>
-            {shareUrl && (
-              <div className="playlist-share-cue">
-                <code>{shareUrl}</code>
-                <button
-                  className="text-button"
-                  onClick={() => void navigator.clipboard.writeText(shareUrl)}
-                >
-                  Copy
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      <ol className="playlist-list">
-        {data.items.length === 0 ? (
-          <li className="playlist-empty">Nothing here yet. Add songs from Library.</li>
-        ) : (
-          data.items.map(({ item, song, current_version, asset }) => (
-            <li
-              key={item.playlist_item_id}
-              draggable
-              className={draggingID === item.playlist_item_id ? "dragging" : ""}
-              onDragStart={(e) => {
-                setDraggingID(item.playlist_item_id);
-                e.dataTransfer.effectAllowed = "move";
+              className="pl-play"
+              disabled={!firstPlayable}
+              onClick={() => {
+                if (firstPlayable?.song && firstPlayable.current_version && firstPlayable.asset) {
+                  player.play(firstPlayable.song, firstPlayable.current_version, firstPlayable.asset);
+                }
               }}
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-              onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
-              onDragEnd={() => setDraggingID(null)}
             >
-              <span className="playlist-handle" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
-              <span className="playlist-index">{String(item.position).padStart(2, "0")}</span>
-              <button
-                className={`playlist-song${player.song?.song_id && song && player.song.song_id === song.song_id ? " is-playing" : ""}`}
-                onClick={() => {
-                  // Play in place — stay in the playlist, queue continues.
-                  // (Was navigating to the standalone song page, ejecting you
-                  // from the playlist — the bug.)
-                  if (song && current_version && asset) player.play(song, current_version, asset);
-                }}
-                aria-label={song ? `Play ${song.title}` : undefined}
+              <Play size={18} /> Play
+            </button>
+            <button className="pl-share" onClick={() => void sharePlaylist()} disabled={sharing || data.items.length === 0}>
+              <Link2 size={15} /> {sharing ? "Creating link…" : shareToken ? "Link created" : "Share"}
+            </button>
+          </div>
+          {shareUrl && (
+            <div className="pl-share-cue">
+              <code>{shareUrl}</code>
+              <button className="text-button" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy</button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      <ol className="pl-list">
+        {data.items.length === 0 ? (
+          <li className="pl-empty">Nothing here yet. Add songs from your library.</li>
+        ) : (
+          data.items.map(({ item, song, current_version, asset }, idx) => {
+            const isPlaying = !!(player.song?.song_id && song && player.song.song_id === song.song_id);
+            return (
+              <li
+                key={item.playlist_item_id}
+                draggable
+                className={`pl-row${isPlaying ? " is-playing" : ""}${draggingID === item.playlist_item_id ? " dragging" : ""}`}
+                onDragStart={(e) => { setDraggingID(item.playlist_item_id); e.dataTransfer.effectAllowed = "move"; }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                onDrop={(e) => { e.preventDefault(); void reorderTo(item.playlist_item_id); }}
+                onDragEnd={() => setDraggingID(null)}
               >
-                {song ? (
-                  <>
-                    <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(song.song_id) }} />
-                    <div className="who">
-                      <span className="title">{song.title}</span>
-                      <span className="meta">
-                        {song.artist_display_name}
-                        {current_version && <> · {current_version.version_label}</>}
+                <button
+                  className="pl-row-main"
+                  onClick={() => { if (song && current_version && asset) player.play(song, current_version, asset); }}
+                  aria-label={song ? `Play ${song.title}` : undefined}
+                  disabled={!song}
+                >
+                  <span className="pl-row-num">
+                    {isPlaying ? (
+                      <span className="pl-eq" aria-hidden="true"><i /><i /><i /></span>
+                    ) : (
+                      <span className="pl-num">{String(idx + 1).padStart(2, "0")}</span>
+                    )}
+                  </span>
+                  <span className="pl-row-cover" style={{ backgroundImage: song ? coverGradient(song.song_id) : undefined }} aria-hidden="true" />
+                  <span className="pl-row-text">
+                    <span className="pl-row-title">{song ? song.title : "Song removed"}</span>
+                    {song && (
+                      <span className="pl-row-artist">
+                        {song.artist_display_name}{current_version && <> · {current_version.version_label}</>}
                       </span>
-                    </div>
-                  </>
-                ) : (
-                  <span className="muted">Song removed</span>
-                )}
-              </button>
-              <span className="playlist-duration">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
-              <button
-                className="icon-button"
-                title="Open notes & versions"
-                aria-label={song ? `Open ${song.title}` : "Open song"}
-                onClick={() => song && onOpenSong(song.song_id)}
-                disabled={!song}
-              >
-                <MessageSquare size={14} />
-              </button>
-              <button
-                className="icon-button"
-                title="Remove from playlist"
-                onClick={() => void remove(item.playlist_item_id)}
-                disabled={removing === item.playlist_item_id}
-              >
-                <X size={14} />
-              </button>
-            </li>
-          ))
+                    )}
+                  </span>
+                </button>
+                <span className="pl-row-dur">{formatTimestamp(asset?.duration_ms ?? 0)}</span>
+                <div className="pl-row-actions">
+                  <button className="pl-icon" title="Open notes & versions" aria-label={song ? `Open ${song.title}` : "Open song"} onClick={() => song && onOpenSong(song.song_id)} disabled={!song}>
+                    <MessageSquare size={15} />
+                  </button>
+                  <button className="pl-icon" title="Remove from playlist" onClick={() => void remove(item.playlist_item_id)} disabled={removing === item.playlist_item_id}>
+                    <X size={15} />
+                  </button>
+                </div>
+              </li>
+            );
+          })
         )}
       </ol>
     </div>

@@ -6,9 +6,10 @@ import SwiftUI
 struct MeshCover: View {
     let colors: [Color]
     var animate: Bool = true
+    @AppStorage("wl.reduceMotion") private var reduceMotion = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animate)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animate || reduceMotion)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             MeshGradient(
                 width: 3,

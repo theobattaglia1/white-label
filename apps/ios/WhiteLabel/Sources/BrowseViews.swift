@@ -97,6 +97,15 @@ struct LibraryView: View {
 
                 if query.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
+                        MonoLabel("Playlists", color: WL.pencil, size: 10, tracking: 2)
+                        VStack(spacing: 0) {
+                            ForEach(SampleData.playlists) { pl in
+                                NavigationLink(value: pl) { playlistRow(pl) }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
                         MonoLabel("Projects", color: WL.pencil, size: 10, tracking: 2)
                         VStack(spacing: 0) {
                             ForEach(SampleData.rooms) { rm in
@@ -120,6 +129,22 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(rm.title).font(WL.display(17)).foregroundStyle(WL.cream)
                 MonoLabel("\(rm.artist) · \(rm.trackIDs.count) songs", color: WL.pencil, size: 9, tracking: 1.2)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(WL.pencil)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
+        .contentShape(Rectangle())
+    }
+
+    private func playlistRow(_ pl: Playlist) -> some View {
+        let cover = pl.trackIDs.compactMap { SampleData.track($0) }.first
+        return HStack(spacing: 13) {
+            if let cover { trackSwatch(cover, 44) }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pl.title).font(WL.display(17)).foregroundStyle(WL.cream)
+                MonoLabel("\(pl.trackIDs.count) tracks", color: WL.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(WL.pencil)
@@ -187,6 +212,9 @@ struct InboxView: View {
 
 // MARK: - Playlist detail
 
+/// Playlist — mirrors the Now Playing world: full-bleed living gradient with the
+/// playlist name where the song title sits (a lighter, distinct cut), and the
+/// running order elegantly beneath.
 struct PlaylistDetailView: View {
     var playlist: Playlist
     var player: Player
@@ -194,59 +222,90 @@ struct PlaylistDetailView: View {
     var openSong: (String) -> Void
 
     private var tracks: [Track] { playlist.trackIDs.compactMap { SampleData.track($0) } }
-    private var cover: Track? { tracks.first }
+    private var cover: Track { tracks.first ?? SampleData.tracks[0] }
+    private var totalMs: Int { tracks.reduce(0) { $0 + $1.durationMs } }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                if let cover {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LinearGradient(colors: [cover.mesh[0], cover.mesh[4], cover.mesh[8]],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(height: 170)
+        ZStack {
+            WL.black
+            MeshCover(colors: cover.mesh)
+                .overlay(scrim)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack { BackButton(); Spacer() }
+                        .padding(.top, 4)
+
+                    titleBlock
+                        .padding(.top, 40)
+
+                    songs
+                        .padding(.top, 30)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    MonoLabel("Playlist", color: WL.pencil, size: 10, tracking: 2)
-                    Text(playlist.title).font(WL.display(30)).foregroundStyle(WL.cream)
-                    Text(playlist.subtitle).font(WL.text(14)).foregroundStyle(WL.pencil)
-                    Button { if let f = tracks.first { openSong(f.id) } } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "play.fill").font(.system(size: 12))
-                            MonoLabel("Play all · \(tracks.count)", color: WL.black, size: 11, tracking: 1.4)
-                        }
-                        .foregroundStyle(WL.black)
-                        .padding(.horizontal, 18).padding(.vertical, 11)
-                        .background(Capsule().fill(WL.cream))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
-                }
-                VStack(spacing: 0) {
-                    ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in
-                        Button { openSong(t.id) } label: {
-                            HStack(spacing: 13) {
-                                MonoLabel(String(format: "%02d", i + 1), color: WL.cobalt, size: 11, tracking: 1)
-                                    .frame(width: 22, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(store.displayTitle(t.id, t.title)).font(WL.display(16)).foregroundStyle(WL.cream)
-                                    MonoLabel("\(t.artist) · \(t.versionLabel)", color: WL.pencil, size: 9, tracking: 1.2)
-                                }
-                                Spacer()
-                                Text(t.durationMs.clock).font(WL.mono(11)).foregroundStyle(WL.pencil)
-                            }
-                            .padding(.vertical, 11)
-                            .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
-                            .contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                    }
-                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 150)
             }
-            .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 150)
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
-        .background(WL.black.ignoresSafeArea())
+        .foregroundStyle(WL.cream)
         .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .topLeading) { BackButton().padding(.leading, 16).padding(.top, 6) }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MonoLabel("Playlist", color: WL.cobalt, size: 11, tracking: 2.5)
+            Text(playlist.title)
+                .font(WL.thin(46))                       // thin cut — distinct from a song title
+                .foregroundStyle(WL.cream)
+                .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
+            MonoLabel("\(tracks.count) tracks · \(totalMs.clock)", color: WL.cream.opacity(0.7), size: 10, tracking: 1.6)
+            Button { if let f = tracks.first { openSong(f.id) } } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill").font(.system(size: 11))
+                    MonoLabel("Play all", color: WL.black, size: 11, tracking: 1.5)
+                }
+                .foregroundStyle(WL.black)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Capsule().fill(WL.cream))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
+        }
+    }
+
+    private var songs: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in
+                Button { openSong(t.id) } label: {
+                    HStack(spacing: 14) {
+                        MonoLabel(String(format: "%02d", i + 1), color: WL.cobalt, size: 11, tracking: 1)
+                            .frame(width: 22, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(store.displayTitle(t.id, t.title)).font(WL.display(18)).foregroundStyle(WL.cream)
+                            MonoLabel("\(t.artist) · \(t.versionLabel)", color: WL.cream.opacity(0.55), size: 9, tracking: 1.2)
+                        }
+                        Spacer()
+                        Text(t.durationMs.clock).font(WL.mono(11)).foregroundStyle(WL.cream.opacity(0.5))
+                    }
+                    .padding(.vertical, 13)
+                    .overlay(alignment: .bottom) { Rectangle().fill(WL.cream.opacity(0.08)).frame(height: 1) }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var scrim: some View {
+        LinearGradient(stops: [
+            .init(color: .black.opacity(0.30), location: 0),
+            .init(color: .black.opacity(0.04), location: 0.14),
+            .init(color: .black.opacity(0.45), location: 0.40),
+            .init(color: .black.opacity(0.88), location: 0.66),
+            .init(color: WL.black, location: 1.0),
+        ], startPoint: .top, endPoint: .bottom)
+        .ignoresSafeArea()
     }
 }
 

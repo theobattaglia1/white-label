@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AppTab: String, CaseIterable { case home, library, inbox }
+enum AppTab: String, CaseIterable { case home, library, inbox, profile }
 
 /// App shell: a bottom nav (Home / Library / Inbox), a persistent mini-player,
 /// and the full player presented over everything.
@@ -9,6 +9,7 @@ struct AppShell: View {
     @State private var workspace = WorkspaceStore()
     @State private var tab: AppTab = .home
     @State private var showPlayer = false
+    @State private var libPath = NavigationPath()
 
     private func openSong(_ id: String) {
         player.open(id)
@@ -27,7 +28,7 @@ struct AppShell: View {
                             .navDestinations(player: player, store: workspace, openSong: openSong)
                     }
                 case .library:
-                    NavigationStack {
+                    NavigationStack(path: $libPath) {
                         LibraryView(player: player, store: workspace, openSong: openSong)
                             .navDestinations(player: player, store: workspace, openSong: openSong)
                     }
@@ -36,6 +37,8 @@ struct AppShell: View {
                         InboxView(player: player, store: workspace, openSong: openSong)
                             .navDestinations(player: player, store: workspace, openSong: openSong)
                     }
+                case .profile:
+                    NavigationStack { ProfileView() }
                 }
             }
             .tint(WL.cobalt)
@@ -63,6 +66,7 @@ struct AppShell: View {
         .onAppear {
             if CommandLine.arguments.contains("-openPlayer") { openSong("first-night") }
             if CommandLine.arguments.contains("-mini") { player.open("duel") }
+            if CommandLine.arguments.contains("-playlist") { tab = .library; libPath.append(SampleData.playlists[0]) }
             if let i = CommandLine.arguments.firstIndex(of: "-tab"),
                i + 1 < CommandLine.arguments.count,
                let t = AppTab(rawValue: CommandLine.arguments[i + 1]) { tab = t }
@@ -139,6 +143,7 @@ struct TabBar: View {
             item(.home, "house.fill", "Home")
             item(.library, "square.stack.3d.up.fill", "Library")
             item(.inbox, "tray.fill", "Inbox", badge: inboxNew)
+            item(.profile, "person.fill", "Profile")
         }
         .padding(.top, 11)
         .padding(.bottom, 6)

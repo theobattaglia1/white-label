@@ -17,6 +17,7 @@
 		46038C26BFDAC7D72CB81416 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E322045B859027932230395 /* NowPlayingView.swift */; };
 		51BC09AB16A728F3ADD23F3B /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47048DF173D44E761AC0C544 /* WorkspaceStore.swift */; };
 		56EC17E45CD004461C3A1229 /* Waveform.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2011914666E011B36F6F12D /* Waveform.swift */; };
+		5BA00C097237FDA31C1A4179 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8772B4828944758FB3138FCF /* ProfileView.swift */; };
 		5C0E1A6F681F1A36ECCDC1B3 /* Ndot-55.otf in Resources */ = {isa = PBXBuildFile; fileRef = 8C06D89D4B5FFE25D9EE3F5B /* Ndot-55.otf */; };
 		5FAFFCEDD17E77C6CCB235AB /* UniversTE40-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 921D0E8014BB1066CEB0F597 /* UniversTE40-Light.ttf */; };
 		74A13A62CC1EDC6D0DFFA07F /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 045CB95567D33462F1AAF0E4 /* Player.swift */; };
@@ -43,6 +44,7 @@
 		51FE31DB81B003237C3D5F09 /* WhiteLabel.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WhiteLabel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5461FEFD513999F2496AEDB8 /* UniversTE20-Thin.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Thin.ttf"; sourceTree = "<group>"; };
 		6B9B88AB33FC4050258ABC11 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		8772B4828944758FB3138FCF /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		89816DC66E4E1EAF6250904B /* MeshCover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshCover.swift; sourceTree = "<group>"; };
 		8C06D89D4B5FFE25D9EE3F5B /* Ndot-55.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Ndot-55.otf"; sourceTree = "<group>"; };
 		921D0E8014BB1066CEB0F597 /* UniversTE40-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE40-Light.ttf"; sourceTree = "<group>"; };
@@ -70,6 +72,7 @@
 				045CB95567D33462F1AAF0E4 /* Player.swift */,
 				D46EE875B4E7CA549425246E /* PlayerMenu.swift */,
 				4A610829D244BB63FE7494E2 /* PlayerScreen.swift */,
+				8772B4828944758FB3138FCF /* ProfileView.swift */,
 				41CB69627FB54B90C6D335C5 /* RootView.swift */,
 				C01500CDFC93A3161D5E4FBB /* SampleData.swift */,
 				6B9B88AB33FC4050258ABC11 /* Theme.swift */,
@@ -202,6 +205,7 @@
 				74A13A62CC1EDC6D0DFFA07F /* Player.swift in Sources */,
 				0F1022639FE5A79817C11C26 /* PlayerMenu.swift in Sources */,
 				0EB46A57F1B4113619B7C5E4 /* PlayerScreen.swift in Sources */,
+				5BA00C097237FDA31C1A4179 /* ProfileView.swift in Sources */,
 				9EF910C47A35D4C5358CCC81 /* RootView.swift in Sources */,
 				B5A58C8581F17AA8B4C1DFF8 /* SampleData.swift in Sources */,
 				86A84FB742591877F6266150 /* Theme.swift in Sources */,

@@ -11,7 +11,10 @@ final class WorkspaceStore {
     var titleOverrides: [String: String] = [:]
     var pins: [String] = []                          // ordered "type:id" refs
     var playlists: [Playlist] = SampleData.playlists  // mutable
+    var activity: [String: Date] = [:]                // ref id → last opened
     @ObservationIgnored private var draftIDs: Set<String> = []
+
+    func touch(_ ref: String) { activity[ref] = Date(); persist() }
 
     /// Taggable workspace members.
     let members = ["PomPom", "Liz Rose", "Mira Tan", "Hudson", "Alex", "TB"]
@@ -21,6 +24,7 @@ final class WorkspaceStore {
     private let titlesKey = "wl.titles.v1"
     private let pinsKey = "wl.pins.v1"
     private let playlistsKey = "wl.playlists.v1"
+    private let activityKey = "wl.activity.v1"
 
     // MARK: pins
 
@@ -142,6 +146,7 @@ final class WorkspaceStore {
         if let d = try? enc.encode(pins) { UserDefaults.standard.set(d, forKey: pinsKey) }
         let keep = playlists.filter { !draftIDs.contains($0.id) }
         if let d = try? enc.encode(keep) { UserDefaults.standard.set(d, forKey: playlistsKey) }
+        if let d = try? enc.encode(activity) { UserDefaults.standard.set(d, forKey: activityKey) }
     }
 
     private func loadPersisted() {
@@ -165,6 +170,10 @@ final class WorkspaceStore {
         if let d = UserDefaults.standard.data(forKey: playlistsKey),
            let v = try? dec.decode([Playlist].self, from: d), !v.isEmpty {
             playlists = v
+        }
+        if let d = UserDefaults.standard.data(forKey: activityKey),
+           let v = try? dec.decode([String: Date].self, from: d) {
+            activity = v
         }
     }
 

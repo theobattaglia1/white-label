@@ -298,6 +298,7 @@ struct PlaylistDetailView: View {
         }
         .foregroundStyle(WL.cream)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear { if !store.isDraft(live.id) { store.touch(PinRef(kind: .playlist, targetID: live.id).id) } }
         .onDisappear {
             // leaving a draft without keeping it = no changes
             if store.isDraft(live.id) { store.discardPlaylist(live.id) }
@@ -427,5 +428,6 @@ struct RoomDetailView: View {
         .background(WL.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topLeading) { BackButton().padding(.leading, 16).padding(.top, 6) }
+        .onAppear { store.touch(PinRef(kind: .room, targetID: room.id).id) }
     }
 }

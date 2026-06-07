@@ -42,24 +42,10 @@ struct HomeView: View {
                     }
                 }
 
-                section("Playlists") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 14) {
-                            ForEach(store.playlists) { pl in
-                                NavigationLink(value: pl) { playlistCard(pl) }
-                                    .buttonStyle(.plain)
-                                    .pinMenu(store, PinRef(kind: .playlist, targetID: pl.id))
-                            }
-                        }
-                    }
-                }
-
-                section("Projects") {
+                section("Recent") {
                     VStack(spacing: 0) {
-                        ForEach(SampleData.rooms) { rm in
-                            NavigationLink(value: rm) { roomRow(rm) }
-                                .buttonStyle(.plain)
-                                .pinMenu(store, PinRef(kind: .room, targetID: rm.id))
+                        ForEach(recents, id: \.id) { ref in
+                            recentRow(ref)
                         }
                     }
                 }
@@ -131,6 +117,59 @@ struct HomeView: View {
         .padding(.vertical, 10)
         .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
         .contentShape(Rectangle())
+    }
+
+    /// Playlists + projects, ordered by recent activity (untouched fall to a
+    /// stable default order so Home is never empty).
+    private var recents: [PinRef] {
+        var entries: [(PinRef, Date)] = []
+        for (i, pl) in store.playlists.enumerated() {
+            let ref = PinRef(kind: .playlist, targetID: pl.id)
+            entries.append((ref, store.activity[ref.id] ?? Date(timeIntervalSince1970: TimeInterval(1000 - i))))
+        }
+        for (i, rm) in SampleData.rooms.enumerated() {
+            let ref = PinRef(kind: .room, targetID: rm.id)
+            entries.append((ref, store.activity[ref.id] ?? Date(timeIntervalSince1970: TimeInterval(900 - i))))
+        }
+        return entries.sorted { $0.1 > $1.1 }.map { $0.0 }
+    }
+
+    @ViewBuilder private func recentRow(_ ref: PinRef) -> some View {
+        let cover = pinnedCover(ref, store) ?? featured
+        let sub: String = {
+            switch ref.kind {
+            case .playlist: return "Playlist · \(store.playlist(ref.targetID)?.trackIDs.count ?? 0) tracks"
+            case .room: return "Project · \(SampleData.rooms.first { $0.id == ref.targetID }?.artist ?? "")"
+            case .song: return "Song"
+            }
+        }()
+        let row = HStack(spacing: 13) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(LinearGradient(colors: [cover.mesh[0], cover.mesh[4], cover.mesh[8]],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pinnedTitle(ref, store)).font(WL.display(17)).foregroundStyle(WL.cream)
+                MonoLabel(sub, color: WL.pencil, size: 9, tracking: 1.2)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(WL.pencil)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
+        .contentShape(Rectangle())
+
+        Group {
+            switch ref.kind {
+            case .playlist:
+                if let pl = store.playlist(ref.targetID) { NavigationLink(value: pl) { row }.buttonStyle(.plain) } else { row }
+            case .room:
+                if let rm = SampleData.rooms.first(where: { $0.id == ref.targetID }) { NavigationLink(value: rm) { row }.buttonStyle(.plain) } else { row }
+            case .song:
+                Button { openSong(ref.targetID) } label: { row }.buttonStyle(.plain)
+            }
+        }
+        .pinMenu(store, ref)
     }
 
     @ViewBuilder private func pinCard(_ ref: PinRef) -> some View {

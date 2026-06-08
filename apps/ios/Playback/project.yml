@@ -37,6 +37,17 @@ targets:
         UIStatusBarHidden: true
         UIBackgroundModes:
           - audio
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Playback Audio
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
+              - public.mp3
+              - public.mpeg-4-audio
+              - public.aiff-audio
+              - com.microsoft.waveform-audio
         UIAppFonts:
           - UniversTE40-Light.ttf
           - UniversTE20-Light.ttf

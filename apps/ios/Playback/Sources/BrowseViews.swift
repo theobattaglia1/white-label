@@ -970,6 +970,7 @@ struct LibraryView: View {
 struct AddSongSheet: View {
     var store: WorkspaceStore
     var player: Player
+    var initialAudioURL: URL? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var artist = ""
@@ -987,6 +988,7 @@ struct AddSongSheet: View {
     #endif
     @State private var importError: String?
     @State private var isSaving = false
+    @State private var didImportInitialAudio = false
 
     var body: some View {
         NavigationStack {
@@ -1028,6 +1030,9 @@ struct AddSongSheet: View {
         .foregroundStyle(PB.cream)
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
             handleImport(result)
+        }
+        .task(id: initialAudioURL) {
+            importInitialAudioIfNeeded()
         }
         .onChange(of: artworkItem) { _, item in
             importArtwork(item)
@@ -1168,36 +1173,46 @@ struct AddSongSheet: View {
                 importError = AudioImportError.noFile.localizedDescription
                 return
             }
-            isImporting = true
-            importError = nil
-            Task {
-                do {
-                    let selection = try await Task.detached(priority: .userInitiated) {
-                        try await Self.importAudio(from: url)
-                    }.value
-                    await MainActor.run {
-                        importedAudio = selection
-                        duration = selection.durationMs.clock
-                        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            title = selection.title ?? selection.displayName
-                        }
-                        if artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let importedArtist = selection.artist {
-                            artist = importedArtist
-                        }
-                        if importedArtwork == nil, let artwork = selection.artwork {
-                            importedArtwork = artwork
-                        }
-                        isImporting = false
-                    }
-                } catch {
-                    await MainActor.run {
-                        importError = error.localizedDescription
-                        isImporting = false
-                    }
-                }
-            }
+            importAudioFile(url)
         case .failure(let error):
             importError = error.localizedDescription
+        }
+    }
+
+    private func importInitialAudioIfNeeded() {
+        guard !didImportInitialAudio, let initialAudioURL else { return }
+        didImportInitialAudio = true
+        importAudioFile(initialAudioURL)
+    }
+
+    private func importAudioFile(_ url: URL) {
+        isImporting = true
+        importError = nil
+        Task {
+            do {
+                let selection = try await Task.detached(priority: .userInitiated) {
+                    try await Self.importAudio(from: url)
+                }.value
+                await MainActor.run {
+                    importedAudio = selection
+                    duration = selection.durationMs.clock
+                    if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        title = Self.importTitleCandidate(selection.title ?? selection.displayName)
+                    }
+                    if artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let importedArtist = selection.artist {
+                        artist = importedArtist
+                    }
+                    if importedArtwork == nil, let artwork = selection.artwork {
+                        importedArtwork = artwork
+                    }
+                    isImporting = false
+                }
+            } catch {
+                await MainActor.run {
+                    importError = error.localizedDescription
+                    isImporting = false
+                }
+            }
         }
     }
 
@@ -1244,12 +1259,21 @@ struct AddSongSheet: View {
         return ImportedAudioSelection(
             relativePath: "ImportedAudio/\(fileName)",
             fileName: sourceURL.lastPathComponent,
-            displayName: sourceURL.deletingPathExtension().lastPathComponent,
+            displayName: importTitleCandidate(sourceURL.deletingPathExtension().lastPathComponent),
             title: metadataTitle,
             artist: metadataArtist,
             durationMs: max(15_000, durationMs),
             artwork: embeddedArtwork
         )
+    }
+
+    nonisolated private static func importTitleCandidate(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = trimmed
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+        let collapsed = cleaned.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return collapsed.isEmpty ? trimmed : collapsed
     }
 
     nonisolated private static func sanitizedFileName(_ value: String) -> String {

@@ -2,6 +2,11 @@ import SwiftUI
 
 enum AppTab: String, CaseIterable { case home, library, explore, inbox, profile }
 
+private struct IncomingAudioImport: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 /// App shell: a bottom nav, a persistent mini-player,
 /// and the full player presented over everything.
 struct AppShell: View {
@@ -11,6 +16,11 @@ struct AppShell: View {
     @State private var tab: AppTab = .home
     @State private var showPlayer = false
     @State private var libPath = NavigationPath()
+    @State private var incomingAudio: IncomingAudioImport?
+
+    private let importableAudioExtensions: Set<String> = [
+        "aac", "aif", "aiff", "caf", "flac", "m4a", "mp3", "wav"
+    ]
 
     private func openSong(_ id: String) {
         openSong(id, in: workspace.tracks)
@@ -100,6 +110,12 @@ struct AppShell: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
+        .sheet(item: $incomingAudio) { item in
+            AddSongSheet(store: workspace, player: player, initialAudioURL: item.url)
+        }
+        .onOpenURL { url in
+            handleIncomingAudioURL(url)
+        }
         .onAppear {
             player.replaceQueue(workspace.tracks)
             if CommandLine.arguments.contains("-openPlayer") { openSong("first-night") }
@@ -142,6 +158,14 @@ struct AppShell: View {
                 player.replaceQueue(workspace.tracks)
             }
         }
+    }
+
+    private func handleIncomingAudioURL(_ url: URL) {
+        let ext = url.pathExtension.lowercased()
+        guard url.isFileURL, importableAudioExtensions.contains(ext) else { return }
+        showPlayer = false
+        tab = .library
+        incomingAudio = IncomingAudioImport(url: url)
     }
 }
 

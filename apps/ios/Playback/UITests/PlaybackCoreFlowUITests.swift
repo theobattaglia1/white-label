@@ -8,9 +8,8 @@ final class PlaybackCoreFlowUITests: XCTestCase {
     func testHomeDoesNotShowStartPanelWhenLibraryHasContent() {
         let app = launchPlayback()
 
-        XCTAssertTrue(app.staticTexts["Home"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["NEEDS YOUR EAR"].waitForExistence(timeout: 4))
         XCTAssertFalse(app.staticTexts["Start your library"].waitForExistence(timeout: 1))
-        XCTAssertTrue(app.staticTexts["NEEDS YOUR EAR"].exists)
     }
 
     func testLibraryAddSongEntryPointShowsAudioAndArtworkInputs() {

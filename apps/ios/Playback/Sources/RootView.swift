@@ -19,6 +19,7 @@ struct AppShell: View {
     private func openSong(_ id: String, in queue: [Track]) {
         player.replaceQueue(queue.isEmpty ? workspace.tracks : queue)
         player.open(id)
+        workspace.touch(PinRef(kind: .song, targetID: id).id)
         withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { showPlayer = true }
     }
 

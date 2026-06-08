@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 private enum HomeCreationSheet: Identifiable {
     case song, playlist, project
@@ -18,39 +21,66 @@ struct HomeView: View {
     var store: WorkspaceStore
     var openSong: (String) -> Void
     @State private var creationSheet: HomeCreationSheet?
+    @State private var heroIndex = 0
+    private let heroAdvance = Timer.publish(every: 12, on: .main, in: .common).autoconnect()
 
+    private let heroAspectRatio: CGFloat = 9.0 / 16.0
+    private var heroFrameWidth: CGFloat {
+        #if canImport(UIKit)
+        return max(0, UIScreen.main.bounds.width - 48)
+        #else
+        return 345
+        #endif
+    }
+    private var heroFrameHeight: CGFloat { heroFrameWidth / heroAspectRatio }
     private var featured: Track { store.tracks.first ?? player.track }
     private var isLibraryEmpty: Bool {
         store.tracks.isEmpty && store.playlists.isEmpty && store.rooms.isEmpty
     }
     private var needsEar: [Track] { store.tracks.filter { store.openCount($0.id) > 0 } }
     private let pinCardSize: CGFloat = 104
-    private var featuredHasArtwork: Bool {
-        featured.coverArt != nil || featured.importedArtworkPath != nil || featured.remoteArtworkURL != nil
+    private var heroTracks: [Track] {
+        let pinned = store.pins
+            .compactMap { PinRef($0) }
+            .compactMap { pinnedCover($0, store) }
+        return uniqueTracks(pinned + recentTracks).prefix(5).map { $0 }
+    }
+    private var currentHero: Track {
+        let tracks = heroTracks
+        guard !tracks.isEmpty else { return featured }
+        return tracks[min(heroIndex, tracks.count - 1)]
+    }
+    private var heroTrackIDs: [String] { heroTracks.map(\.id) }
+    private var hasPins: Bool { store.pins.contains { PinRef($0) != nil } }
+    private var recentTracks: [Track] {
+        store.tracks.enumerated().sorted { lhs, rhs in
+            let lhsRef = PinRef(kind: .song, targetID: lhs.element.id).id
+            let rhsRef = PinRef(kind: .song, targetID: rhs.element.id).id
+            let lhsActivity = store.activity[lhsRef] ?? Date(timeIntervalSince1970: TimeInterval(1000 - lhs.offset))
+            let rhsActivity = store.activity[rhsRef] ?? Date(timeIntervalSince1970: TimeInterval(1000 - rhs.offset))
+            return lhsActivity > rhsActivity
+        }
+        .map(\.element)
+    }
+
+    private func uniqueTracks(_ tracks: [Track]) -> [Track] {
+        var seen: Set<String> = []
+        return tracks.filter { track in
+            guard !seen.contains(track.id) else { return false }
+            seen.insert(track.id)
+            return true
+        }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                AppScreenHeader(title: "Home", isPlaying: player.isPlaying) {
-                    addMenu
-                }
+                homeHeader
 
                 if isLibraryEmpty {
                     startPanel
                 } else {
-                    hero
-                }
-
-                let refs = store.pins.compactMap { PinRef($0) }
-                if !refs.isEmpty {
-                    section("Pinned") {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 14) {
-                                ForEach(refs) { ref in pinCard(ref) }
-                            }
-                        }
-                    }
+                    heroCluster
                 }
 
                 if !needsEar.isEmpty {
@@ -88,6 +118,12 @@ struct HomeView: View {
         .overlay(alignment: .top) { TopScrollFade() }
         .foregroundStyle(PB.cream)
         .toolbar(.hidden, for: .navigationBar)
+        .onReceive(heroAdvance) { _ in
+            advanceHero(1)
+        }
+        .onChange(of: heroTrackIDs) { _, ids in
+            if heroIndex >= ids.count { heroIndex = max(0, ids.count - 1) }
+        }
         .sheet(item: $creationSheet) { sheet in
             switch sheet {
             case .song:
@@ -122,13 +158,49 @@ struct HomeView: View {
         .accessibilityLabel("Add")
     }
 
+    private var homeHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            PlaybackWordmark(capSize: 22, fontSize: 24, isPlaying: player.isPlaying)
+                .frame(width: 156, height: 26, alignment: .leading)
+            Spacer(minLength: 0)
+            addMenu
+        }
+        .frame(height: 44, alignment: .center)
+    }
+
+    private var heroCluster: some View {
+        let refs = store.pins.compactMap { PinRef($0) }
+        return VStack(alignment: .leading, spacing: 0) {
+            hero
+            if !refs.isEmpty {
+                pinnedOverlap(refs)
+                    .padding(.top, -116)
+            }
+        }
+    }
+
     private var hero: some View {
-        Button { openSong(featured.id) } label: {
-            heroArtworkSurface
+        let active = currentHero
+        let width = heroFrameWidth
+        let height = heroFrameHeight
+        return Button { openSong(active.id) } label: {
+            ZStack {
+                Color.clear
+                ForEach(Array(heroTracks.enumerated()), id: \.element.id) { index, track in
+                    heroArtworkSurface(track)
+                        .frame(width: width, height: height)
+                        .opacity(index == heroIndex ? 1 : 0)
+                }
+                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
+            }
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PB.cream.opacity(0.14), lineWidth: 0.75))
+            .animation(.easeInOut(duration: 0.7), value: heroIndex)
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: 8) {
-                        MonoLabel("Latest · \(featured.versionLabel)", color: .white.opacity(0.8), size: 9, tracking: 1.8)
-                        Text(store.displayTitle(featured.id, featured.title))
+                        MonoLabel("Latest · \(active.versionLabel)", color: .white.opacity(0.8), size: 9, tracking: 1.8)
+                        Text(store.displayTitle(active.id, active.title))
                             .font(PB.display(30)).foregroundStyle(.white)
                         HStack(spacing: 8) {
                             Image(systemName: "play.fill").font(.system(size: 11))
@@ -140,32 +212,65 @@ struct HomeView: View {
                         .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 1))
                         .padding(.top, 2)
                     }
-                    .padding(20)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, hasPins ? 142 : 20)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    heroPageDots
+                        .padding(18)
                 }
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 28)
+                .onEnded { value in
+                    guard abs(value.translation.width) > 40 else { return }
+                    advanceHero(value.translation.width < 0 ? 1 : -1)
+                }
+        )
     }
 
-    @ViewBuilder
-    private var heroArtworkSurface: some View {
-        if featuredHasArtwork {
-            Color.clear
-                .aspectRatio(1, contentMode: .fit)
-                .overlay { heroArtwork }
-        } else {
-            heroArtwork
-                .frame(height: 200)
-                .clipped()
+    private var heroPageDots: some View {
+        HStack(spacing: 5) {
+            ForEach(heroTracks.indices, id: \.self) { index in
+                Circle()
+                    .fill(.white.opacity(index == heroIndex ? 0.86 : 0.28))
+                    .frame(width: index == heroIndex ? 5.5 : 4, height: index == heroIndex ? 5.5 : 4)
+            }
+        }
+        .opacity(heroTracks.count > 1 ? 1 : 0)
+    }
+
+    private func advanceHero(_ delta: Int) {
+        let count = heroTracks.count
+        guard count > 1 else { return }
+        withAnimation(.easeInOut(duration: 0.7)) {
+            heroIndex = (heroIndex + delta + count) % count
         }
     }
 
-    private var heroArtwork: some View {
-        TrackArtwork(track: featured, cornerRadius: 18)
-            .overlay(
-                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            )
+    private func heroArtworkSurface(_ track: Track) -> some View {
+        TrackArtwork(track: track, cornerRadius: 18, showsKeyline: false)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func pinnedOverlap(_ refs: [PinRef]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                MonoLabel("Pinned", color: PB.pencil, size: 11, tracking: 2)
+                Spacer()
+                Rectangle().fill(.white.opacity(0.1)).frame(height: 1)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(refs) { ref in pinCard(ref) }
+                }
+                .padding(.horizontal, 1)
+                .padding(.bottom, 2)
+            }
+        }
     }
 
     private var startPanel: some View {
@@ -282,18 +387,12 @@ struct HomeView: View {
 
     @ViewBuilder private func pinCard(_ ref: PinRef) -> some View {
         let cover = pinnedCover(ref, store) ?? featured
-        let card = VStack(alignment: .leading, spacing: 8) {
+        let card = ZStack(alignment: .topTrailing) {
             TrackArtwork(track: cover, cornerRadius: 12)
                 .frame(width: pinCardSize, height: pinCardSize)
-                .overlay(alignment: .topTrailing) {
-                    Image(systemName: "pin.fill").font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.85)).padding(8)
-                }
-            Text(pinnedTitle(ref, store)).font(PB.display(14)).foregroundStyle(PB.cream)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .frame(width: pinCardSize, alignment: .leading)
-            MonoLabel(ref.kind.rawValue, color: PB.pencil, size: 8, tracking: 1.4)
+            Image(systemName: "pin.fill").font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(8)
         }
         .frame(width: pinCardSize)
 

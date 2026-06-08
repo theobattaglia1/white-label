@@ -40,6 +40,14 @@ private struct ImportedArtworkSelection: Equatable {
     var paletteHexes: [UInt]?
 }
 
+#if canImport(UIKit)
+private struct PendingArtworkCrop: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let sourceName: String
+}
+#endif
+
 private enum AudioImportError: LocalizedError {
     case noFile
     case copyFailed
@@ -65,6 +73,8 @@ private enum ArtworkImportError: LocalizedError {
 }
 
 private enum ImportedMediaWriter {
+    static let marqueeAspectRatio: CGFloat = 9.0 / 16.0
+
     static func sanitizedFileName(_ value: String) -> String {
         let allowed = CharacterSet.alphanumerics
         let slug = value.lowercased()
@@ -81,13 +91,79 @@ private enum ImportedMediaWriter {
     static func importArtworkData(_ data: Data, sourceName: String) throws -> ImportedArtworkSelection {
         #if canImport(UIKit)
         guard let image = UIImage(data: data) else { throw ArtworkImportError.invalidImage }
-        let output = image.jpegData(compressionQuality: 0.92) ?? data
-        let palette = paletteHexes(from: image)
+        return try importArtworkImage(centerCrop(image, aspectRatio: marqueeAspectRatio), sourceName: sourceName)
         #else
         let output = data
         let palette: [UInt]? = nil
+        return try writeArtworkData(output, sourceName: sourceName, palette: palette)
         #endif
+    }
 
+    #if canImport(UIKit)
+    static func importArtworkImage(_ image: UIImage, sourceName: String) throws -> ImportedArtworkSelection {
+        let output = image.jpegData(compressionQuality: 0.92) ?? Data()
+        let palette = paletteHexes(from: image)
+        return try writeArtworkData(output, sourceName: sourceName, palette: palette)
+    }
+
+    static func renderCrop(image: UIImage, scale: CGFloat, offset: CGSize, previewSize: CGSize) -> UIImage {
+        let targetSize = CGSize(width: 1080, height: 1920)
+        let imageSize = image.size
+        guard imageSize.width > 0, imageSize.height > 0, previewSize.width > 0, previewSize.height > 0 else {
+            return centerCrop(image, aspectRatio: marqueeAspectRatio)
+        }
+
+        let fillScale = max(targetSize.width / imageSize.width, targetSize.height / imageSize.height)
+        let drawSize = CGSize(width: imageSize.width * fillScale * scale, height: imageSize.height * fillScale * scale)
+        let offsetScale = targetSize.width / previewSize.width
+        let drawOrigin = CGPoint(
+            x: (targetSize.width - drawSize.width) / 2 + offset.width * offsetScale,
+            y: (targetSize.height - drawSize.height) / 2 + offset.height * offsetScale
+        )
+
+        return UIGraphicsImageRenderer(size: targetSize).image { _ in
+            image.draw(in: CGRect(origin: drawOrigin, size: drawSize))
+        }
+    }
+
+    static func clampedOffset(_ proposed: CGSize, image: UIImage, scale: CGFloat, previewSize: CGSize) -> CGSize {
+        let imageSize = image.size
+        guard imageSize.width > 0, imageSize.height > 0, previewSize.width > 0, previewSize.height > 0 else {
+            return .zero
+        }
+        let imageAspect = imageSize.width / imageSize.height
+        let previewAspect = previewSize.width / previewSize.height
+        let baseSize: CGSize = imageAspect > previewAspect
+            ? CGSize(width: previewSize.height * imageAspect, height: previewSize.height)
+            : CGSize(width: previewSize.width, height: previewSize.width / imageAspect)
+        let maxX = max(0, (baseSize.width * scale - previewSize.width) / 2)
+        let maxY = max(0, (baseSize.height * scale - previewSize.height) / 2)
+        return CGSize(
+            width: min(max(proposed.width, -maxX), maxX),
+            height: min(max(proposed.height, -maxY), maxY)
+        )
+    }
+
+    private static func centerCrop(_ image: UIImage, aspectRatio: CGFloat) -> UIImage {
+        let imageSize = image.size
+        guard imageSize.width > 0, imageSize.height > 0 else { return image }
+        let currentAspect = imageSize.width / imageSize.height
+        let cropRect: CGRect
+        if currentAspect > aspectRatio {
+            let width = imageSize.height * aspectRatio
+            cropRect = CGRect(x: (imageSize.width - width) / 2, y: 0, width: width, height: imageSize.height)
+        } else {
+            let height = imageSize.width / aspectRatio
+            cropRect = CGRect(x: 0, y: (imageSize.height - height) / 2, width: imageSize.width, height: height)
+        }
+        guard let cgImage = image.cgImage?.cropping(to: cropRect.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))) else {
+            return image
+        }
+        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+    }
+    #endif
+
+    private static func writeArtworkData(_ output: Data, sourceName: String, palette: [UInt]?) throws -> ImportedArtworkSelection {
         let fileManager = FileManager.default
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let directory = documents.appendingPathComponent("ImportedArtwork", isDirectory: true)
@@ -139,6 +215,121 @@ private enum ImportedMediaWriter {
     }
     #endif
 }
+
+#if canImport(UIKit)
+private struct ArtworkCropSheet: View {
+    let pending: PendingArtworkCrop
+    let onComplete: (ImportedArtworkSelection) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var scale: CGFloat = 1
+    @State private var baseScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var baseOffset: CGSize = .zero
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                GeometryReader { proxy in
+                    let width = proxy.size.width
+                    let cropSize = CGSize(width: width, height: width / ImportedMediaWriter.marqueeAspectRatio)
+                    ZStack {
+                        PB.black
+                        Image(uiImage: pending.image)
+                            .resizable()
+                            .scaledToFill()
+                            .scaleEffect(scale)
+                            .offset(offset)
+                            .frame(width: cropSize.width, height: cropSize.height)
+                    }
+                    .frame(width: cropSize.width, height: cropSize.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PB.cream.opacity(0.18), lineWidth: 1))
+                    .gesture(cropGesture(previewSize: cropSize))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { dismiss() }
+                                .font(PB.mono(13))
+                                .foregroundStyle(PB.pencil)
+                        }
+                        ToolbarItem(placement: .principal) {
+                            Text("Frame artwork")
+                                .font(PB.display(18))
+                                .foregroundStyle(PB.cream)
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { complete(previewSize: cropSize) }
+                                .font(PB.mono(13))
+                                .foregroundStyle(PB.cobalt)
+                        }
+                    }
+                }
+                .frame(maxHeight: 620)
+
+                HStack {
+                    Button("Reset") {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            scale = 1
+                            baseScale = 1
+                            offset = .zero
+                            baseOffset = .zero
+                        }
+                    }
+                    .font(PB.mono(11))
+                    .foregroundStyle(PB.pencil)
+                    Spacer()
+                }
+
+                if let errorMessage {
+                    MonoLabel(errorMessage, color: PB.redline, size: 9, tracking: 0.8)
+                }
+            }
+            .padding(22)
+            .background(PB.black)
+            .toolbarBackground(PB.black, for: .navigationBar)
+        }
+        .presentationDetents([.large])
+        .presentationBackground(PB.black)
+    }
+
+    private func cropGesture(previewSize: CGSize) -> some Gesture {
+        let drag = DragGesture()
+            .onChanged { value in
+                let proposed = CGSize(width: baseOffset.width + value.translation.width, height: baseOffset.height + value.translation.height)
+                offset = ImportedMediaWriter.clampedOffset(proposed, image: pending.image, scale: scale, previewSize: previewSize)
+            }
+            .onEnded { _ in
+                baseOffset = offset
+            }
+
+        let magnify = MagnificationGesture()
+            .onChanged { value in
+                let nextScale = min(max(baseScale * value, 1), 4)
+                scale = nextScale
+                offset = ImportedMediaWriter.clampedOffset(offset, image: pending.image, scale: nextScale, previewSize: previewSize)
+            }
+            .onEnded { _ in
+                baseScale = scale
+                offset = ImportedMediaWriter.clampedOffset(offset, image: pending.image, scale: scale, previewSize: previewSize)
+                baseOffset = offset
+            }
+
+        return drag.simultaneously(with: magnify)
+    }
+
+    private func complete(previewSize: CGSize) {
+        do {
+            let cropped = ImportedMediaWriter.renderCrop(image: pending.image, scale: scale, offset: offset, previewSize: previewSize)
+            let selection = try ImportedMediaWriter.importArtworkImage(cropped, sourceName: pending.sourceName)
+            onComplete(selection)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+#endif
 
 func trackSwatch(_ t: Track, _ s: CGFloat, radius: CGFloat = 8) -> some View {
     TrackArtwork(track: t, cornerRadius: radius)
@@ -790,6 +981,9 @@ struct AddSongSheet: View {
     @State private var importedArtwork: ImportedArtworkSelection?
     @State private var artworkItem: PhotosPickerItem?
     @State private var artworkError: String?
+    #if canImport(UIKit)
+    @State private var pendingArtworkCrop: PendingArtworkCrop?
+    #endif
     @State private var importError: String?
     @State private var isSaving = false
 
@@ -837,6 +1031,15 @@ struct AddSongSheet: View {
         .onChange(of: artworkItem) { _, item in
             importArtwork(item)
         }
+        #if canImport(UIKit)
+        .sheet(item: $pendingArtworkCrop) { pending in
+            ArtworkCropSheet(pending: pending) { selection in
+                importedArtwork = selection
+                artworkError = nil
+                artworkItem = nil
+            }
+        }
+        #endif
     }
 
     private var canSave: Bool {
@@ -1060,10 +1263,20 @@ struct AddSongSheet: View {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     throw ArtworkImportError.invalidImage
                 }
+                #if canImport(UIKit)
+                guard let image = UIImage(data: data) else { throw ArtworkImportError.invalidImage }
+                await MainActor.run {
+                    pendingArtworkCrop = PendingArtworkCrop(
+                        image: image,
+                        sourceName: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "artwork" : title
+                    )
+                }
+                #else
                 let selection = try ImportedMediaWriter.importArtworkData(data, sourceName: title.isEmpty ? "artwork" : title)
                 await MainActor.run {
                     importedArtwork = selection
                 }
+                #endif
             } catch {
                 await MainActor.run {
                     artworkError = error.localizedDescription
@@ -1101,6 +1314,9 @@ struct EditSongSheet: View {
     @State private var importedArtwork: ImportedArtworkSelection?
     @State private var artworkItem: PhotosPickerItem?
     @State private var artworkError: String?
+    #if canImport(UIKit)
+    @State private var pendingArtworkCrop: PendingArtworkCrop?
+    #endif
     @State private var artworkChanged = false
     @State private var didLoad = false
     @State private var isSaving = false
@@ -1168,6 +1384,17 @@ struct EditSongSheet: View {
         .onChange(of: artworkItem) { _, item in
             importArtwork(item)
         }
+        #if canImport(UIKit)
+        .sheet(item: $pendingArtworkCrop) { pending in
+            ArtworkCropSheet(pending: pending) { selection in
+                importedArtwork = selection
+                artworkChanged = true
+                artworkError = nil
+                saveError = nil
+                artworkItem = nil
+            }
+        }
+        #endif
     }
 
     private var canSave: Bool {
@@ -1316,6 +1543,15 @@ struct EditSongSheet: View {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     throw ArtworkImportError.invalidImage
                 }
+                #if canImport(UIKit)
+                guard let image = UIImage(data: data) else { throw ArtworkImportError.invalidImage }
+                await MainActor.run {
+                    pendingArtworkCrop = PendingArtworkCrop(
+                        image: image,
+                        sourceName: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "artwork" : title
+                    )
+                }
+                #else
                 let selection = try ImportedMediaWriter.importArtworkData(
                     data,
                     sourceName: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "artwork" : title
@@ -1324,6 +1560,7 @@ struct EditSongSheet: View {
                     importedArtwork = selection
                     artworkChanged = true
                 }
+                #endif
             } catch {
                 await MainActor.run { artworkError = error.localizedDescription }
             }

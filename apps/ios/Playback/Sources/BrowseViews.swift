@@ -313,15 +313,16 @@ private struct SelectionMark: View {
     var body: some View {
         ZStack {
             Circle()
-                .strokeBorder(isSelected ? PB.cobalt : PB.cream.opacity(0.28), lineWidth: 1.4)
+                .strokeBorder(isSelected ? PB.cobalt : PB.cream.opacity(0.28), lineWidth: 1.2)
                 .background(Circle().fill(isSelected ? PB.cobalt : PB.panel.opacity(0.4)))
             if isSelected {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(PB.cream)
             }
         }
-        .frame(width: 28, height: 28)
+        .frame(width: 22, height: 22)
+        .frame(width: 32, height: 44)
         .accessibilityHidden(true)
     }
 }
@@ -576,10 +577,11 @@ struct LibraryView: View {
 
     private var libraryActions: some View {
         HStack(spacing: 10) {
-            libraryActionButton("plus", "Add song") { showAddSong = true }
+            libraryActionButton("plus", "Add song", allowsWrap: false) { showAddSong = true }
             libraryActionButton("text.badge.plus", "New playlist") { showNewPlaylist = true }
             libraryActionButton(bulkMode == nil ? "checkmark.circle" : "xmark.circle",
-                                bulkMode == nil ? "Select" : "Done") {
+                                bulkMode == nil ? "Select" : "Done",
+                                allowsWrap: false) {
                 if bulkMode == nil {
                     bulkMode = .selecting
                 } else {
@@ -597,14 +599,16 @@ struct LibraryView: View {
         }
     }
 
-    private func libraryActionButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+    private func libraryActionButton(_ icon: String, _ title: String, allowsWrap: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 12, weight: .semibold))
                 MonoLabel(title, color: PB.cream, size: 10, tracking: 1.2)
+                    .lineLimit(allowsWrap ? 2 : 1)
+                    .multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .frame(height: 52)
             .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PB.panel))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(PB.cream.opacity(0.08), lineWidth: 1))
         }

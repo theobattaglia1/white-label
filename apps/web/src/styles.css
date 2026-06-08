@@ -5142,6 +5142,343 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .cw-btn { font-size: 13px; }
 .pls-btn { font-size: 12px; }
 
+/* =====================================================================
+   Mobile 380px — song card cover taming
+   At narrow viewports the 360px min-height fills almost the full screen.
+   Reduce cover, reflow stamp-row to sit inside the card frame.
+   ===================================================================== */
+@media (max-width: 480px) {
+  .song-card-cover { min-height: clamp(140px, 48vw, 240px); }
+  .song-card-frame .stamp-row {
+    position: static;
+    padding: 12px 14px 0;
+    flex-wrap: wrap;
+    z-index: auto;
+  }
+  .song-card-info .title { font-size: clamp(24px, 9vw, 40px); }
+  .song-card-waveband { flex-wrap: wrap; }
+  .song-card-waveband .times { width: 100%; order: 2; }
+}
+
+/* =====================================================================
+   stamp-w — brand PNG stamps (pixel-parity with typewriter mark)
+   The Stamp component renders <img> from /brand/stamp_*.png with a
+   CSS-filter applied for color adaptation and dark-mode inversion.
+   ===================================================================== */
+.stamp-w {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  transform: rotate(-1.2deg);
+  line-height: 1;
+}
+.stamp-w.straight { transform: none; }
+.stamp-w-img {
+  display: block;
+  height: 16px;
+  width: auto;
+}
+.stamp-w.tight .stamp-w-img { height: 12px; }
+.stamp-w-detail {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+/* notes-due: black PNG → cobalt #4663E8 */
+.stamp-w.notes-due .stamp-w-img,
+.app-shell .stamp-w.notes-due .stamp-w-img {
+  filter: invert(32%) sepia(97%) saturate(620%) hue-rotate(210deg);
+}
+/* private: black PNG → vermilion #FF4A22 */
+.stamp-w.private .stamp-w-img {
+  filter: invert(26%) sepia(91%) saturate(1200%) hue-rotate(350deg) brightness(104%);
+}
+/* studio dark mode: approved/latest PNG → tape-oxide cream */
+.app-shell .stamp-w.approved .stamp-w-img,
+.app-shell .stamp-w.latest .stamp-w-img {
+  filter: invert(93%) sepia(9%) saturate(340%) hue-rotate(5deg) brightness(103%);
+}
+
+/* =====================================================================
+   Forever URL card — branded share link presentation
+   Shown in LinkManager when a link is freshly created.
+   ===================================================================== */
+.forever-card {
+  background: var(--sleeve-card);
+  border: 1px solid var(--sleeve-hairline);
+  padding: 18px 20px 14px;
+  border-radius: 2px;
+  margin: 16px 0;
+  max-width: 460px;
+  color: var(--ink);
+}
+.forever-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sleeve-hairline);
+  margin-bottom: 12px;
+}
+.forever-card-close {
+  background: transparent; border: 0; color: var(--pencil-cool);
+  cursor: pointer; padding: 0; line-height: 0;
+}
+.forever-card-close:hover { color: var(--ink); }
+.forever-card-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  display: block;
+  margin-bottom: 4px;
+}
+.forever-card-title {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(20px, 3.5vw, 28px);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  -webkit-text-stroke: 0;
+  color: var(--ink);
+  margin: 0 0 3px;
+}
+.forever-card-artist {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin-bottom: 10px;
+}
+.forever-card-url-row {
+  border-top: 1px solid var(--sleeve-hairline);
+  border-bottom: 1px solid var(--sleeve-hairline);
+  padding: 10px 0;
+  margin: 0 0 12px;
+}
+.forever-card-url-row code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+.forever-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.forever-card-meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+}
+.forever-card-copy {
+  font-family: var(--font-dot, var(--font-mono));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--ink);
+  color: #fff;
+  border: 0;
+  padding: 8px 14px;
+  border-radius: 1px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.12s;
+}
+.forever-card-copy:hover { background: #25221d; }
+.forever-card-copy.copied { background: var(--approved-green); color: var(--approved-ink); }
+
+/* =====================================================================
+   Find Similar panel — related work in content-columns
+   ===================================================================== */
+.find-similar-list { display: flex; flex-direction: column; }
+.find-similar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--studio-hairline);
+  cursor: pointer;
+  transition: opacity var(--motion-fast);
+}
+.find-similar-row:last-child { border-bottom: none; }
+.find-similar-row:hover { opacity: 0.72; }
+.find-similar-row .cover-art { flex: 0 0 32px; width: 32px; height: 32px; border-radius: 2px; }
+
+/* =====================================================================
+   Team view — members, pending invites, invite form
+   ===================================================================== */
+.team-page { gap: 28px; }
+.team-banner {
+  background: var(--studio-elevated);
+  border: 1px solid var(--approved-green);
+  color: var(--approved-green);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 10px 16px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.team-invite-bar { padding-bottom: 4px; }
+.team-invite-form {
+  background: var(--studio-elevated);
+  border: 1px solid var(--studio-hairline);
+  padding: 18px 20px;
+  max-width: 540px;
+}
+.team-invite-form .eyebrow { margin-bottom: 12px; }
+.team-invite-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+@media (max-width: 640px) {
+  .team-invite-fields { grid-template-columns: 1fr; }
+}
+.team-invite-fields input,
+.team-invite-fields select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--studio-panel);
+  border: 1px solid var(--studio-hairline);
+  color: var(--tape-oxide);
+  padding: 8px 10px;
+  border-radius: 1px;
+}
+.team-invite-fields input::placeholder { color: var(--pencil-warm); }
+.team-invite-fields input:focus,
+.team-invite-fields select:focus {
+  outline: none;
+  border-color: var(--notes-blue);
+}
+.team-invite-fields select option { background: var(--studio-panel); }
+.team-invite-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--redline);
+  margin-bottom: 10px;
+}
+.team-invite-actions { display: flex; gap: 10px; }
+.team-section { display: flex; flex-direction: column; gap: 0; }
+.team-section-head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+.team-list { display: flex; flex-direction: column; }
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+.team-row:last-child { border-bottom: none; }
+.team-avatar {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--studio-elevated);
+  border: 1px solid var(--studio-hairline);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--tape-oxide);
+}
+.team-avatar.pending { opacity: 0.45; }
+.team-row-text { flex: 1; min-width: 0; }
+.team-row-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tape-oxide);
+}
+.team-row-meta {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  margin-top: 2px;
+}
+.team-revoke {
+  background: transparent;
+  border: 0;
+  color: var(--pencil-warm);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 2px;
+  line-height: 0;
+  transition: color var(--motion-fast);
+}
+.team-revoke:hover { color: var(--redline); }
+.team-revoke:disabled { opacity: 0.4; cursor: default; }
+.team-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--pencil-warm);
+  border-top: 1px solid var(--studio-hairline);
+  padding-top: 16px;
+}
+.find-similar-text { min-width: 0; flex: 1; }
+.find-similar-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tape-oxide);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.find-similar-meta {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--pencil-warm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* === v3.1b — neutral tracking + weighted display titles ==============
    Univers TE doesn't need Helvetica's tight negative tracking, and the Light
    cut blends into its section without help — so zero the tracking and add a

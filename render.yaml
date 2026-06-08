@@ -37,6 +37,8 @@ services:
         value: "true"
       - key: EMAIL_PROVIDER_API_KEY
         sync: false
+      - key: APP_URL
+        value: https://playback.allmyfriendsinc.com
 
   # ===== Frontend (Vite SPA, static) =====
   - type: web

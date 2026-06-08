@@ -12,7 +12,7 @@ import {
   type SignUploadInput
 } from "./uploads";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
-import { isSupabaseEnabled } from "./supabase";
+import { getSupabase, isSupabaseEnabled } from "./supabase";
 import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthError } from "./auth";
 import { isAssistantLlmEnabled } from "./assistant";
 import { rateLimit } from "./ratelimit";
@@ -90,7 +90,15 @@ if (process.env.NODE_ENV !== "production") {
 
 server.get("/me", async (request, reply) => {
   const auth = await requireAuthedFromRequest(request);
-  const result = store.me(auth);
+  let result = store.me(auth);
+  if (!result.user && isSupabaseEnabled()) {
+    // Brand-new invited user: their DB row was created by handle_new_auth_user()
+    // but the in-memory store snapshot is stale. Re-hydrate once and retry.
+    try {
+      await store.hydrate();
+      result = store.me(auth);
+    } catch { /* hydrate failure — fall through to 404 below */ }
+  }
   if (!result.user) {
     server.log.warn({ userID: auth.userID }, "GET /me: unknown identity — returning 404");
     return reply.code(404).send({ error: "User not found" });
@@ -126,8 +134,93 @@ server.get("/workspaces/:id/members", async (request) => {
       user_id: u.user_id,
       display_name: u.display_name,
       role: roleByUser.get(u.user_id) ?? "Member",
+      member_number: (u as unknown as { member_number?: number }).member_number ?? null,
     }));
   return ok(members);
+});
+
+// === Workspace invites (invite-only beta access) ========================
+
+server.post("/workspaces/:id/invite", async (request, reply) => {
+  await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  const body = request.body as { email?: string; role?: string; display_name?: string };
+
+  if (!body?.email?.trim()) return reply.code(400).send({ error: "email is required" });
+
+  const supabase = getSupabase();
+  if (!supabase) return reply.code(503).send({ error: "Invites require Supabase to be configured" });
+
+  const email = body.email.toLowerCase().trim();
+  const role = body.role ?? "viewer";
+
+  // Resolve workspace UUID
+  const wsRes = await supabase.from("workspaces").select("workspace_id").eq("external_id", id).maybeSingle();
+  if (!wsRes.data) return reply.code(404).send({ error: "Workspace not found" });
+  const workspaceUuid = (wsRes.data as { workspace_id: string }).workspace_id;
+
+  // Upsert invite row (idempotent — re-inviting same email refreshes the role)
+  const upsertRes = await supabase.from("workspace_invites").upsert({
+    workspace_id: workspaceUuid,
+    email,
+    role,
+    display_name: body.display_name ?? null,
+    invited_at: new Date().toISOString(),
+  }, { onConflict: "workspace_id,email" }).select("invite_id").single();
+
+  if (upsertRes.error) {
+    return reply.code(500).send({ error: `Could not save invite: ${upsertRes.error.message}` });
+  }
+
+  // Send the invite email via Supabase Auth admin API
+  const appUrl = process.env.APP_URL ?? "https://playback-web.onrender.com";
+  const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: appUrl,
+    data: { display_name: body.display_name ?? null, workspace_role: role },
+  });
+
+  if (inviteError) {
+    // Non-fatal: invite row exists. If the user already has an account, they
+    // can log in and the trigger handles membership on their next confirmed sign-in.
+    server.log.warn({ email, err: inviteError.message }, "invite email warning — invite row saved");
+  }
+
+  return ok({ invited: true, email, role, invite_id: (upsertRes.data as { invite_id: string }).invite_id });
+});
+
+server.get("/workspaces/:id/invites", async (request, reply) => {
+  await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+
+  const supabase = getSupabase();
+  if (!supabase) return ok([]);
+
+  const wsRes = await supabase.from("workspaces").select("workspace_id").eq("external_id", id).maybeSingle();
+  if (!wsRes.data) return reply.code(404).send({ error: "Workspace not found" });
+  const workspaceUuid = (wsRes.data as { workspace_id: string }).workspace_id;
+
+  const res = await supabase
+    .from("workspace_invites")
+    .select("invite_id, email, role, display_name, invited_by, invited_at")
+    .eq("workspace_id", workspaceUuid)
+    .order("invited_at", { ascending: false });
+
+  return ok(res.data ?? []);
+});
+
+server.delete("/workspaces/:id/invites/:inviteId", async (request, reply) => {
+  await requireAuthedFromRequest(request);
+  const { id, inviteId } = request.params as { id: string; inviteId: string };
+
+  const supabase = getSupabase();
+  if (!supabase) return reply.code(503).send({ error: "Requires Supabase" });
+
+  const wsRes = await supabase.from("workspaces").select("workspace_id").eq("external_id", id).maybeSingle();
+  if (!wsRes.data) return reply.code(404).send({ error: "Workspace not found" });
+  const workspaceUuid = (wsRes.data as { workspace_id: string }).workspace_id;
+
+  await supabase.from("workspace_invites").delete().eq("invite_id", inviteId).eq("workspace_id", workspaceUuid);
+  return ok({ revoked: true });
 });
 
 server.get("/workspaces/:id/rooms", async (request) => {

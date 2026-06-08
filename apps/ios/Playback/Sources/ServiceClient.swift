@@ -209,6 +209,34 @@ struct ServiceClient {
         let delivery: String
     }
 
+    struct APIMember: Decodable, Identifiable {
+        var id: String { user_id }
+        let user_id: String
+        let display_name: String
+        let role: String
+        let member_number: Int?
+    }
+
+    struct APIInvite: Decodable, Identifiable {
+        var id: String { invite_id }
+        let invite_id: String
+        let email: String
+        let role: String
+        let display_name: String?
+        let invited_at: String
+    }
+
+    struct APIInviteResult: Decodable {
+        let invited: Bool
+        let email: String
+        let role: String
+        let invite_id: String
+    }
+
+    struct APIRevokeInviteResult: Decodable {
+        let revoked: Bool
+    }
+
     func me() async throws -> MePayload {
         try await get("/me", as: MePayload.self)
     }
@@ -286,6 +314,28 @@ struct ServiceClient {
             "allow_forwarding": false,
         ]
         return try await post("/links", body: body, as: APICreatedLink.self)
+    }
+
+    func members(workspaceID: String? = nil) async throws -> [APIMember] {
+        let id = await resolvedWorkspaceID(workspaceID)
+        return try await get("/workspaces/\(id)/members", as: [APIMember].self)
+    }
+
+    func listInvites(workspaceID: String? = nil) async throws -> [APIInvite] {
+        let id = await resolvedWorkspaceID(workspaceID)
+        return try await get("/workspaces/\(id)/invites", as: [APIInvite].self)
+    }
+
+    func sendInvite(email: String, role: String, displayName: String? = nil, workspaceID: String? = nil) async throws -> APIInviteResult {
+        let id = await resolvedWorkspaceID(workspaceID)
+        var body: [String: Any] = ["email": email, "role": role]
+        if let displayName { body["display_name"] = displayName }
+        return try await post("/workspaces/\(id)/invite", body: body, as: APIInviteResult.self)
+    }
+
+    func revokeInvite(inviteID: String, workspaceID: String? = nil) async throws {
+        let id = await resolvedWorkspaceID(workspaceID)
+        _ = try await delete("/workspaces/\(id)/invites/\(inviteID)", as: APIRevokeInviteResult.self)
     }
 
     func inviteRecipients(linkID: String, recipients: [(email: String, displayName: String?, role: String)]) async throws -> APIInviteRecipientsResult {

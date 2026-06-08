@@ -39,6 +39,19 @@ struct ProfileView: View {
                         valueRow("Email", auth.email)
                         workspaceRow
                     }
+                    section("Workspace") {
+                        NavigationLink(destination: TeamScreen()) {
+                            HStack {
+                                Text("Manage team").font(PB.text(15)).foregroundStyle(PB.cream)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(PB.pencil)
+                            }
+                            .padding(.horizontal, 15).padding(.vertical, 14)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 section("Notifications") {
                     toggleRow("Push notifications", $notifications)

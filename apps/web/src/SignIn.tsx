@@ -1,19 +1,19 @@
 import { useState } from "react";
-import { signInWithPassword, signUpWithPassword, sendMagicLink } from "./auth";
+import { signInWithPassword, sendMagicLink } from "./auth";
 import { PlaybackWordmark } from "./PlaybackWordmark";
 
-type Mode = "producer-signin" | "producer-signup" | "listen";
+type Mode = "producer-signin" | "listen";
 
 /**
- * Two-door sign-in page from wireframes v2:
- *   - Just listening? (recipients paste a link, no auth needed)
- *   - Create a producer account / Sign in (full app)
+ * Sign-in page — invite-only beta.
+ * Recipients: paste a shared link (no account needed).
+ * Producers: sign in with email + password or magic link.
+ * Sign-up is disabled here; accounts are created via the owner's Team invite flow.
  */
 export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [mode, setMode] = useState<Mode>("listen");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [linkPaste, setLinkPaste] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -24,16 +24,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     setError(null);
     setBusy(true);
     const res = await signInWithPassword(email, password);
-    setBusy(false);
-    if (!res.ok) setError(res.error);
-    else onSignedIn();
-  }
-
-  async function submitSignUp(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    const res = await signUpWithPassword(email, password, displayName || undefined);
     setBusy(false);
     if (!res.ok) setError(res.error);
     else onSignedIn();
@@ -50,7 +40,6 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   function openListenLink() {
-    // Accept full URL or just a token
     const trimmed = linkPaste.trim();
     if (!trimmed) return;
     let token = trimmed;
@@ -85,23 +74,13 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           <div className="signin-footer">Recipients don't need accounts.</div>
         </section>
 
-        <section className={`signin-door producer ${mode !== "listen" ? "active" : ""}`}>
-          <p className="kicker">For producers</p>
-          <h2 className="signin-title">
-            {mode === "producer-signup" ? "Create a producer account" : "Sign in"}
-          </h2>
+        <section className={`signin-door producer ${mode === "producer-signin" ? "active" : ""}`}>
+          <p className="kicker">For workspace members</p>
+          <h2 className="signin-title">Sign in</h2>
           <p className="signin-lede">
-            Free for three rooms and 10 GB. Send your first link in 60 seconds.
+            Access is by invitation only. If you received an invite, check your email for a sign-in link.
           </p>
-          <form className="signin-form" onSubmit={mode === "producer-signup" ? submitSignUp : submitSignIn}>
-            {mode === "producer-signup" && (
-              <input
-                placeholder="Studio name (optional)"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                autoComplete="name"
-              />
-            )}
+          <form className="signin-form" onSubmit={submitSignIn}>
             <input
               type="email"
               placeholder="email@studio.com"
@@ -109,20 +88,18 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
               required
-              onFocus={() => mode === "listen" && setMode("producer-signin")}
+              onFocus={() => setMode("producer-signin")}
             />
             <input
               type="password"
               placeholder="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === "producer-signup" ? "new-password" : "current-password"}
-              required={mode === "producer-signup"}
-              minLength={6}
+              autoComplete="current-password"
             />
             <div className="signin-actions">
               <button className="accent-button" type="submit" disabled={busy}>
-                {busy ? "…" : mode === "producer-signup" ? "Create account" : "Sign in"}
+                {busy ? "…" : "Sign in"}
               </button>
               <button type="button" className="chrome-button" onClick={submitMagic} disabled={busy || !email}>
                 Email me a link instead
@@ -130,20 +107,9 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
             </div>
           </form>
           <div className="signin-footer">
-            {mode === "producer-signup" ? (
-              <button className="linklike" onClick={(e) => { e.preventDefault(); setMode("producer-signin"); }}>
-                Already have an account? Sign in
-              </button>
-            ) : (
-              <span style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
-                <button className="linklike" onClick={(e) => { e.preventDefault(); setMode("producer-signup"); }}>
-                  No account yet? Create one
-                </button>
-                <button className="linklike" onClick={(e) => { e.preventDefault(); submitMagic(); }}>
-                  Forgot password?
-                </button>
-              </span>
-            )}
+            <button className="linklike" onClick={(e) => { e.preventDefault(); submitMagic(); }}>
+              Forgot password? Send a magic link.
+            </button>
           </div>
         </section>
       </main>

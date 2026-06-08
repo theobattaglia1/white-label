@@ -198,6 +198,17 @@ export const api = {
   recent: (workspaceID: string, limit = 20) =>
     request<RecentItem[]>(`/workspaces/${workspaceID}/recent?limit=${limit}`),
 
+  // === Team / Invites =======================================================
+
+  workspaceMembersRich: (id = "wsp-amf-private") =>
+    request<Array<{ user_id: string; display_name: string; role: string; member_number: number | null }>>(`/workspaces/${id}/members`),
+  listInvites: (id = "wsp-amf-private") =>
+    request<Array<{ invite_id: string; email: string; role: string; display_name: string | null; invited_at: string }>>(`/workspaces/${id}/invites`),
+  sendInvite: (id: string, body: { email: string; role: string; display_name?: string }) =>
+    request<{ invited: boolean; email: string; role: string; invite_id: string }>(`/workspaces/${id}/invite`, { method: "POST", body: JSON.stringify(body) }),
+  revokeInvite: (workspaceId: string, inviteId: string) =>
+    request<{ revoked: boolean }>(`/workspaces/${workspaceId}/invites/${inviteId}`, { method: "DELETE" }),
+
   shared: async (token: string) => {
     const payload = await request<SharedPayload>(`/shared/${token}`);
     // Route recipient audio through the revocation-gated streaming endpoint

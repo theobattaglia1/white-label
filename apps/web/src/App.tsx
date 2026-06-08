@@ -26,6 +26,7 @@ import {
   SkipForward,
   Upload,
   UserRound,
+  Users,
   X,
 } from "lucide-react";
 import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VersionType, type VisibleNote } from "@pmw/shared";
@@ -38,7 +39,7 @@ import { SignIn } from "./SignIn";
 import { PlaybackWordmark, PlaybackMark } from "./PlaybackWordmark";
 import type { Session } from "@supabase/supabase-js";
 
-type ViewMode = "home" | "library" | "room" | "compare" | "inbox" | "links" | "assistant" | "playlist";
+type ViewMode = "home" | "library" | "room" | "compare" | "inbox" | "links" | "assistant" | "playlist" | "team";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
@@ -349,6 +350,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
             />
           )}
+          {mode === "team" && <TeamView />}
         </section>
       </main>
       {!overlayOpen && <MiniPlayer onOpenSong={openNowPlaying} />}
@@ -361,6 +363,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         playlists={playlists}
         onRefresh={() => songPayload && refresh(songPayload.song.song_id)}
         onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
+        onOpenSong={openSong}
       />
       <CommandPalette
         open={paletteOpen}
@@ -421,6 +424,7 @@ function CommandPalette({
     { id: "go-compare", label: "Compare", kind: "Go to", run: () => onSetMode("compare") },
     { id: "go-links", label: "Links", kind: "Go to", run: () => onSetMode("links") },
     { id: "go-ask", label: "Ask", kind: "Go to", run: () => onSetMode("assistant") },
+    { id: "go-team", label: "Team", kind: "Go to", run: () => onSetMode("team") },
   ];
   const roomItems: CmdItem[] = rooms.map((r) => ({ id: `room-${r.room_id}`, label: r.title, sub: `${r.song_count} song${r.song_count === 1 ? "" : "s"}`, kind: "Room", run: () => onOpenRoom(r.room_id) }));
   const songItems: CmdItem[] = library.map((it) => ({ id: `song-${it.song.song_id}`, label: it.song.title, sub: it.song.artist_display_name, kind: "Song", run: () => onOpenSong(it.song.song_id) }));
@@ -498,6 +502,7 @@ function TopBar({
     ["compare", "Compare", GitCompare],
     ["links", "Links", Link2],
     ["assistant", "Ask", MessageSquare],
+    ["team", "Team", Users],
   ];
   const openRooms = rooms.reduce((a, r) => a + (r.open_note_count > 0 ? 1 : 0), 0);
   return (
@@ -586,6 +591,7 @@ function Sidebar({
     ["compare", "Compare", GitCompare],
     ["links", "Links", Link2],
     ["assistant", "Ask", MessageSquare],
+    ["team", "Team", Users],
   ] as const;
 
   return (
@@ -703,6 +709,210 @@ function Sidebar({
 // =====================================================================
 //  HomeView — default landing: Pinned + Recent
 // =====================================================================
+
+// =====================================================================
+//  TeamView — members, pending invites, and invite form
+// =====================================================================
+
+const ROLES = ["owner", "admin", "manager", "producer", "engineer", "artist", "anr", "viewer"] as const;
+type WorkspaceRole = (typeof ROLES)[number];
+
+function TeamView() {
+  const [members, setMembers] = useState<Awaited<ReturnType<typeof api.workspaceMembersRich>>>([]);
+  const [invites, setInvites] = useState<Awaited<ReturnType<typeof api.listInvites>>>([]);
+  const [loading, setLoading] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<WorkspaceRole>("viewer");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSent, setInviteSent] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [m, i] = await Promise.all([
+        api.workspaceMembersRich().catch(() => [] as Awaited<ReturnType<typeof api.workspaceMembersRich>>),
+        api.listInvites().catch(() => [] as Awaited<ReturnType<typeof api.listInvites>>),
+      ]);
+      setMembers(m);
+      setInvites(i);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function sendInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setInviteSending(true);
+    setInviteError(null);
+    try {
+      await api.sendInvite("wsp-amf-private", {
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        display_name: inviteName.trim() || undefined,
+      });
+      setInviteSent(inviteEmail.trim());
+      setInviteEmail("");
+      setInviteName("");
+      setInviteRole("viewer");
+      setInviteOpen(false);
+      void load();
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Could not send invite");
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  async function revoke(inviteId: string) {
+    setRevoking(inviteId);
+    try {
+      await api.revokeInvite("wsp-amf-private", inviteId);
+      void load();
+    } finally {
+      setRevoking(null);
+    }
+  }
+
+  function initials(name: string) {
+    return name.split(/\s+/).map((s) => s[0]).join("").slice(0, 2).toUpperCase();
+  }
+
+  return (
+    <div className="view-stack team-page">
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">WORKSPACE</p>
+          <h1>Team</h1>
+        </div>
+        <div className="metric-strip">
+          <Metric label="members" value={members.length} />
+          <Metric label="pending" value={invites.length} />
+        </div>
+      </div>
+
+      {/* Invite sent banner */}
+      {inviteSent && (
+        <div className="team-banner" role="status">
+          Invite sent to <b>{inviteSent}</b>. They'll get an email with a sign-in link.
+          <button className="text-button" onClick={() => setInviteSent(null)}>Dismiss</button>
+        </div>
+      )}
+
+      {/* Invite form */}
+      <div className="team-invite-bar">
+        {!inviteOpen ? (
+          <button className="accent-button" onClick={() => setInviteOpen(true)}>
+            <Plus size={15} /> Invite someone
+          </button>
+        ) : (
+          <form className="team-invite-form" onSubmit={sendInvite}>
+            <p className="eyebrow">SEND INVITE</p>
+            <div className="team-invite-fields">
+              <input
+                type="email"
+                placeholder="email@studio.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                required
+                autoFocus
+                disabled={inviteSending}
+              />
+              <input
+                type="text"
+                placeholder="Name (optional)"
+                value={inviteName}
+                onChange={(e) => setInviteName(e.target.value)}
+                disabled={inviteSending}
+              />
+              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as WorkspaceRole)} disabled={inviteSending}>
+                {ROLES.filter((r) => r !== "owner").map((r) => (
+                  <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            {inviteError && <p className="team-invite-error">{inviteError}</p>}
+            <div className="team-invite-actions">
+              <button type="submit" className="accent-button" disabled={inviteSending || !inviteEmail.trim()}>
+                {inviteSending ? "Sending…" : "Send invite"}
+              </button>
+              <button type="button" className="chrome-button" onClick={() => { setInviteOpen(false); setInviteError(null); }} disabled={inviteSending}>
+                Cancel
+              </button>
+            </div>
+            <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+              They'll receive a Playback invite email with a one-click sign-in link. Sign-up is invite-only.
+            </p>
+          </form>
+        )}
+      </div>
+
+      {/* Current members */}
+      <div className="team-section">
+        <h2 className="team-section-head">Members</h2>
+        {loading ? (
+          <p className="muted">Loading…</p>
+        ) : members.length === 0 ? (
+          <p className="muted">No members yet.</p>
+        ) : (
+          <div className="team-list">
+            {members.map((m) => (
+              <div key={m.user_id} className="team-row">
+                <span className="team-avatar" aria-hidden="true">{initials(m.display_name ?? "?")}</span>
+                <div className="team-row-text">
+                  <span className="team-row-name">{m.display_name}</span>
+                  <span className="team-row-meta">
+                    {m.role}
+                    {m.member_number != null && <> · PB·{String(m.member_number).padStart(3, "0")}</>}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pending invites */}
+      {invites.length > 0 && (
+        <div className="team-section">
+          <h2 className="team-section-head">Pending invites</h2>
+          <div className="team-list">
+            {invites.map((inv) => (
+              <div key={inv.invite_id} className="team-row">
+                <span className="team-avatar pending" aria-hidden="true">
+                  {inv.email.slice(0, 2).toUpperCase()}
+                </span>
+                <div className="team-row-text">
+                  <span className="team-row-name">{inv.display_name ?? inv.email}</span>
+                  <span className="team-row-meta">{inv.email} · {inv.role} · invited {formatRelative(inv.invited_at)}</span>
+                </div>
+                <button
+                  className="team-revoke"
+                  onClick={() => void revoke(inv.invite_id)}
+                  disabled={revoking === inv.invite_id}
+                  title="Revoke invite"
+                >
+                  {revoking === inv.invite_id ? "…" : <X size={13} />}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="team-note">
+        <Shield size={13} />
+        Sign-ups are invite-only. Anyone without a valid invite who tries to create an account won't see workspace content.
+      </div>
+    </div>
+  );
+}
 
 function LibEmptyState({ label, hint }: { label: string; hint: string }) {
   return (
@@ -1745,11 +1955,13 @@ function SongWorkspace({
   onRefresh,
   playlists = [],
   onRefreshPlaylists,
+  onOpenSong,
 }: {
   payload: SongPayload;
   onRefresh: () => void;
   playlists?: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists?: () => void;
+  onOpenSong?: (id: string) => void;
 }) {
   const [activeVersionID, setActiveVersionID] = useState(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
   const [noteDraftOpen, setNoteDraftOpen] = useState(false);
@@ -1846,10 +2058,10 @@ function SongWorkspace({
         <div className="song-card-frame">
           <div className="stamp-row">
             {approvedVersion && (
-              <Stamp kind="approved" straight>Approved · {approvedVersion.version_label}</Stamp>
+              <Stamp kind="approved" straight>{approvedVersion.version_label}</Stamp>
             )}
             {hasNotesDue && (
-              <Stamp kind="notes-due">Notes Due · {openNotes.length}</Stamp>
+              <Stamp kind="notes-due">{openNotes.length} open</Stamp>
             )}
           </div>
           <div className="song-card-body">
@@ -2046,6 +2258,9 @@ function SongWorkspace({
         <NotesPanel notes={payload.notes} onRefresh={onRefresh} />
         <DeliverablesPanel payload={payload} />
       </div>
+      {onOpenSong && (
+        <FindSimilarPanel song={payload.song} onOpenSong={onOpenSong} />
+      )}
     </div>
   );
 }
@@ -2451,7 +2666,7 @@ function VersionStack({
             </div>
             <div className="version-state">
               {version.version_id === payload.song.approved_version_id && (
-                <Stamp kind="approved" tight straight>Approved</Stamp>
+                <Stamp kind="approved" tight straight />
               )}
               {version.is_current ? (
                 <span className="status-pill red">Current</span>
@@ -3110,7 +3325,9 @@ function LinkManager({ room, song, onRefresh }: { room: RoomPayload; song: Song;
           {overallHeard.heard} of {overallHeard.total} {overallHeard.total === 1 ? "recipient" : "recipients"} listened
         </p>
       )}
-      {latestToken && <div className="notice-line">/shared/{latestToken}</div>}
+      {latestToken && (
+        <ForeverLinkCard token={latestToken} song={song} onClose={() => setLatestToken(null)} />
+      )}
       <div className="link-list">
         {links.map((link) => {
           // PF2: use pre-built Map instead of filtering analytics per link
@@ -3392,6 +3609,106 @@ function AssistantPanel({
   );
 }
 
+// =====================================================================
+//  ForeverLinkCard — branded presentation of a share link token
+// =====================================================================
+
+function ForeverLinkCard({ token, song, onClose }: { token: string; song: Song; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/shared/${token}`;
+
+  function copy() {
+    void navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2200);
+  }
+
+  return (
+    <div className="forever-card">
+      <div className="forever-card-header">
+        <PlaybackWordmark size="sm" />
+        <button className="forever-card-close" onClick={onClose} aria-label="Dismiss link card">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="forever-card-body">
+        <span className="forever-card-eyebrow">Private Link</span>
+        <h3 className="forever-card-title">{song.title}</h3>
+        {song.artist_display_name && (
+          <div className="forever-card-artist">{song.artist_display_name}</div>
+        )}
+      </div>
+      <div className="forever-card-url-row">
+        <code>/shared/{token}</code>
+      </div>
+      <div className="forever-card-foot">
+        <span className="forever-card-meta">identity required · watermarked · no download</span>
+        <button className={`forever-card-copy${copied ? " copied" : ""}`} onClick={copy}>
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
+//  FindSimilarPanel — related songs based on BPM, key, and tag overlap
+// =====================================================================
+
+function FindSimilarPanel({ song, onOpenSong }: { song: Song; onOpenSong: (id: string) => void }) {
+  const [items, setItems] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
+
+  useEffect(() => {
+    api.workspaceLibrary().then(setItems).catch(() => {});
+  }, []);
+
+  function score(candidate: (typeof items)[number]): number {
+    const s = candidate.song;
+    if (s.song_id === song.song_id) return -1;
+    let n = 0;
+    if (song.bpm && s.bpm && Math.abs(song.bpm - s.bpm) <= 12) n += 2;
+    if (song.song_key && s.song_key && song.song_key === s.song_key) n += 3;
+    n += song.genre_tags.filter((t) => s.genre_tags.includes(t)).length * 2;
+    n += song.mood_tags.filter((t) => s.mood_tags.includes(t)).length;
+    if (s.primary_room_id && s.primary_room_id === song.primary_room_id) n += 1;
+    return n;
+  }
+
+  const similar = items
+    .map((item) => ({ item, s: score(item) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 5)
+    .map((x) => x.item);
+
+  if (similar.length === 0) return null;
+
+  return (
+    <section className="rail-panel">
+      <div className="panel-topline">
+        <div>
+          <p className="eyebrow">SIMILAR</p>
+          <h2>Related Work</h2>
+        </div>
+        <Radio size={18} />
+      </div>
+      <div className="find-similar-list">
+        {similar.map(({ song: s, current_version }) => (
+          <button key={s.song_id} className="find-similar-row" onClick={() => onOpenSong(s.song_id)}>
+            <div className="cover-art" aria-hidden="true" style={{ backgroundImage: coverGradient(s.song_id) }} />
+            <div className="find-similar-text">
+              <span className="find-similar-title">{s.title}</span>
+              <span className="find-similar-meta">
+                {s.artist_display_name}{current_version && ` · ${current_version.version_label}`}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SharedListeningPage({ token }: { token: string }) {
   const [payload, setPayload] = useState<SharedPayload | null>(null);
   const [selectedSongID, setSelectedSongID] = useState<string | null>(null);
@@ -3628,10 +3945,10 @@ function SharedListeningView({
             </div>
             <div className="stamps">
               {payload.link.version_policy === "latest_only" && (
-                <Stamp kind="latest" tight straight>v{current.version_number} · Latest</Stamp>
+                <Stamp kind="latest" tight straight>v{current.version_number}</Stamp>
               )}
-              {!current.is_approved && <Stamp kind="notes-due" tight>Notes open</Stamp>}
-              {current.is_approved && <Stamp kind="approved" tight straight>Approved</Stamp>}
+              {!current.is_approved && <Stamp kind="notes-due" tight />}
+              {current.is_approved && <Stamp kind="approved" tight straight />}
             </div>
           </div>
 
@@ -3680,12 +3997,12 @@ function SharedListeningView({
           {allowApproval && (
             <div className="recipient-approve">
               {alreadyApproved ? (
-                <Stamp kind="approved" straight>Approved · {activeVersion?.version_label}</Stamp>
+                <Stamp kind="approved" straight>{activeVersion?.version_label}</Stamp>
               ) : approveState === "done" ? (
                 /* A3: aria-live so AT announces the confirmation */
                 <div className="recipient-approve-ceremony" role="status" aria-live="polite">
                   <span className="stamp-arrive-wrap">
-                    <Stamp kind="approved" straight>Approved · just now</Stamp>
+                    <Stamp kind="approved" straight>just now</Stamp>
                   </span>
                   {/* Copy: "Approval sent." */}
                   <p className="recipient-approve-confirm">Approval sent.</p>
@@ -4026,6 +4343,7 @@ function SongOverlay({
   playlists,
   onRefresh,
   onRefreshPlaylists,
+  onOpenSong,
 }: {
   open: boolean;
   payload: SongPayload | null;
@@ -4035,6 +4353,7 @@ function SongOverlay({
   playlists: Awaited<ReturnType<typeof api.playlists>>;
   onRefresh: () => void;
   onRefreshPlaylists: () => void;
+  onOpenSong?: (id: string) => void;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -4120,6 +4439,7 @@ function SongOverlay({
               playlists={playlists}
               onRefresh={onRefresh}
               onRefreshPlaylists={onRefreshPlaylists}
+              onOpenSong={onOpenSong}
             />
           )
           : <div className="overlay-loading">Loading…</div>
@@ -4143,6 +4463,13 @@ function MonoMark({ size = 16 }: { size?: number }) {
 
 type StampKind = "private" | "notes-due" | "approved" | "latest";
 
+const STAMP_SLUG: Record<StampKind, string> = {
+  approved: "stamp_approved",
+  "notes-due": "stamp_notes_due",
+  private: "stamp_private",
+  latest: "stamp_latest",
+};
+
 function Stamp({
   kind = "private",
   tight = false,
@@ -4152,10 +4479,13 @@ function Stamp({
   kind?: StampKind;
   tight?: boolean;
   straight?: boolean;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
-  const classes = ["stamp", kind, tight ? "tight" : "", straight ? "straight" : ""]
-    .filter(Boolean)
-    .join(" ");
-  return <span className={classes}>{children}</span>;
+  const cls = ["stamp-w", kind, tight ? "tight" : "", straight ? "straight" : ""].filter(Boolean).join(" ");
+  return (
+    <span className={cls}>
+      <img src={`/brand/${STAMP_SLUG[kind]}.png`} alt={kind.replace("-", " ")} className="stamp-w-img" aria-hidden="true" />
+      {children && <span className="stamp-w-detail">{children}</span>}
+    </span>
+  );
 }

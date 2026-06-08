@@ -460,6 +460,24 @@ final class WorkspaceStore {
         customRooms.insert(updated, at: 0)
         persist()
     }
+    func removeTrack(_ trackID: String, fromProject id: String) {
+        if let i = customRooms.firstIndex(where: { $0.id == id }) {
+            customRooms[i].trackIDs.removeAll { $0 == trackID }
+            persist()
+            return
+        }
+
+        if let i = serviceRooms.firstIndex(where: { $0.id == id }) {
+            serviceRooms[i].trackIDs.removeAll { $0 == trackID }
+            syncMessage = "Project change saved locally"
+            return
+        }
+
+        guard var room = SampleData.rooms.first(where: { $0.id == id }) else { return }
+        room.trackIDs.removeAll { $0 == trackID }
+        customRooms.insert(room, at: 0)
+        persist()
+    }
     func reorderPlaylist(_ id: String, _ trackIDs: [String]) {
         if let i = localPlaylists.firstIndex(where: { $0.id == id }) {
             localPlaylists[i].trackIDs = trackIDs

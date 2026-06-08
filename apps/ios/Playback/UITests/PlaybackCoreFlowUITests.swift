@@ -48,6 +48,35 @@ final class PlaybackCoreFlowUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["Drag to reorder The First Night"].waitForExistence(timeout: 3))
     }
 
+    func testLibraryBulkSelectionShowsActionPalette() {
+        let app = launchPlayback(arguments: ["-tab", "library"])
+
+        XCTAssertTrue(app.staticTexts["Library"].waitForExistence(timeout: 4))
+        app.buttons["SELECT"].firstMatch.tap()
+        app.staticTexts["The First Night"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["SELECTED"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["1 song"].exists)
+        XCTAssertTrue(app.staticTexts["PLAYLIST"].exists)
+        XCTAssertTrue(app.staticTexts["PROJECT"].exists)
+        XCTAssertTrue(app.staticTexts["SHARE"].exists)
+        XCTAssertFalse(app.buttons["DELETE"].exists)
+    }
+
+    func testPlaylistBulkSelectionHidesReorderHandleAndCanRemove() {
+        let app = launchPlayback(arguments: ["-playlist"])
+
+        XCTAssertTrue(app.staticTexts["PLAYLIST"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.descendants(matching: .any)["Drag to reorder The First Night"].waitForExistence(timeout: 3))
+
+        app.buttons["SELECT"].firstMatch.tap()
+        app.staticTexts["The First Night"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["SELECTED"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["REMOVE"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["Drag to reorder The First Night"].exists)
+    }
+
     func testRealAuthModeShowsSignInGate() {
         let app = XCUIApplication()
         app.launchEnvironment["PLAYBACK_USE_REMOTE_API"] = "1"

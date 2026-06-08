@@ -24,7 +24,7 @@ struct HomeView: View {
     @State private var heroIndex = 0
     private let heroAdvance = Timer.publish(every: 12, on: .main, in: .common).autoconnect()
 
-    private let heroAspectRatio: CGFloat = 9.0 / 16.0
+    private let heroAspectRatio: CGFloat = 3.0 / 4.0
     private var heroFrameWidth: CGFloat {
         #if canImport(UIKit)
         return max(0, UIScreen.main.bounds.width - 48)

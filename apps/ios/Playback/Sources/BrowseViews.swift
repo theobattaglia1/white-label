@@ -73,7 +73,7 @@ private enum ArtworkImportError: LocalizedError {
 }
 
 private enum ImportedMediaWriter {
-    static let marqueeAspectRatio: CGFloat = 9.0 / 16.0
+    static let marqueeAspectRatio: CGFloat = 3.0 / 4.0
 
     static func sanitizedFileName(_ value: String) -> String {
         let allowed = CharacterSet.alphanumerics
@@ -107,7 +107,8 @@ private enum ImportedMediaWriter {
     }
 
     static func renderCrop(image: UIImage, scale: CGFloat, offset: CGSize, previewSize: CGSize) -> UIImage {
-        let targetSize = CGSize(width: 1080, height: 1920)
+        let targetWidth: CGFloat = 1200
+        let targetSize = CGSize(width: targetWidth, height: targetWidth / marqueeAspectRatio)
         let imageSize = image.size
         guard imageSize.width > 0, imageSize.height > 0, previewSize.width > 0, previewSize.height > 0 else {
             return centerCrop(image, aspectRatio: marqueeAspectRatio)

@@ -971,6 +971,7 @@ struct AddSongSheet: View {
     var store: WorkspaceStore
     var player: Player
     var initialAudioURL: URL? = nil
+    var deleteInitialAudioAfterImport = false
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var artist = ""
@@ -1204,6 +1205,9 @@ struct AddSongSheet: View {
                     }
                     if importedArtwork == nil, let artwork = selection.artwork {
                         importedArtwork = artwork
+                    }
+                    if deleteInitialAudioAfterImport {
+                        try? FileManager.default.removeItem(at: url)
                     }
                     isImporting = false
                 }

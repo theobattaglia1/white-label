@@ -5,6 +5,7 @@ enum AppTab: String, CaseIterable { case home, library, explore, inbox, profile 
 private struct IncomingAudioImport: Identifiable {
     let id = UUID()
     let url: URL
+    let deleteAfterImport: Bool
 }
 
 /// App shell: a bottom nav, a persistent mini-player,
@@ -111,7 +112,12 @@ struct AppShell: View {
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
         .sheet(item: $incomingAudio) { item in
-            AddSongSheet(store: workspace, player: player, initialAudioURL: item.url)
+            AddSongSheet(
+                store: workspace,
+                player: player,
+                initialAudioURL: item.url,
+                deleteInitialAudioAfterImport: item.deleteAfterImport
+            )
         }
         .onOpenURL { url in
             handleIncomingAudioURL(url)
@@ -161,11 +167,32 @@ struct AppShell: View {
     }
 
     private func handleIncomingAudioURL(_ url: URL) {
+        if url.scheme == "playback" {
+            handlePlaybackURL(url)
+            return
+        }
+
         let ext = url.pathExtension.lowercased()
         guard url.isFileURL, importableAudioExtensions.contains(ext) else { return }
         showPlayer = false
         tab = .library
-        incomingAudio = IncomingAudioImport(url: url)
+        incomingAudio = IncomingAudioImport(url: url, deleteAfterImport: false)
+    }
+
+    private func handlePlaybackURL(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.host == "import-audio",
+              let fileName = components.queryItems?.first(where: { $0.name == "file" })?.value
+        else { return }
+        let safeFileName = URL(fileURLWithPath: fileName).lastPathComponent
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier) else { return }
+        let incomingURL = container
+            .appendingPathComponent("IncomingAudio", isDirectory: true)
+            .appendingPathComponent(safeFileName)
+        guard FileManager.default.fileExists(atPath: incomingURL.path) else { return }
+        showPlayer = false
+        tab = .library
+        incomingAudio = IncomingAudioImport(url: incomingURL, deleteAfterImport: true)
     }
 }
 

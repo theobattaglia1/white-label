@@ -19,6 +19,7 @@ enum Config {
 
     static let defaultWorkspaceID = "wsp-amf-private"
     static let devUserID = "usr-theo"
+    static let appGroupIdentifier = "group.inc.allmyfriends.playback"
 
     static let supabaseURL = "https://pojhfkamzteleogxxfqj.supabase.co"
     static let supabaseAnonKey = "sb_publishable_L0oZ8X6VDEfmR8WJg7Oifg_gdkmvEiT"

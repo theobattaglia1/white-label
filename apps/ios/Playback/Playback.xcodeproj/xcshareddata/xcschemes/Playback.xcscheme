@@ -21,6 +21,20 @@
                ReferencedContainer = "container:Playback.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "DD7433E4C1B5D5F085A85F10"
+               BuildableName = "PlaybackShareExtension.appex"
+               BlueprintName = "PlaybackShareExtension"
+               ReferencedContainer = "container:Playback.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

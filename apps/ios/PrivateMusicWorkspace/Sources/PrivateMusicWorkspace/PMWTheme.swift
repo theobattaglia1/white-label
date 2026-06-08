@@ -1,7 +1,7 @@
 import SwiftUI
 
 // =====================================================================
-// WHITE LABEL · Editorial Redline · iOS theme
+// Playback · Editorial Redline · iOS theme
 // Brand-true tokens that match apps/web/src/styles.css.
 // Studio mode = workspace surfaces (dark, like the producer's tape).
 // Sleeve mode = recipient + share-link surfaces (cream, like an LP back).
@@ -172,7 +172,7 @@ enum PMWFont {
 
 // MARK: - Brand primitives ---------------------------------------------
 
-/// The "WHITE LABEL_" wordmark with the red underscore cursor. Brand chrome.
+/// The "PLAYBACK_" wordmark with the red underscore cursor. Brand chrome.
 struct PMWWordmark: View {
     enum Size { case sm, md, lg, hero }
     var size: Size = .md
@@ -188,7 +188,7 @@ struct PMWWordmark: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("WHITE LABEL")
+            Text("PLAYBACK")
                 .font(PMWFont.display(pointSize, weight: .black))
                 .kerning(-pointSize * 0.04)
                 .foregroundStyle(PMWColors.ink)
@@ -200,14 +200,14 @@ struct PMWWordmark: View {
     }
 }
 
-/// The "WL_" monogram — used inside compact chrome.
+/// The "P_" monogram — used inside compact chrome.
 struct PMWMonoMark: View {
     var size: CGFloat = 18
     var tint: Color = .white
 
     var body: some View {
         HStack(spacing: 2) {
-            Text("WL")
+            Text("P")
                 .font(PMWFont.display(size, weight: .black))
                 .kerning(-size * 0.02)
                 .foregroundStyle(tint)
@@ -263,7 +263,7 @@ struct PMWRule: View {
     }
 }
 
-/// Catalog ID text — `WL · 0142 · Halftime` style, mono caps with red dots.
+/// Catalog ID text — `PB · 0142 · Halftime` style, mono caps with red dots.
 struct PMWCatalogId: View {
     let workspaceCode: String
     let catalogNumber: String

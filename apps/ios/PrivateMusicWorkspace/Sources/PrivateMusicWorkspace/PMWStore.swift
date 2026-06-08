@@ -2,7 +2,7 @@ import Foundation
 
 /// Workspace state for the producer side. Reads from either
 /// `PMWSampleData` (default, offline-friendly) or `PMWAPIClient` when
-/// `PMWConfig.useRemoteAPI == true` (the `WL_USE_REMOTE_API=1` env var).
+/// `PMWConfig.useRemoteAPI == true` (the `PLAYBACK_USE_REMOTE_API=1` env var).
 ///
 /// The store interface is stable across both modes so views don't care
 /// where the data came from.

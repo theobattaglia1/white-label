@@ -14,7 +14,8 @@ extension are wired to the same Supabase that the web app uses.
 - macOS, Xcode 16.0 or later
 - Apple Developer account ($99/yr) only if you want to run on a real
   iPhone or ship to TestFlight. Simulator works with the free profile.
-- The web API live at `https://white-label-api-6mnt.onrender.com` (or
+- The web API live at the current Render endpoint,
+  `https://white-label-api-6mnt.onrender.com`, or
   point to localhost during dev — see step 6).
 
 ---
@@ -133,7 +134,7 @@ Then register the URL scheme:
 
 1. Click the project root in Xcode sidebar → **PrivateMusicWorkspace target**
    → **Info** tab → **URL Types** → click +
-2. Identifier: `com.allmyfriends.whitelabel`
+2. Identifier: `inc.allmyfriends.playback`
 3. URL Schemes: `wl`
 4. Role: Editor
 
@@ -145,23 +146,23 @@ in your terminal. The recipient view appears.
 ## 5. Create the iMessage Extension target
 
 1. **File → New → Target…** → iOS → **iMessage Extension** → Next
-2. Product Name: **WhiteLabelReceipts** (must match the folder I created)
+2. Product Name: **PlaybackReceipts** (must match the folder I created)
 3. Team: your Apple ID (or none for Simulator-only)
-4. Bundle identifier: `<parent>.WhiteLabelReceipts`
+4. Bundle identifier: `inc.allmyfriends.playback.receipts`
 5. Embed in: **PrivateMusicWorkspace** ✓
 6. Click Finish.
 
 Xcode creates a default `MessagesViewController.swift` and `MainInterface.storyboard`. **DELETE** the default `MessagesViewController.swift` (the file Xcode just generated — NOT the one I wrote).
 
-Now drag the files from `apps/ios/WhiteLabelReceipts/` into the new
+Now drag the files from `apps/ios/PlaybackReceipts/` into the new
 target's group:
 
 - `MessagesViewController.swift`
-- `WLReceiptAPI.swift`
+- `PlaybackReceiptAPI.swift`
 - `Info.plist` (replace the auto-generated one — when prompted, choose
   "Replace")
 
-For each file: **Target Membership = WhiteLabelReceipts only**.
+For each file: **Target Membership = PlaybackReceipts only**.
 
 **Check:** Cmd+B builds both targets cleanly.
 
@@ -179,11 +180,11 @@ static let defaultAPIBaseURL = "https://white-label-api-6mnt.onrender.com"
 For dev against your local API, you can override via Scheme env var:
 
 1. Product → Scheme → Edit Scheme → Run → Arguments → Environment Variables
-2. Add `WL_API_BASE_URL = http://192.168.X.X:4317` (your Mac's LAN IP)
+2. Add `PLAYBACK_API_BASE_URL = http://192.168.X.X:4317` (your Mac's LAN IP)
 
-In `WLReceiptAPI.swift`, the iMessage extension's `baseURL` defaults to
-`https://white-label-api.onrender.com` — change that constant to
-`https://white-label-api-6mnt.onrender.com` too.
+In `PlaybackReceiptAPI.swift`, the iMessage extension's `baseURL` defaults to
+`https://white-label-api-6mnt.onrender.com`. That hostname is legacy
+infrastructure naming; keep it until a Playback API custom domain is attached.
 
 **Check:** Run on Simulator. The room view loads with "Hudson Ingram LP
 · Approval run" and the 4 songs from your live Supabase.
@@ -195,7 +196,7 @@ In `WLReceiptAPI.swift`, the iMessage extension's `baseURL` defaults to
 iMessage extensions need a specific multi-size icon catalog. Generate
 from `apps/web/public/brand/app_icon.png` (1024×1024):
 
-1. In the WhiteLabelReceipts target, open `Assets.xcassets`
+1. In the PlaybackReceipts target, open `Assets.xcassets`
 2. Right-click → **New iMessage App Icon**
 3. Drag `app_icon.png` into each slot (Xcode will warn if sizes don't
    match — use any online "iMessage icon set generator" with the
@@ -213,7 +214,7 @@ RECIPIENT side:
 1. Run the parent app on a real iPhone via Xcode (Simulator's iMessage
    support is flaky).
 2. Open Messages on the iPhone → tap the App Store icon → swipe to find
-   "White Label · Receipts".
+   "Playback · Receipts".
 3. The compact UI shows. Tap to expand. Approve / send a note → POSTs
    to your live API → check Supabase.
 
@@ -224,7 +225,7 @@ the "compose" view in the main app:
 import Messages
 // In any view that has a "Share via iMessage" button:
 let message = MSMessage()
-message.url = URL(string: "https://white-label-web.onrender.com/shared/<token>")!
+message.url = URL(string: "https://playback.allmyfriendsinc.com/shared/<token>")!
 let layout = MSMessageTemplateLayout()
 layout.image = UIImage(named: "AppIcon")
 layout.caption = song.title

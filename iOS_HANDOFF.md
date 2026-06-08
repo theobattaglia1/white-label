@@ -1,4 +1,4 @@
-# WHITE LABEL — iOS Handoff
+# PLAYBACK — iOS Handoff
 
 *Session of 2026.05.25 · Claude · companion to `HANDOFF.md` (web)*
 
@@ -13,21 +13,21 @@ This session covered the iOS app and the iMessage extension. The sandbox here ha
 | File | Status | What it does |
 |---|---|---|
 | `PMWTheme.swift` | **rewritten** | Editorial brand tokens — studio mode (dark workspace), sleeve mode (cream recipient), redline `#D9281D`, notes-blue `#2D5DB8`, condensed-grotesque display font, typewriter mono. Adds `PMWWordmark`, `PMWMonoMark`, `PMWStamp`, `PMWCatalogId` SwiftUI primitives. Old token names (`canvas`, `paper`, `ink`, `accent`…) preserved and re-pointed so legacy views become brand-true without code changes. `PMWChromeButtonStyle` now has `variant: .ghost / .dark / .accent` plus a back-compat `init(accent: Bool)` so existing call sites keep working. |
-| `PMWConfig.swift` | **new** | Runtime config. `apiBaseURL` resolves from env var `WL_API_BASE_URL`, defaults to `http://127.0.0.1:5180`. `useRemoteAPI` toggles between PMWSampleData and PMWAPIClient via `WL_USE_REMOTE_API=1`. `devUserId = "usr-theo"` sent as `x-user-id` header. |
+| `PMWConfig.swift` | **new** | Runtime config. `apiBaseURL` resolves from env var `PLAYBACK_API_BASE_URL`, defaults to `http://127.0.0.1:5180`. `useRemoteAPI` toggles between PMWSampleData and PMWAPIClient via `PLAYBACK_USE_REMOTE_API=1`. `devUserId = "usr-theo"` sent as `x-user-id` header. |
 | `PMWAPIClient.swift` | **new** | URLSession client for `/rooms/:id`, `/songs/:id`, `/shared/:token`, `POST /notes`, `POST /versions/:id/approvals`. Decodes the JSON envelope used by the web API. |
 | `PMWAudioEngine.swift` | **rewritten** | Real AVPlayer-backed playback. Resolves each `PMWAsset.assetURLPath` against `PMWConfig.apiBaseURL`. Periodic time observer ticks `positionMS` at 50ms. Falls back to virtual mode when an asset has no URL. |
-| `PMWModels.swift` | **patched** | Added `assetURLPath: String?` to `PMWAsset`. Added a computed `catalogId` ("WL · 0142") to `PMWSong`. Everything else preserved. |
+| `PMWModels.swift` | **patched** | Added `assetURLPath: String?` to `PMWAsset`. Added a computed `catalogId` ("PB · 0142") to `PMWSong`. Everything else preserved. |
 | `PMWSampleData.swift` | **rewritten** | Real song titles (The First Night by Hudson Ingram, Lighting The Fuse, Duel by Ruby Plume, Best Of Me by Daniel Price) with `assetURLPath` pointing at `seed-audio/…`. The audio files are served by the **web app** (Vite serves `/public`); the iOS app pulls them over HTTP, so the web dev server must be running at `PMWConfig.apiBaseURL` for audio to play. |
 | `PMWStore.swift` | **rewritten** | Same `selectSong / setCurrent / addNote / resolve / reopen / deliverables / assistantAnswer` surface as before. Added `loadFromAPIIfEnabled()` — call from `.task { … }` on root view; it hits `PMWAPIClient.shared.room()` when `useRemoteAPI` is on. Notes are optimistically appended locally and posted to the API in the background. |
 | `PMWSongCardHero.swift` | **new** | The Song Card hero composition from wireframes v2 (cover top, metadata, version pills, action row, waveform band, three-column below). Self-contained: doesn't touch state, just renders. Drop it into `PMWRootView`'s song tab — wiring example in the file's doc comment. |
 | `PMWRecipientView.swift` | **new** | Recipient listening surface (analog of the web's `SharedListeningView`). Sleeve mode. Fetches `/shared/:token` via `PMWAPIClient`. Composer at the bottom posts notes back to the API. Triggered by `wl://r/<token>` deep link or a debug menu. |
 
-### Files added under `apps/ios/WhiteLabelReceipts/` (iMessage extension — new target)
+### Files added under `apps/ios/PlaybackReceipts/` (iMessage extension — new target)
 
 | File | Status | What it does |
 |---|---|---|
 | `MessagesViewController.swift` | **new** | `MSMessagesAppViewController` subclass. Hosts a SwiftUI receipt view in both compact (~220pt) and expanded (~414pt) presentations. Approve button → POST `/versions/:id/approvals`. Reply note → POST `/notes`. |
-| `WLReceiptAPI.swift` | **new** | Tiny URLSession client. Defaults to `https://white-label-api.onrender.com` (your production Render URL); override via `WL_API_BASE_URL`. |
+| `PlaybackReceiptAPI.swift` | **new** | Tiny URLSession client. Defaults to the current Render API endpoint; override via `PLAYBACK_API_BASE_URL`. |
 | `Info.plist` | **new** | Extension Info.plist with the iMessage extension point (`com.apple.message-payload-provider`), `MainInterface` storyboard reference, `NSAllowsLocalNetworking` for dev. |
 
 ---
@@ -102,11 +102,11 @@ You'll need to declare a `String?`-wrapping `IdentifiableToken` to use with `.sh
 Xcode does this for you via a target template:
 
 1. File → New → Target → iOS → **iMessage Extension**
-2. Product name: **WhiteLabelReceipts** (matches the directory I created)
+2. Product name: **PlaybackReceipts** (matches the directory I created)
 3. Bundle identifier: parent app's bundle id + `.receipts` (Xcode generates this)
 4. Language: Swift, Embed in app: PrivateMusicWorkspace
 5. Click Finish. Xcode creates a default `MessagesViewController.swift` and storyboard. **Delete them.**
-6. Drag the files from `apps/ios/WhiteLabelReceipts/` (`MessagesViewController.swift`, `WLReceiptAPI.swift`, `Info.plist`) into the new target. Make Target Membership = WhiteLabelReceipts only.
+6. Drag the files from `apps/ios/PlaybackReceipts/` (`MessagesViewController.swift`, `PlaybackReceiptAPI.swift`, `Info.plist`) into the new target. Make Target Membership = PlaybackReceipts only.
 7. In the target's Info → Custom iOS Target Properties, set `MSMessagesAppPresentationContextMessages = YES`.
 8. Add an iMessage App Icon catalog (Asset Catalog → New iMessage App Icon). 1024x1024 → 67x50 → 27x21. You can derive these from `apps/web/public/brand/app_icon.png`.
 
@@ -115,7 +115,7 @@ Xcode does this for you via a target template:
 Once your Render API is live, update two strings:
 
 - `PMWConfig.swift` → `defaultAPIBaseURL` → your Render web/static URL (Vite-built bundle serves `/seed-audio` from there too).
-- `WLReceiptAPI.swift` → `baseURL` default → your Render API URL.
+- `PlaybackReceiptAPI.swift` → `baseURL` default → your Render API URL.
 
 ---
 
@@ -133,8 +133,8 @@ open apps/ios/PrivateMusicWorkspace/PrivateMusicWorkspace.xcodeproj
 # (offline-friendly, has real song titles + real audio).
 # To flip to the live API:
 #   In Xcode > Scheme > Run > Arguments > Environment Variables:
-#     WL_USE_REMOTE_API = 1
-#     WL_API_BASE_URL  = http://127.0.0.1:5180
+#     PLAYBACK_USE_REMOTE_API = 1
+#     PLAYBACK_API_BASE_URL  = http://127.0.0.1:5180
 ```
 
 On a real device on the same Wi-Fi as your Mac, replace `127.0.0.1` with the Mac's LAN IP (e.g. `http://192.168.4.18:5180`). Audio streams from there.
@@ -161,7 +161,7 @@ iMessage extensions only work on physical devices (Simulator's iMessage support 
 
 1. Connect an iPhone, set the run target to PrivateMusicWorkspace on that device.
 2. Build & run. Both the host app and the extension install.
-3. Open Messages on the iPhone → tap the App Store icon in the message bar → swipe to find "White Label".
+3. Open Messages on the iPhone → tap the App Store icon in the message bar → swipe to find "Playback".
 4. The compact UI shows; tap the cover to expand. Approve / send a note → hits your API.
 
 To **send** a receipt as a producer (from Messages on the same device or a teammate's device), you'll need to add a small composer view to the main app that calls `MSMessagesAppViewController.activeConversation.insert(message)`. I didn't build that surface this session — flagged as next step.

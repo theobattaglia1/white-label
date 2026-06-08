@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The P playhead cap: white circle, black P, on dark ground -->
+  <rect width="64" height="64" rx="14" fill="#0c0907"/>
+  <circle cx="28" cy="32" r="18" fill="#f3ecde"/>
+  <text x="28" y="39" text-anchor="middle" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif" font-weight="700" font-size="22" fill="#0c0907">P</text>
+  <!-- The track line the P rides on -->
+  <line x1="28" y1="32" x2="56" y2="32" stroke="#f3ecde" stroke-width="2.5" stroke-linecap="round" opacity="0.35"/>
+</svg>

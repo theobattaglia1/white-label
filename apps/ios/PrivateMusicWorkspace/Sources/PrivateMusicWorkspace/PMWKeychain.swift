@@ -2,10 +2,10 @@ import Foundation
 import Security
 
 /// Minimal Keychain helper for persisting a single PMWAuthSession.
-/// Uses kSecClassGenericPassword with service "white-label-auth".
+/// Uses kSecClassGenericPassword with service "playback-auth".
 /// No third-party wrapper — raw SecItem* calls only.
 enum PMWKeychain {
-    private static let service = "white-label-auth"
+    private static let service = "playback-auth"
     private static let account = "pmw-session"
 
     // MARK: - Public API ------------------------------------------------------

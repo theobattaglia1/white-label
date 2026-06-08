@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import ws from "ws";
 
 /**
  * Supabase client used by the API for server-side operations.
@@ -26,6 +27,8 @@ export function getSupabase(): SupabaseClient | null {
   }
   _client = createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
+    // Node 20 lacks native WebSocket — pass the ws package as the transport.
+    realtime: { transport: ws } as any,
   });
   console.log("[supabase] connected to", url);
   return _client;

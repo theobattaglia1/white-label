@@ -228,6 +228,69 @@ describe("POST /links — migrated write route", () => {
     expect(body.data.link.created_by).not.toBeUndefined();
     expect(typeof body.data.link.created_by).toBe("string");
   });
+
+  it("supports inviting, changing, and revoking specific recipients", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/links",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-theo",
+      },
+      body: JSON.stringify({
+        workspace_id: SEED.workspace,
+        target_type: "song",
+        target_id: SEED.song,
+        allow_comments: true,
+      }),
+    });
+    const linkID = created.json<{ data: { link: { link_id: string } } }>().data.link.link_id;
+
+    const invited = await app.inject({
+      method: "POST",
+      url: `/links/${linkID}/recipients`,
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-theo",
+      },
+      body: JSON.stringify({
+        recipients: [
+          { email: "a&r@example.com", display_name: "A&R", role: "comment" },
+          { email: "download@example.com", role: "download" },
+        ],
+      }),
+    });
+    expect(invited.statusCode).toBe(200);
+    const inviteBody = invited.json<{ data: { recipients: Array<{ recipient_id: string; email: string; role: string }> } }>();
+    expect(inviteBody.data.recipients).toHaveLength(2);
+    expect(inviteBody.data.recipients.map((r) => r.email)).toContain("a&r@example.com");
+
+    const recipientID = inviteBody.data.recipients.find((r) => r.email === "a&r@example.com")!.recipient_id;
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/links/${linkID}/recipients/${recipientID}`,
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "usr-theo",
+      },
+      body: JSON.stringify({ role: "download" }),
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json<{ data: { role: string } }>().data.role).toBe("download");
+
+    const revoked = await app.inject({
+      method: "DELETE",
+      url: `/links/${linkID}/recipients/${recipientID}`,
+      headers: { "x-user-id": "usr-theo" },
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json<{ data: { revoked_at?: string } }>().data.revoked_at).toBeTruthy();
+
+    const activity = (
+      await app.inject({ method: "GET", url: `/workspaces/${SEED.workspace}/activity` })
+    ).json<{ data: Array<{ event_type: string; link_id?: string }> }>();
+    expect(activity.data.some((event) => event.event_type === "invited_recipient" && event.link_id === linkID)).toBe(true);
+  });
 });
 
 // ─── 5. POST /notes — EXCLUDED (legacy authFromRequest) ─────────────────────

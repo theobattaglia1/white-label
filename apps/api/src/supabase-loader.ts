@@ -11,6 +11,7 @@ import type {
   Room,
   SavedView,
   ShareLink,
+  ShareRecipient,
   Song,
   Task,
   User,
@@ -47,6 +48,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     tasksR,
     approvalsR,
     linksR,
+    shareRecipientsR,
     activityR,
     notificationsR,
     viewsR,
@@ -65,6 +67,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     supabase.from("tasks").select("*"),
     supabase.from("approvals").select("*"),
     supabase.from("share_links").select("*"),
+    supabase.from("share_recipients").select("*"),
     supabase.from("activity_events").select("*"),
     supabase.from("notifications").select("*"),
     supabase.from("saved_views").select("*"),
@@ -72,7 +75,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     supabase.from("playlist_items").select("*"),
   ]);
 
-  for (const r of [usersR, workspacesR, membershipsR, roomsR, assetsR, songsR, versionsR, notesR, mentionsR, tasksR, approvalsR, linksR, activityR, notificationsR, viewsR, playlistsR, playlistItemsR]) {
+  for (const r of [usersR, workspacesR, membershipsR, roomsR, assetsR, songsR, versionsR, notesR, mentionsR, tasksR, approvalsR, linksR, shareRecipientsR, activityR, notificationsR, viewsR, playlistsR, playlistItemsR]) {
     if (r.error) {
       console.error("[supabase-loader]", r.error);
       throw new Error(`Supabase query failed: ${r.error.message}`);
@@ -99,6 +102,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
   track(versionsR.data);
   track(notesR.data);
   track(linksR.data);
+  track(shareRecipientsR.data);
 
   function ext(uuid: string | null | undefined): string {
     if (!uuid) return "";
@@ -114,6 +118,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       auth_provider: u.auth_provider ?? undefined,
       two_factor_enabled: !!u.two_factor_enabled,
       notification_preferences: u.notification_preferences ?? {},
+      member_number: u.member_number ?? undefined,
       created_at: u.created_at,
       updated_at: u.updated_at,
     })),
@@ -194,6 +199,8 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       mood_tags: s.mood_tags ?? [],
       instrument_tags: s.instrument_tags ?? [],
       lyric_theme_tags: s.lyric_theme_tags ?? [],
+      artwork_key: s.artwork_key ?? undefined,
+      artwork_url: s.artwork_url ?? undefined,
       release_readiness_status: s.release_readiness_status ?? "not_ready",
       created_by: ext(s.created_by),
       created_at: s.created_at,
@@ -291,6 +298,18 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       created_by: ext(l.created_by) || undefined,
       revoked_at: l.revoked_at ?? undefined,
       created_at: l.created_at,
+    })),
+    shareRecipients: (shareRecipientsR.data ?? []).map((r: any): ShareRecipient => ({
+      recipient_id: r.external_id ?? r.recipient_id,
+      link_id: ext(r.link_id),
+      email: r.email,
+      display_name: r.display_name ?? undefined,
+      role: r.role ?? "listen",
+      invited_by: ext(r.invited_by),
+      invited_at: r.invited_at,
+      last_sent_at: r.last_sent_at ?? undefined,
+      accepted_at: r.accepted_at ?? undefined,
+      revoked_at: r.revoked_at ?? undefined,
     })),
     activityEvents: (activityR.data ?? []).map((e: any): ActivityEvent => ({
       event_id: e.event_id,

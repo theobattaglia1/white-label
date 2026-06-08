@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-/* WHITE LABEL v3 — living generative cover.
+/* PLAYBACK v3 — living generative cover.
    Multi-mode generative field. Default (no props) = warm "Haze" drift, matching
    the home/song covers. Pass mode (0..5) / tone (0..3) / hue to drive the
    playlist cover pickers. Pure WebGL, one context per mount; falls back to

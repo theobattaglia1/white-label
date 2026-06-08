@@ -6,7 +6,7 @@ import SwiftUI
 /// pinned to the safe area bottom.
 ///
 /// Triggered by:
-/// - `wl://r/<token>` deep link (handle in PrivateMusicWorkspaceApp's
+/// - `playback://r/<token>` deep link (handled in PrivateMusicWorkspaceApp's
 ///   `.onOpenURL`), or
 /// - debug menu in producer view ("Open as recipient")
 ///
@@ -497,7 +497,7 @@ struct PMWRecipientView: View {
         // Stable 4-digit number derived from the song id — matches PMWSong.catalogNumber
         var hash: UInt64 = 14695981039346656037
         for byte in songId.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
-        return "WL · \(String(format: "%04d", hash % 9000 + 1000))"
+        return "PB · \(String(format: "%04d", hash % 9000 + 1000))"
     }
 
     private func formatMs(_ ms: Int) -> String {

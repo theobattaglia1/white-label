@@ -1,4 +1,4 @@
-# Render Blueprint for WHITE LABEL (private-music-workspace)
+# Render Blueprint for Playback
 # Apply by going to https://dashboard.render.com/blueprints and connecting the
 # GitHub repo containing this file. Render will detect render.yaml and offer
 # to create both services in one step.
@@ -6,7 +6,7 @@
 services:
   # ===== Backend API (Fastify) =====
   - type: web
-    name: white-label-api
+    name: playback-api
     runtime: node
     region: oregon
     plan: free
@@ -29,16 +29,21 @@ services:
         value: "10000"
       - key: NODE_ENV
         value: production
-      # Supabase (next session) — uncomment when wired:
-      # - key: SUPABASE_URL
-      #   sync: false
-      # - key: SUPABASE_SERVICE_ROLE_KEY
-      #   sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: REQUIRE_JWT_AUTH
+        value: "true"
+      - key: EMAIL_PROVIDER_API_KEY
+        sync: false
 
   # ===== Frontend (Vite SPA, static) =====
   - type: web
-    name: white-label-web
+    name: playback-web
     runtime: static
+    domains:
+      - playback.allmyfriendsinc.com
     rootDir: apps/web
     buildCommand: |
       cd ../.. &&
@@ -68,7 +73,7 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22.11.0
-      # IMPORTANT: this URL is baked into the Vite bundle at build time.
-      # Replace with your actual Render API URL after first deploy.
       - key: VITE_API_URL
-        value: https://white-label-api.onrender.com
+        # Current Render service URL. Keep this until a Playback API custom
+        # domain is attached, then replace it and rebuild the static app.
+        value: https://white-label-api-6mnt.onrender.com

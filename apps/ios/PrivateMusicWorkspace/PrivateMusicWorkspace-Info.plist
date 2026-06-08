@@ -8,9 +8,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.allmyfriends.whitelabel</string>
+			<string>inc.allmyfriends.playback</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>playback</string>
 				<string>wl</string>
 			</array>
 		</dict>
@@ -35,6 +36,6 @@
 	<!-- Face ID gate: PMWBiometricGate calls LAContext.evaluatePolicy(.deviceOwnerAuthentication).
 	     iOS requires NSFaceIDUsageDescription whenever the app uses Face ID. -->
 	<key>NSFaceIDUsageDescription</key>
-	<string>White Label uses Face ID to keep your unreleased catalog locked when you set the phone down.</string>
+	<string>Playback uses Face ID to keep your unreleased catalog locked when you set the phone down.</string>
 </dict>
 </plist>

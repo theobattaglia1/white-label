@@ -1,12 +1,13 @@
 import Foundation
 
 /// Runtime configuration. Edit `defaultAPIBaseURL` for production, or pass
-/// `WL_API_BASE_URL` as a process environment variable for one-off testing.
+/// `PLAYBACK_API_BASE_URL` as a process environment variable for one-off testing.
 enum PMWConfig {
-    /// Where the WL API + static audio live. Used by both PMWAudioEngine
+    /// Where the Playback API + static audio live. Used by both PMWAudioEngine
     /// (for /seed-audio/*) and PMWAPIClient (for /rooms, /songs, /notes).
     static var apiBaseURL: URL {
-        if let raw = ProcessInfo.processInfo.environment["WL_API_BASE_URL"],
+        if let raw = ProcessInfo.processInfo.environment["PLAYBACK_API_BASE_URL"]
+            ?? ProcessInfo.processInfo.environment["WL_API_BASE_URL"],
            let url = URL(string: raw) { return url }
         return URL(string: defaultAPIBaseURL)!
     }
@@ -15,7 +16,7 @@ enum PMWConfig {
     ///
     /// Defaults to the live Render deployment so a fresh checkout / TestFlight
     /// build "just works". For local development, override with the
-    /// `WL_API_BASE_URL` scheme env var (Product → Scheme → Edit Scheme →
+    /// `PLAYBACK_API_BASE_URL` scheme env var (Product → Scheme → Edit Scheme →
     /// Run → Arguments → Environment Variables), e.g.:
     ///
     ///   - Simulator on dev machine:  `http://127.0.0.1:4317`
@@ -25,10 +26,11 @@ enum PMWConfig {
     /// When true, PMWStore loads from PMWAPIClient. When false, it uses
     /// PMWSampleData and the user can demo the UI offline.
     /// Defaults to true so the production build pulls live data; set
-    /// `WL_USE_REMOTE_API=0` in the scheme to force the offline sample
+    /// `PLAYBACK_USE_REMOTE_API=0` in the scheme to force the offline sample
     /// dataset (useful for design reviews and screenshots).
     static var useRemoteAPI: Bool {
-        let raw = ProcessInfo.processInfo.environment["WL_USE_REMOTE_API"]
+        let raw = ProcessInfo.processInfo.environment["PLAYBACK_USE_REMOTE_API"]
+            ?? ProcessInfo.processInfo.environment["WL_USE_REMOTE_API"]
         if raw == "0" || raw == "false" { return false }
         return true
     }
@@ -51,7 +53,7 @@ enum PMWConfig {
     /// gate and injects `Authorization: Bearer <token>` on every API request.
     ///
     /// Default: FALSE — the dev/sample-data loop is completely unchanged.
-    /// Enable via the `WL_USE_REAL_AUTH=1` environment variable on the scheme
+    /// Enable via the `PLAYBACK_USE_REAL_AUTH=1` environment variable on the scheme
     /// (Product → Scheme → Edit Scheme → Run → Arguments → Environment
     /// Variables). Release builds that need auth should set this at build time
     /// or via a scheme.
@@ -60,7 +62,8 @@ enum PMWConfig {
     /// still keys off `x-user-id`; Bearer is client plumbing that is wired and
     /// ready but not yet enforced server-side.
     static var useRealAuth: Bool {
-        let raw = ProcessInfo.processInfo.environment["WL_USE_REAL_AUTH"]
+        let raw = ProcessInfo.processInfo.environment["PLAYBACK_USE_REAL_AUTH"]
+            ?? ProcessInfo.processInfo.environment["WL_USE_REAL_AUTH"]
         return raw == "1" || raw == "true"
     }
 }

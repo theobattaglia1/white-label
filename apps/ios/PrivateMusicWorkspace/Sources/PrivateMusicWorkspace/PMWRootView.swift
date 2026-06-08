@@ -1225,7 +1225,7 @@ struct PMWLibraryView: View {
     private func catalogIdShort(for id: String) -> String {
         var hash: UInt64 = 14695981039346656037
         for byte in id.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
-        return "WL · \(String(format: "%04d", hash % 9000 + 1000))"
+        return "PB · \(String(format: "%04d", hash % 9000 + 1000))"
     }
 
     private func mapSong(_ s: PMWAPIClient.APISong) -> PMWSong? {

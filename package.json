@@ -1,5 +1,5 @@
 {
-  "name": "private-music-workspace",
+  "name": "playback-workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,8 +17,9 @@
     "build:api": "npm --workspace @pmw/api run build",
     "build:web": "npm --workspace @pmw/web run build",
     "build:uploader": "npm --workspace @pmw/uploader run build",
+    "supabase:push": "scripts/apply-supabase-migrations.sh",
     "typecheck": "npm run build",
-    "ios:build": "xcodebuild -project apps/ios/PrivateMusicWorkspace/PrivateMusicWorkspace.xcodeproj -scheme PrivateMusicWorkspace -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build"
+    "ios:build": "xcodebuild -project apps/ios/Playback/Playback.xcodeproj -scheme Playback -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

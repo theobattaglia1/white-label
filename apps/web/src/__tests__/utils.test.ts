@@ -93,14 +93,14 @@ describe("catalogNumber", () => {
 // catalogIdFor
 // ---------------------------------------------------------------------------
 describe("catalogIdFor", () => {
-  it("formats as 'WL · XXXX'", () => {
+  it("formats as 'PB · XXXX'", () => {
     const id = catalogIdFor("song-midnight");
-    expect(id).toMatch(/^WL · \d{4}$/);
+    expect(id).toMatch(/^PB · \d{4}$/);
   });
 
   it("embeds the same number as catalogNumber", () => {
     const songId = "song-gravity";
-    expect(catalogIdFor(songId)).toBe(`WL · ${catalogNumber(songId)}`);
+    expect(catalogIdFor(songId)).toBe(`PB · ${catalogNumber(songId)}`);
   });
 });
 

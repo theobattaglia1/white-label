@@ -3,7 +3,7 @@ import LocalAuthentication
 
 @main
 struct PrivateMusicWorkspaceApp: App {
-    /// Set when iOS hands us a `wl://r/<token>` deep link
+    /// Set when iOS hands us a Playback receipt deep link
     /// (also reachable via universal link if entitled later).
     @State private var recipientToken: String? = nil
 
@@ -19,7 +19,7 @@ struct PrivateMusicWorkspaceApp: App {
                 //   INNER — PMWSessionGate   (Supabase sign-in)
                 // Both gates are only enforced when their respective flags are
                 // on. The biometric gate has its own DEBUG-default-off logic.
-                // The session gate only fires when WL_USE_REAL_AUTH=1.
+                // The session gate only fires when PLAYBACK_USE_REAL_AUTH=1.
                 PMWBiometricGate {
                     PMWSessionGate(session: session) {
                         PMWRootView()
@@ -43,10 +43,11 @@ struct PrivateMusicWorkspaceApp: App {
     }
 
     /// Accepts:
-    ///   wl://r/<token>            (custom scheme)
-    ///   https://white-label.../shared/<token>  (universal links, future)
+    ///   playback://r/<token>      (preferred custom scheme)
+    ///   wl://r/<token>            (legacy custom scheme)
+    ///   https://playback.../shared/<token>  (universal links, future)
     private func handle(url: URL) {
-        if url.scheme == "wl", url.host == "r" {
+        if ["playback", "wl"].contains(url.scheme ?? ""), url.host == "r" {
             recipientToken = url.lastPathComponent
             return
         }
@@ -65,7 +66,7 @@ struct PrivateMusicWorkspaceApp: App {
 /// Recipient surfaces (`PMWRecipientView`) live outside this gate — share
 /// links must open freely.
 ///
-/// Producers can disable the gate via the `WL_DISABLE_LOCK=1` env var on
+/// Producers can disable the gate via the `PLAYBACK_DISABLE_LOCK=1` env var on
 /// the run scheme (useful for demos / screenshots).
 struct PMWBiometricGate<Content: View>: View {
     @ViewBuilder var content: () -> Content
@@ -116,15 +117,15 @@ struct PMWBiometricGate<Content: View>: View {
     /// Gate behaviour:
     ///  - DEBUG builds default to OFF so daily Xcode runs / simulator sessions
     ///    don't hit the Face ID prompt on every relaunch. You can still
-    ///    force-test the lock by setting `WL_FORCE_LOCK=1` on the scheme.
-    ///  - Release builds default to ON. Set `WL_DISABLE_LOCK=1` to override.
+    ///    force-test the lock by setting `PLAYBACK_FORCE_LOCK=1` on the scheme.
+    ///  - Release builds default to ON. Set `PLAYBACK_DISABLE_LOCK=1` to override.
     private var disabled: Bool {
         let env = ProcessInfo.processInfo.environment
         #if DEBUG
-        if env["WL_FORCE_LOCK"] == "1" { return false }
+        if env["PLAYBACK_FORCE_LOCK"] == "1" || env["WL_FORCE_LOCK"] == "1" { return false }
         return true
         #else
-        return env["WL_DISABLE_LOCK"] == "1"
+        return env["PLAYBACK_DISABLE_LOCK"] == "1" || env["WL_DISABLE_LOCK"] == "1"
         #endif
     }
 

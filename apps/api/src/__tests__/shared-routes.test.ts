@@ -87,6 +87,31 @@ describe("GET /shared/:token — records an opened_link event", () => {
   });
 });
 
+describe("GET /shared/:token/download/:versionId — download policy enforcement", () => {
+  it("redirects the current version when the link allows current downloads", async () => {
+    const res = await app.inject({ method: "GET", url: `/shared/${TOKEN}/download/ver-neon-v3` });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe("/seed-audio/just-like-you-v2.mp3");
+  });
+
+  it("rejects non-current versions when download_policy is current", async () => {
+    const res = await app.inject({ method: "GET", url: `/shared/${TOKEN}/download/ver-neon-v2` });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/current version/i);
+  });
+
+  it("logs downloaded_file to activity when a download is minted", async () => {
+    await app.inject({ method: "GET", url: `/shared/${TOKEN}/download/ver-neon-v3` });
+    const activity = (
+      await app.inject({ method: "GET", url: `/workspaces/wsp-amf-private/activity` })
+    ).json<{ data: Array<{ event_type: string; version_id?: string; link_id?: string }> }>();
+    const downloaded = activity.data.find(
+      (e) => e.event_type === "downloaded_file" && e.version_id === "ver-neon-v3" && e.link_id === "link-dana-history",
+    );
+    expect(downloaded).toBeDefined();
+  });
+});
+
 describe("POST /shared/:token/approve — scope enforcement", () => {
   it("rejects approving a version NOT exposed by the link", async () => {
     // This link has allow_approval=false, but the scope guard runs after the

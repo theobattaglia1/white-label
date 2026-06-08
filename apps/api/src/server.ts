@@ -2,7 +2,15 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
 import { store, type AuthContext } from "./store";
-import { signUpload, finalizeUpload, signPlaybackUrl, type FinalizeUploadInput, type SignUploadInput } from "./uploads";
+import {
+  signUpload,
+  finalizeUpload,
+  finalizeNewSongUpload,
+  signPlaybackUrl,
+  type FinalizeNewSongInput,
+  type FinalizeUploadInput,
+  type SignUploadInput
+} from "./uploads";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
 import { isSupabaseEnabled } from "./supabase";
 import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthError } from "./auth";
@@ -71,7 +79,7 @@ function ok<T>(value: T): { data: T } {
   return { data: value };
 }
 
-server.get("/health", async () => ok({ status: "ok", product: "private-music-workspace" }));
+server.get("/health", async () => ok({ status: "ok", product: "playback" }));
 // Destructive: wipes the in-memory snapshot back to seed. NEVER expose in
 // production — an unauthenticated POST would let anyone reachable on the
 // internet reset every connected client's workspace. Registered only outside
@@ -81,13 +89,17 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 server.get("/me", async (request, reply) => {
-  const auth = await authedFromRequest(request);
+  const auth = await requireAuthedFromRequest(request);
   const result = store.me(auth);
   if (!result.user) {
     server.log.warn({ userID: auth.userID }, "GET /me: unknown identity — returning 404");
     return reply.code(404).send({ error: "User not found" });
   }
-  return ok(result);
+  const workspaceIDs = new Set(result.memberships.map((membership) => membership.workspace_id));
+  return ok({
+    ...result,
+    workspaces: store.data.workspaces.filter((workspace) => workspaceIDs.has(workspace.workspace_id)),
+  });
 });
 server.get("/workspaces", async () => ok(store.data.workspaces));
 server.get("/workspaces/:id", async (request) => {
@@ -471,6 +483,36 @@ server.get("/links/:id", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.data.shareLinks.find((link) => link.link_id === id));
 });
+server.get("/links/:id/recipients", async (request) => {
+  await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  return ok(store.listShareRecipients(id));
+});
+server.post("/links/:id/recipients", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  const body = request.body as {
+    recipients?: Array<{ email: string; display_name?: string; role?: "listen" | "comment" | "download" }>;
+  };
+  const recipients = body.recipients ?? [];
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    throw new Error("At least one recipient is required");
+  }
+  return ok({
+    recipients: store.inviteShareRecipients(id, auth, recipients),
+    delivery: process.env.EMAIL_PROVIDER_API_KEY ? "queued" : "not_configured",
+  });
+});
+server.patch("/links/:id/recipients/:recipientId", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id, recipientId } = request.params as { id: string; recipientId: string };
+  return ok(store.patchShareRecipient(id, recipientId, auth, request.body as never));
+});
+server.delete("/links/:id/recipients/:recipientId", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id, recipientId } = request.params as { id: string; recipientId: string };
+  return ok(store.patchShareRecipient(id, recipientId, auth, { revoked_at: new Date().toISOString() }));
+});
 server.patch("/links/:id", async (request) => {
   const auth = await requireAuthedFromRequest(request);
   const { id } = request.params as { id: string };
@@ -614,7 +656,26 @@ server.get("/shared/:token/download/:versionId", async (request, reply) => {
   const { token, versionId } = request.params as { token: string; versionId: string };
   const shared = store.resolveShared(token);
   if (shared.link.download_policy === "none") throw new Error("Downloads are disabled for this link");
-  return reply.code(501).send({ error: "not_implemented", message: "Audio streaming not yet wired to R2 storage" });
+  const version = shared.versions.find((candidate) => candidate.version_id === versionId);
+  if (!version) throw new Error("Version is not available through this link");
+  if (shared.link.download_policy === "current" && !version.is_current) {
+    throw new Error("Only the current version can be downloaded through this link");
+  }
+  const asset = shared.assets.find((candidate) => candidate.asset_id === version.file_asset_id);
+  if (!asset) {
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio isn't available for this version yet." });
+  }
+  store.recordShareDownload(token, versionId);
+  if (asset.playback_url?.startsWith("/")) {
+    return reply.code(302).header("location", asset.playback_url).send();
+  }
+  try {
+    const url = await signPlaybackUrl(asset.key_original);
+    return reply.code(302).header("location", url).send();
+  } catch (err) {
+    server.log.warn({ err }, "signPlaybackUrl failed for shared download");
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio isn't available for this version yet." });
+  }
 });
 
 // ===== Real audio uploads (Supabase Storage) ============================
@@ -648,6 +709,22 @@ server.post("/storage/finalize-upload", async (request) => {
     await store.hydrate();
   } catch (hydrateErr) {
     server.log.warn({ err: hydrateErr }, "store.hydrate() failed after finalize-upload; snapshot may be stale");
+  }
+  return ok(result);
+});
+
+/** Finalize an uploaded audio object into a brand-new song + v1 version. */
+server.post("/storage/finalize-new-song", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const body = request.body as FinalizeNewSongInput;
+  if (!body?.storagePath || !body?.publicUrl || !body?.title) {
+    throw new Error("storagePath, publicUrl, and title are required");
+  }
+  const result = await finalizeNewSongUpload({ ...body, uploadedBy: auth.userID });
+  try {
+    await store.hydrate();
+  } catch (hydrateErr) {
+    server.log.warn({ err: hydrateErr }, "store.hydrate() failed after finalize-new-song; snapshot may be stale");
   }
   return ok(result);
 });

@@ -78,15 +78,15 @@ struct PMWSong: Identifiable, Equatable {
 
     /// Catalog number — a stable 4-digit identifier derived from the song id.
     /// Treated as the canonical reference (e.g. "0142") and surfaced as
-    /// "WL · 0142" everywhere a catalog id appears.
+    /// "PB · 0142" everywhere a catalog id appears.
     var catalogNumber: String {
         var hash: UInt64 = 14695981039346656037
         for byte in id.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
         return String(format: "%04d", hash % 9000 + 1000)
     }
 
-    /// Brand-visible catalog id — `WL · 0142` style.
-    var catalogId: String { "WL · \(catalogNumber)" }
+    /// Brand-visible catalog id — `PB · 0142` style.
+    var catalogId: String { "PB · \(catalogNumber)" }
 }
 
 struct PMWNote: Identifiable, Equatable {
@@ -206,4 +206,3 @@ func pmwVisibleNotes(
         }
         .sorted { ($0.note.timestampStartMS ?? Int.max) < ($1.note.timestampStartMS ?? Int.max) }
 }
-

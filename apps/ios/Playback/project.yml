@@ -1,0 +1,65 @@
+name: Playback
+options:
+  bundleIdPrefix: inc.allmyfriends
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    DEVELOPMENT_TEAM: ""
+targets:
+  Playback:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: inc.allmyfriends.playback
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Generated-Info.plist
+      properties:
+        CFBundleDisplayName: Playback
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        UIStatusBarHidden: true
+        UIBackgroundModes:
+          - audio
+        UIAppFonts:
+          - UniversTE40-Light.ttf
+          - UniversTE20-Light.ttf
+          - UniversTE20-Thin.ttf
+          - LetteraMonoLL-Regular.otf
+          - Ndot-55.otf
+  PlaybackUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Playback
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: inc.allmyfriends.playback.uitests
+        TEST_TARGET_NAME: Playback
+
+schemes:
+  Playback:
+    build:
+      targets:
+        Playback: all
+    test:
+      targets:
+        - name: PlaybackUITests

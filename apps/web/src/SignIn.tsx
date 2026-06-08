@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { signInWithPassword, signUpWithPassword, sendMagicLink } from "./auth";
+import { PlaybackWordmark } from "./PlaybackWordmark";
 
 type Mode = "producer-signin" | "producer-signup" | "listen";
 
@@ -61,7 +62,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <div className="signin-page">
       <header className="signin-chrome">
-        <Wordmark size="sm" />
+        <PlaybackWordmark size="sm" />
       </header>
       <main className="signin-doors">
         <section className={`signin-door listen ${mode === "listen" ? "active" : ""}`} onClick={() => setMode("listen")}>
@@ -116,7 +117,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={mode === "producer-signup" ? "new-password" : "current-password"}
-              required
+              required={mode === "producer-signup"}
               minLength={6}
             />
             <div className="signin-actions">
@@ -134,9 +135,14 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 Already have an account? Sign in
               </button>
             ) : (
-              <button className="linklike" onClick={(e) => { e.preventDefault(); setMode("producer-signup"); }}>
-                No account yet? Create one
-              </button>
+              <span style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
+                <button className="linklike" onClick={(e) => { e.preventDefault(); setMode("producer-signup"); }}>
+                  No account yet? Create one
+                </button>
+                <button className="linklike" onClick={(e) => { e.preventDefault(); submitMagic(); }}>
+                  Forgot password?
+                </button>
+              </span>
             )}
           </div>
         </section>
@@ -146,13 +152,5 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <div className={`signin-toast ${error ? "error" : "info"}`}>{error || info}</div>
       )}
     </div>
-  );
-}
-
-function Wordmark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  return (
-    <span className={`wordmark wordmark-${size}`}>
-      WHITE LABEL<span className="cur" />
-    </span>
   );
 }

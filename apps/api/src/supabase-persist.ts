@@ -1,4 +1,4 @@
-import type { Note } from "@pmw/shared";
+import type { Note, ShareLink, ShareRecipient } from "@pmw/shared";
 import { getSupabase } from "./supabase";
 
 /**
@@ -23,6 +23,12 @@ async function uuidFor(table: string, idColumn: string, externalId: string): Pro
     .maybeSingle();
   if (error || !data) return null;
   return (data as any)[idColumn] as string;
+}
+
+async function targetUuidFor(targetType: ShareLink["target_type"], externalId: string): Promise<string | null> {
+  if (targetType === "song") return uuidFor("songs", "song_id", externalId);
+  if (targetType === "room") return uuidFor("rooms", "room_id", externalId);
+  return uuidFor("playlists", "playlist_id", externalId);
 }
 
 /** Persist a note created in-memory to Supabase. */
@@ -109,6 +115,91 @@ export async function persistLinkRevocation(
     .update({ revoked_at: revokedAt })
     .eq("token_hash", tokenHash);
   if (error) console.warn("[supabase-persist] link revoke failed:", error.message);
+}
+
+/** Persist a newly-created share link to Supabase. */
+export async function persistShareLink(link: ShareLink): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  const workspaceUuid = await uuidFor("workspaces", "workspace_id", link.workspace_id);
+  const targetUuid = await targetUuidFor(link.target_type, link.target_id);
+  const createdByUuid = link.created_by ? await uuidFor("users", "user_id", link.created_by) : null;
+  if (!workspaceUuid || !targetUuid) {
+    console.warn("[supabase-persist] link skipped — couldn't resolve workspace/target", link.workspace_id, link.target_id);
+    return;
+  }
+
+  const { error } = await supabase.from("share_links").insert({
+    external_id: link.link_id,
+    workspace_id: workspaceUuid,
+    target_type: link.target_type,
+    target_id: targetUuid,
+    token_hash: link.token_hash,
+    link_name: link.link_name ?? null,
+    access_mode: link.access_mode,
+    password_hash: link.password_hash ?? null,
+    expires_at: link.expires_at ?? null,
+    download_policy: link.download_policy,
+    version_policy: link.version_policy,
+    requires_identity: link.requires_identity,
+    watermark_enabled: link.watermark_enabled,
+    allow_comments: link.allow_comments,
+    allow_approval: link.allow_approval,
+    allow_forwarding: link.allow_forwarding,
+    created_by: createdByUuid,
+    revoked_at: link.revoked_at ?? null,
+    created_at: link.created_at,
+  });
+  if (error) console.warn("[supabase-persist] link insert failed:", error.message);
+}
+
+/** Persist invited recipients for a share link. */
+export async function persistShareRecipients(recipients: ShareRecipient[]): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || recipients.length === 0) return;
+
+  const rows = [];
+  for (const recipient of recipients) {
+    const linkUuid = await uuidFor("share_links", "link_id", recipient.link_id);
+    const invitedByUuid = await uuidFor("users", "user_id", recipient.invited_by);
+    if (!linkUuid) {
+      console.warn("[supabase-persist] recipient skipped — couldn't resolve link", recipient.link_id);
+      continue;
+    }
+    rows.push({
+      external_id: recipient.recipient_id,
+      link_id: linkUuid,
+      email: recipient.email,
+      display_name: recipient.display_name ?? null,
+      role: recipient.role,
+      invited_by: invitedByUuid,
+      invited_at: recipient.invited_at,
+      last_sent_at: recipient.last_sent_at ?? recipient.invited_at,
+      accepted_at: recipient.accepted_at ?? null,
+      revoked_at: recipient.revoked_at ?? null,
+    });
+  }
+
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("share_recipients").upsert(rows, { onConflict: "external_id" });
+  if (error) console.warn("[supabase-persist] recipient upsert failed:", error.message);
+}
+
+export async function persistShareRecipientPatch(recipient: ShareRecipient): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("share_recipients")
+    .update({
+      display_name: recipient.display_name ?? null,
+      role: recipient.role,
+      last_sent_at: recipient.last_sent_at ?? null,
+      accepted_at: recipient.accepted_at ?? null,
+      revoked_at: recipient.revoked_at ?? null,
+    })
+    .eq("external_id", recipient.recipient_id);
+  if (error) console.warn("[supabase-persist] recipient patch failed:", error.message);
 }
 
 /** Mark a note reopened in Supabase. */

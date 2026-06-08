@@ -11,6 +11,7 @@ import type {
   Room,
   SavedView,
   ShareLink,
+  ShareRecipient,
   Song,
   Task,
   User,
@@ -132,7 +133,7 @@ const users: User[] = [
 const workspaces: Workspace[] = [
   {
     workspace_id: ids.workspace,
-    name: "White Label · Theo's studio",
+    name: "Playback · Theo's studio",
     owner_user_id: ids.users.theo,
     plan_type: "producer",
     storage_quota_bytes: 53687091200,
@@ -746,6 +747,8 @@ const playlistItems: PlaylistItem[] = [
   { playlist_item_id: "pli-mira-2", playlist_id: "playlist-pitch-mira", song_id: "song-midnight", position: 2, added_by: ids.users.theo, added_at: now },
 ];
 
+const shareRecipients: ShareRecipient[] = [];
+
 export function createSeedSnapshot(): WorkspaceSnapshot {
   return structuredClone({
     workspaces,
@@ -760,6 +763,7 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     tasks,
     approvals,
     shareLinks,
+    shareRecipients,
     activityEvents,
     notifications,
     savedViews,
@@ -767,4 +771,3 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     playlistItems,
   });
 }
-

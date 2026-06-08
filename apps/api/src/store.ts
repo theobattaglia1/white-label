@@ -17,6 +17,8 @@ import {
   type Note,
   type NoteVisibility,
   type ShareLink,
+  type ShareRecipient,
+  type ShareRecipientRole,
   type User,
   type VersionPolicy,
   type VersionType,
@@ -25,7 +27,15 @@ import {
 import { answerWorkspaceQuestionLlm } from "./assistant";
 import { hashToken, makeShareToken } from "./hash";
 import { loadSnapshotFromSupabase } from "./supabase-loader";
-import { persistNote, persistNoteReopen, persistNoteResolution, persistLinkRevocation } from "./supabase-persist";
+import {
+  persistNote,
+  persistNoteReopen,
+  persistNoteResolution,
+  persistLinkRevocation,
+  persistShareLink,
+  persistShareRecipientPatch,
+  persistShareRecipients,
+} from "./supabase-persist";
 import { isSupabaseEnabled } from "./supabase";
 
 export interface AuthContext {
@@ -84,7 +94,8 @@ export class WorkspaceStore {
   }
 
   getRoom(roomID: string) {
-    const room = this.snapshot.rooms.find((candidate) => candidate.room_id === roomID);
+    const canonicalRoomID = roomID === "room-secret-album" ? "room-hudson-ingram-lp" : roomID;
+    const room = this.snapshot.rooms.find((candidate) => candidate.room_id === canonicalRoomID);
     if (!room) throw new Error("Room not found");
     const songs = this.snapshot.songs.filter((song) => song.primary_room_id === room.room_id);
     return {
@@ -420,7 +431,114 @@ export class WorkspaceStore {
       link_id: link.link_id,
       metadata: { version_policy: link.version_policy, download_policy: link.download_policy },
     });
+    void persistShareLink(link).catch(() => undefined);
     return { link, token };
+  }
+
+  listShareRecipients(linkID: string): ShareRecipient[] {
+    return this.snapshot.shareRecipients
+      .filter((recipient) => recipient.link_id === linkID)
+      .sort((a, b) => a.email.localeCompare(b.email));
+  }
+
+  inviteShareRecipients(
+    linkID: string,
+    auth: AuthContext,
+    recipients: Array<{ email: string; display_name?: string; role?: ShareRecipientRole }>,
+  ): ShareRecipient[] {
+    const link = this.snapshot.shareLinks.find((candidate) => candidate.link_id === linkID);
+    if (!link) throw new Error("Link not found");
+    const now = new Date().toISOString();
+    const changed: ShareRecipient[] = [];
+
+    for (const input of recipients) {
+      const email = input.email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+      const role = input.role ?? "listen";
+      const existing = this.snapshot.shareRecipients.find(
+        (candidate) => candidate.link_id === linkID && candidate.email.toLowerCase() === email,
+      );
+
+      if (existing) {
+        const updated: ShareRecipient = {
+          ...existing,
+          display_name: input.display_name?.trim() || existing.display_name,
+          role,
+          last_sent_at: now,
+          revoked_at: undefined,
+        };
+        this.snapshot.shareRecipients = this.snapshot.shareRecipients.map((candidate) =>
+          candidate.recipient_id === existing.recipient_id ? updated : candidate
+        );
+        changed.push(updated);
+        void persistShareRecipientPatch(updated).catch(() => undefined);
+      } else {
+        const recipient: ShareRecipient = {
+          recipient_id: `shr-${randomUUID()}`,
+          link_id: linkID,
+          email,
+          display_name: input.display_name?.trim() || undefined,
+          role,
+          invited_by: auth.userID,
+          invited_at: now,
+          last_sent_at: now,
+        };
+        this.snapshot.shareRecipients = [...this.snapshot.shareRecipients, recipient];
+        changed.push(recipient);
+      }
+    }
+
+    if (changed.length > 0) {
+      this.recordEvent({
+        workspace_id: link.workspace_id,
+        actor_user_id: auth.userID,
+        event_type: "invited_recipient",
+        target_type: link.target_type,
+        target_id: link.target_id,
+        link_id: link.link_id,
+        metadata: {
+          count: changed.length,
+          recipients: changed.map((recipient) => ({ email: recipient.email, role: recipient.role })),
+        },
+      });
+      void persistShareRecipients(changed).catch(() => undefined);
+    }
+
+    return this.listShareRecipients(linkID);
+  }
+
+  patchShareRecipient(
+    linkID: string,
+    recipientID: string,
+    auth: AuthContext,
+    patch: Partial<Pick<ShareRecipient, "role" | "display_name" | "revoked_at">>,
+  ): ShareRecipient {
+    const link = this.snapshot.shareLinks.find((candidate) => candidate.link_id === linkID);
+    if (!link) throw new Error("Link not found");
+    const existing = this.snapshot.shareRecipients.find(
+      (recipient) => recipient.link_id === linkID && recipient.recipient_id === recipientID,
+    );
+    if (!existing) throw new Error("Recipient not found");
+    const updated: ShareRecipient = {
+      ...existing,
+      display_name: patch.display_name ?? existing.display_name,
+      role: patch.role ?? existing.role,
+      revoked_at: Object.prototype.hasOwnProperty.call(patch, "revoked_at") ? patch.revoked_at : existing.revoked_at,
+    };
+    this.snapshot.shareRecipients = this.snapshot.shareRecipients.map((recipient) =>
+      recipient.recipient_id === recipientID ? updated : recipient
+    );
+    this.recordEvent({
+      workspace_id: link.workspace_id,
+      actor_user_id: auth.userID,
+      event_type: "changed_permission",
+      target_type: link.target_type,
+      target_id: link.target_id,
+      link_id: link.link_id,
+      metadata: { recipient_id: recipientID, email: updated.email, role: updated.role, revoked_at: updated.revoked_at },
+    });
+    void persistShareRecipientPatch(updated).catch(() => undefined);
+    return updated;
   }
 
   patchLink(linkID: string, auth: AuthContext, patch: Partial<ShareLink>) {
@@ -491,7 +609,18 @@ export class WorkspaceStore {
       resolved.link.target_type === "playlist"
         ? this.snapshot.playlists.find((p) => p.playlist_id === resolved.link.target_id) ?? null
         : null;
-    return { ...resolved, assets, rooms, playlist };
+    const notes = resolved.songs.flatMap((song) => {
+      const songVersions = resolved.versions.filter((version) => version.song_id === song.song_id);
+      const displayVersion = songVersions.find((version) => version.is_current) ?? songVersions.at(-1);
+      if (!displayVersion) return [];
+      return getVisibleNotesForVersion({
+        version: displayVersion,
+        versions: songVersions,
+        notes: this.snapshot.notes,
+        assets: this.snapshot.assets,
+      });
+    });
+    return { ...resolved, assets, rooms, playlist, notes };
   }
 
   createUpload(workspaceID: string, params: { filename: string; size_bytes: number; checksum_sha256?: string }) {
@@ -607,6 +736,28 @@ export class WorkspaceStore {
     }
   }
 
+  recordShareDownload(token: string, versionID: string) {
+    try {
+      const link = this.snapshot.shareLinks.find(
+        (candidate) => candidate.demo_token === token || candidate.token_hash === hashToken(token),
+      );
+      const version = this.snapshot.versions.find((candidate) => candidate.version_id === versionID);
+      if (!link || !version || link.revoked_at) return;
+      this.recordEvent({
+        workspace_id: link.workspace_id,
+        event_type: "downloaded_file",
+        target_type: "version",
+        target_id: version.version_id,
+        song_id: version.song_id,
+        version_id: version.version_id,
+        link_id: link.link_id,
+        metadata: { access_mode: link.access_mode, download_policy: link.download_policy },
+      });
+    } catch {
+      /* downloading must not depend on logging */
+    }
+  }
+
   private recordEvent(event: Omit<ActivityEvent, "event_id" | "created_at">) {
     this.snapshot.activityEvents = [
       ...this.snapshot.activityEvents,
@@ -620,4 +771,3 @@ export class WorkspaceStore {
 }
 
 export const store = new WorkspaceStore();
-

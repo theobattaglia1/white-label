@@ -1,4 +1,4 @@
-# WHITE LABEL — Build Handoff
+# PLAYBACK — Build Handoff
 
 *Session of 2026.05.25 · Claude · companion to the build_plan, design_review, and wireframes_v2 documents*
 
@@ -6,7 +6,7 @@
 
 ## ★ Supabase is wired and tested end-to-end
 
-The web API now talks to a real Supabase project (`white-label`, id `pojhfkamzteleogxxfqj`, region us-west-1, on your Pro plan at $10/mo). Verified flow in this session: API boots → hydrates 4 songs / 12 versions / 3 seeded notes / 1 share link from Supabase → recipient POSTs a note via `/notes` → restart the API → note still there. The wedge persists.
+The web API now talks to a real Supabase project (Playback, currently project id `pojhfkamzteleogxxfqj`, region us-west-1, on your Pro plan at $10/mo). Verified flow in this session: API boots → hydrates 4 songs / 12 versions / 3 seeded notes / 1 share link from Supabase → recipient POSTs a note via `/notes` → restart the API → note still there. The wedge persists.
 
 **Setup files:**
 - `supabase/migrations/0001_private_music_workspace.sql` — applied
@@ -53,12 +53,12 @@ The whole frontend now wears the editorial brand from wireframes v2 instead of g
 
 ### Assets
 
-- **`apps/web/public/seed-audio/`** — 8 demo MP3/M4A files (~32 MB total) from `Demos for White Label.zip`, renamed with clean slugs.
+- **`apps/web/public/seed-audio/`** — 8 demo MP3/M4A files (~32 MB total) from `Playback demo archive`, renamed with clean slugs.
 - **`apps/web/public/brand/`** — 9 brand-pack PNGs (wordmark, wordmark_reversed, monogram, monogram_reversed, stamp_private/approved/notes_due/latest, app_icon).
 
 ### Deploy
 
-- **`render.yaml`** — Render blueprint with two services (`white-label-api` Node web service, `white-label-web` static SPA). Routes `/shared/*` and `/*` to `index.html` for SPA. Caches `/seed-audio/*` and `/brand/*` aggressively.
+- **`render.yaml`** — Render blueprint with two services (`playback-api` Node web service, `playback-web` static SPA). Routes `/shared/*` and `/*` to `index.html` for SPA. Caches `/seed-audio/*` and `/brand/*` aggressively.
 - API now uses `tsx src/server.ts` as the start command — bypasses ESM bare-import resolution issues at the cost of ~12 MB runtime overhead. Fine for design-partner phase.
 
 ### Verification
@@ -66,7 +66,7 @@ The whole frontend now wears the editorial brand from wireframes v2 instead of g
 - ✅ `npm --workspace @pmw/shared run build` — passes (TypeScript only, no errors)
 - ✅ `npm --workspace @pmw/web run build` — passes (1592 modules, 183 KB JS, 28.65 KB CSS, all type-checked)
 - ✅ `npm --workspace @pmw/api run build` — passes
-- ✅ Live render screenshots at `white_label_review_screenshots/v3_built_app/` confirm the Song Card hero composition matches wireframes v2
+- ✅ Live render screenshots from the v3 built-app review confirmed the Song Card hero composition matches wireframes v2
 
 ---
 
@@ -75,7 +75,7 @@ The whole frontend now wears the editorial brand from wireframes v2 instead of g
 ### High priority
 
 1. **Supabase wiring.** The API is still in-memory (`apps/api/src/store.ts`). Your `music-hub-platform` Supabase project hit the 2-project free-tier limit, so we couldn't restore one of the inactive projects. Options for next session:
-    - Pay $25/mo to upgrade and create a dedicated `white-label` project (cleanest).
+    - Pay $25/mo to upgrade and create a dedicated Playback project (cleanest).
     - Delete one of the inactive projects (`bbcalendar` or `theobattaglia1's Project`) to free a slot.
     - Use a Postgres schema in `music-hub-platform` itself (requires light app changes to qualify table names).
 
@@ -125,9 +125,9 @@ Then open `http://localhost:5179` for the producer workspace, or `http://localho
 1. Push this folder to a GitHub repo.
 2. Go to https://dashboard.render.com/blueprints
 3. Click "New Blueprint" → connect the repo → Render auto-detects `render.yaml`.
-4. Create the two services (`white-label-api`, `white-label-web`).
-5. After first deploy, copy the API URL from Render dashboard and update the `VITE_API_URL` env var on `white-label-web` to that URL, then redeploy the web service.
-6. Once Supabase is wired (next session), set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on `white-label-api`.
+4. Create the two services (`playback-api`, `playback-web`).
+5. After first deploy, copy the API URL from Render dashboard and update the `VITE_API_URL` env var on `playback-web` to that URL, then redeploy the web service.
+6. Once Supabase is wired (next session), set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on `playback-api`.
 
 Cost: both services on Render free tier; sufficient for design-partner phase. Upgrade when you hit traffic limits.
 
@@ -162,4 +162,4 @@ What's *not* yet demoable:
 
 ---
 
-*End of handoff. Companion docs: `white_label_build_plan.md`, `white_label_design_review.md`, `white_label_wireframes_v2_claude.html`.*
+*End of handoff. Companion docs: Playback build plan, design review, and wireframes v2 notes.*

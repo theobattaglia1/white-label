@@ -35,9 +35,10 @@ import { usePlayer } from "./player";
 import { LivingCover, coverHue, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
+import { PlaybackWordmark, PlaybackMark } from "./PlaybackWordmark";
 import type { Session } from "@supabase/supabase-js";
 
-type ViewMode = "home" | "library" | "room" | "song" | "compare" | "inbox" | "links" | "assistant" | "playlist" | "nowplaying";
+type ViewMode = "home" | "library" | "room" | "compare" | "inbox" | "links" | "assistant" | "playlist";
 
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
@@ -62,8 +63,8 @@ function AuthenticatedApp() {
 
   if (session === "loading") {
     return (
-      <div className="app-shell" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-        <p className="muted">Loading…</p>
+      <div style={{ display: "grid", placeItems: "center", minHeight: "100vh", background: "#0c0907" }}>
+        <PlaybackWordmark size="md" />
       </div>
     );
   }
@@ -79,6 +80,9 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [mode, setMode] = useState<ViewMode>("home");
   const [selectedSongID, setSelectedSongID] = useState("song-midnight");
   const [activeRoomID, setActiveRoomID] = useState("room-hudson-ingram-lp");
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayTab, setOverlayTab] = useState<"player" | "workspace">("player");
+  const [memberNumber, setMemberNumber] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -212,21 +216,37 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   useEffect(() => {
     void refresh(selectedSongID, activeRoomID);
     void refreshPins();
+    // Fetch the current user's member number once on mount
+    api.me()
+      .then((res) => { if (res.user?.member_number != null) setMemberNumber(res.user.member_number); })
+      .catch(() => {});
   }, []);
+
+  // Poll for note/approval updates while the overlay is open (15s interval).
+  // Keeps collaborator activity visible without a full websocket setup.
+  useEffect(() => {
+    if (!overlayOpen || !selectedSongID) return;
+    const id = setInterval(() => {
+      api.song(selectedSongID).then(setSongPayload).catch(() => {});
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [overlayOpen, selectedSongID]);
 
   const selectedSong = roomPayload?.songs.find((song) => song.song_id === selectedSongID) ?? songPayload?.song;
 
   function openSong(songID: string) {
     setSelectedSongID(songID);
-    setMode("song");
     void refresh(songID, activeRoomID);
+    setOverlayTab("workspace");
+    setOverlayOpen(true);
   }
 
-  // The immersive "now playing" surface — what the dock opens.
+  // The immersive "now playing" surface — what the mini-player opens.
   function openNowPlaying(songID: string) {
     setSelectedSongID(songID);
-    setMode("nowplaying");
     void refresh(songID, activeRoomID);
+    setOverlayTab("player");
+    setOverlayOpen(true);
   }
 
   function openRoom(roomID: string) {
@@ -258,6 +278,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         mode={mode}
         setMode={setMode}
         rooms={roomsSummary}
+        memberNumber={memberNumber}
       />
       <main className="workspace-grid">
         <Sidebar
@@ -283,7 +304,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
             <HomeView
               onOpenSong={openSong}
               onOpenRoom={openRoom}
-              onOpenProject={(id) => { setSelectedSongID(id); setMode("song"); }}
+              onOpenProject={(id) => openSong(id)}
               onOpenPlaylist={openPlaylist}
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
               pinnedSongIDs={pinnedSongIDs}
@@ -308,7 +329,6 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           {mode === "room" && roomPayload && (
             <RoomView payload={roomPayload} onOpenSong={openSong} />
           )}
-          {mode === "song" && songPayload && <SongWorkspace payload={songPayload} playlists={playlists} onRefresh={() => refresh(songPayload.song.song_id)} onRefreshPlaylists={() => api.playlists().then(setPlaylists)} />}
           {mode === "compare" && songPayload && <ComparisonMode payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
           {mode === "inbox" && <InboxView items={inboxItems} onOpenSong={openSong} />}
           {mode === "links" && roomPayload && selectedSong && (
@@ -329,12 +349,19 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
             />
           )}
-          {mode === "nowplaying" && songPayload && (
-            <NowPlayingView payload={songPayload} onOpenWorkspace={openSong} />
-          )}
         </section>
       </main>
-      {mode !== "nowplaying" && <MiniPlayer onOpenSong={openNowPlaying} />}
+      {!overlayOpen && <MiniPlayer onOpenSong={openNowPlaying} />}
+      <SongOverlay
+        open={overlayOpen}
+        payload={songPayload}
+        tab={overlayTab}
+        onTabChange={setOverlayTab}
+        onClose={() => setOverlayOpen(false)}
+        playlists={playlists}
+        onRefresh={() => songPayload && refresh(songPayload.song.song_id)}
+        onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -451,6 +478,7 @@ function TopBar({
   mode,
   setMode,
   rooms = [],
+  memberNumber = null,
 }: {
   roomTitle: string;
   error: string | null;
@@ -459,7 +487,9 @@ function TopBar({
   mode?: ViewMode;
   setMode?: (m: ViewMode) => void;
   rooms?: Awaited<ReturnType<typeof api.roomsSummary>>;
+  memberNumber?: number | null;
 }) {
+  const player = usePlayer();
   const [menuOpen, setMenuOpen] = useState(false);
   const nav: Array<[ViewMode, string, typeof Home]> = [
     ["home", "Home", Home],
@@ -476,7 +506,12 @@ function TopBar({
         <button className={`tb-burger ${menuOpen ? "on" : ""}`} onClick={() => setMenuOpen((o) => !o)} aria-label="Menu" aria-expanded={menuOpen}>
           <Menu size={18} />
         </button>
-        <span className="tb-wm"><span className="tb-chip" aria-hidden="true" />WHITE&nbsp;LABEL<span className="tb-cat">WL-014</span></span>
+        <span className="tb-wm">
+          <Wordmark size="sm" isPlaying={player.isPlaying} />
+          {memberNumber != null && (
+            <span className="tb-cat">PB·{String(memberNumber).padStart(3, "0")}</span>
+          )}
+        </span>
         {menuOpen && (
           <>
             <div className="tb-menu-scrim" onClick={() => setMenuOpen(false)} />
@@ -1079,8 +1114,22 @@ function LibraryView({
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => { void api.workspaceLibrary().then(setLibrary); }, []);
+  async function loadLibrary() {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      setLibrary(await api.workspaceLibrary());
+    } catch {
+      setLoadError("Couldn't load the library. Check your connection and try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => { void loadLibrary(); }, []);
 
   const lowerSearch = search.trim().toLowerCase();
   const filtered = library
@@ -1169,8 +1218,15 @@ function LibraryView({
         </div>
       </div>
 
-      <div className="library-grid">
-        {filtered.length === 0 ? (
+      <div className="library-grid" aria-busy={isLoading}>
+        {isLoading ? (
+          <div className="library-empty">Loading library…</div>
+        ) : loadError ? (
+          <div className="state-panel inline" role="status">
+            <p>{loadError}</p>
+            <button className="chrome-button" onClick={() => void loadLibrary()}>Retry</button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="library-empty">Nothing matches.</div>
         ) : (
           filtered.map(({ song, room, current_version }) => (
@@ -1286,6 +1342,7 @@ function PlaylistView({
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [draggingID, setDraggingID] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Cover field controls — persisted per playlist so the look sticks.
   const coverKey = `wl-pls-cover-${playlistID}`;
   const [coverMode, setCoverMode] = useState<number>(5);
@@ -1293,7 +1350,7 @@ function PlaylistView({
   const [coverHex, setCoverHex] = useState<string>("#4663E8");
 
   useEffect(() => {
-    void api.playlist(playlistID).then(setData);
+    void loadPlaylist();
     setShareToken(null);
     let mode = 5, tone = 0, hex = "#4663E8";
     try {
@@ -1302,6 +1359,16 @@ function PlaylistView({
     } catch { /* ignore */ }
     setCoverMode(mode); setCoverTone(tone); setCoverHex(hex);
   }, [playlistID]);
+
+  async function loadPlaylist() {
+    setData(null);
+    setLoadError(null);
+    try {
+      setData(await api.playlist(playlistID));
+    } catch {
+      setLoadError("Couldn't load this playlist. Check your connection and try again.");
+    }
+  }
 
   function persistCover(next: { mode?: number; tone?: number; hex?: string }) {
     const merged = { mode: next.mode ?? coverMode, tone: next.tone ?? coverTone, hex: next.hex ?? coverHex };
@@ -1361,7 +1428,18 @@ function PlaylistView({
   }
 
   if (!data) {
-    return <div className="view-stack"><p className="muted">Loading playlist…</p></div>;
+    return (
+      <div className="view-stack">
+        {loadError ? (
+          <div className="state-panel" role="status">
+            <p>{loadError}</p>
+            <button className="chrome-button" onClick={() => void loadPlaylist()}>Retry</button>
+          </div>
+        ) : (
+          <p className="muted" aria-busy="true">Loading playlist…</p>
+        )}
+      </div>
+    );
   }
 
   const totalDuration = data.items.reduce((sum, it) => sum + (it.asset?.duration_ms ?? 0), 0);
@@ -1491,10 +1569,10 @@ function PlaylistView({
   );
 }
 
-/* The immersive now-playing surface — matches white-label-nowplaying.html:
+/* The immersive now-playing surface — matches the Playback now-playing concept:
    a dark editorial field (huge title, credits, integrated transport) beside a
    full-bleed generative cover with the motion/tone pickers. */
-function NowPlayingView({ payload, onOpenWorkspace }: { payload: SongPayload; onOpenWorkspace: (songID: string) => void }) {
+function NowPlayingView({ payload, onClose, onNote }: { payload: SongPayload; onClose?: () => void; onNote?: () => void }) {
   const player = usePlayer();
   const song = payload.song;
   const isThis = player.song?.song_id === song.song_id;
@@ -1532,8 +1610,12 @@ function NowPlayingView({ payload, onOpenWorkspace }: { payload: SongPayload; on
     <div className="np-stage">
       <div className="np-left">
         <header className="np-top">
-          <span className="np-wm">WHITE&nbsp;LABEL <span className="np-cat">{catalogIdFor(song.song_id)}</span></span>
-          <button className="np-link" onClick={() => onOpenWorkspace(song.song_id)}>Open workspace →</button>
+          <span className="np-wm"><Wordmark size="sm" /><span className="np-cat">{catalogIdFor(song.song_id)}</span></span>
+          {onClose && (
+            <button className="np-close" onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          )}
         </header>
         <div className="np-hero">
           <span className="np-eyebrow">Now Playing{version?.version_label ? ` · ${version.version_label}` : ""}{song.project_name ? ` · ${song.project_name}` : ""}</span>
@@ -1552,13 +1634,22 @@ function NowPlayingView({ payload, onOpenWorkspace }: { payload: SongPayload; on
             {asset?.mime_type && <div className="np-c"><span className="k">Format</span><span className="v">{asset.mime_type.replace("audio/", "").toUpperCase()}</span></div>}
           </div>
           <div className="np-transport">
-            <div className="np-keys">
-              <button onClick={() => player.seek(0)} disabled={!isThis} title="Restart"><SkipBack size={15} /></button>
-              <button className="play" onClick={togglePlay} disabled={!version || !asset} title={playing ? "Pause" : "Play"}>
-                {playing ? <Pause size={17} /> : <Play size={17} />}
-              </button>
-              <button disabled title="No next track"><SkipForward size={15} /></button>
-            </div>
+            <TransportKeys
+              playing={playing}
+              canPlay={!!(version && asset)}
+              canSeek={isThis}
+              canForward={payload.versions.length > 1}
+              onBack={() => player.seek(0)}
+              onPlay={togglePlay}
+              onForward={() => {
+                // Cycle to the next version in the stack
+                const idx = payload.versions.findIndex(v => v.version_id === version?.version_id);
+                const next = payload.versions[(idx + 1) % payload.versions.length];
+                const nextAsset = assetForVersion(payload.assets, next);
+                if (next && nextAsset) player.play(payload.song, next, nextAsset);
+              }}
+              onNote={onNote}
+            />
             <div className="np-scrub">
               <span className="np-time">{formatTimestamp(positionMs)}</span>
               <button
@@ -1603,8 +1694,7 @@ function NowPlayingView({ payload, onOpenWorkspace }: { payload: SongPayload; on
           </div>
         </div>
         <div className="np-lab bt">
-          <span className="cw-micro">No artwork on file</span>
-          <span className="cw-micro pls-seed">Seed {seedLabel(song.song_id)}</span>
+          <span className="cw-micro">Generative cover</span>
         </div>
       </div>
     </div>
@@ -3305,14 +3395,38 @@ function AssistantPanel({
 function SharedListeningPage({ token }: { token: string }) {
   const [payload, setPayload] = useState<SharedPayload | null>(null);
   const [selectedSongID, setSelectedSongID] = useState<string | null>(null);
-  const player = usePlayer();
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.shared(token).then((nextPayload) => {
+  async function loadShared() {
+    setLoadError(null);
+    try {
+      const nextPayload = await api.shared(token);
       setPayload(nextPayload);
       setSelectedSongID(nextPayload.songs[0]?.song_id ?? null);
-    });
+    } catch {
+      setPayload(null);
+      setSelectedSongID(null);
+      setLoadError("This private link couldn't be opened. It may have expired, been revoked, or lost connection.");
+    }
+  }
+
+  useEffect(() => {
+    void loadShared();
   }, [token]);
+
+  if (loadError) {
+    return (
+      <div className="shared-page">
+        <TopBar roomTitle="Private link" error={null} />
+        <div className="sleeve-state" role="status">
+          <p className="eyebrow">PRIVATE LINK</p>
+          <h1>Link unavailable</h1>
+          <p>{loadError}</p>
+          <button className="accent-button" onClick={() => void loadShared()}>Try again</button>
+        </div>
+      </div>
+    );
+  }
 
   const song = payload?.songs.find((item) => item.song_id === selectedSongID) ?? payload?.songs[0];
   const versions = payload && song ? versionsForSong(payload.versions, song.song_id) : [];
@@ -3329,7 +3443,7 @@ function SharedListeningPage({ token }: { token: string }) {
       selectedSongID={selectedSongID}
       onSelectSong={setSelectedSongID}
       onNotePosted={() => {
-        if (payload) api.shared(token).then(setPayload);
+        void loadShared();
       }}
       token={token}
     />
@@ -3433,13 +3547,13 @@ function SharedListeningView({
     }
   }
 
-  const songNotes = payload?.songs.length && song ? (payload as any).notes?.filter?.((n: VisibleNote) => n.song_id === song.song_id) ?? [] : [];
+  const songNotes = payload && song ? payload.notes.filter((n) => n.song_id === song.song_id) : [];
 
   async function submitNote() {
     if (!song || !activeVersion || !noteBody.trim()) return;
     setPosting(true);
     try {
-      await api.createNote({
+      await api.sharedNote(token, {
         song_id: song.song_id,
         anchor_version_id: activeVersion.version_id,
         body: noteBody.trim(),
@@ -3595,7 +3709,8 @@ function SharedListeningView({
               {versions.map((v) => {
                 const isCur = v.version_id === activeVersion?.version_id;
                 return (
-                  <span
+                  <button
+                    type="button"
                     key={v.version_id}
                     className={isCur ? "cur" : ""}
                     aria-current={isCur ? "true" : undefined}
@@ -3604,11 +3719,10 @@ function SharedListeningView({
                       const a = assetForVersion(payload.assets, v);
                       if (a) player.play(song, v, a);
                     }}
-                    style={{ cursor: "pointer" }}
                   >
                     {v.version_label ?? `v${v.version_number}`}
                     {v.version_id === current.version_id ? " · current" : ""}
-                  </span>
+                  </button>
                 );
               })}
             </div>
@@ -3775,23 +3889,256 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 /* =====================================================================
-   Brand primitives — Wordmark, MonoMark, Stamp
+   TransportKeys — hardware-style dot-matrix keys, ported from iOS Transport.swift.
+   Circular keys: flat face, extruded wall, raised-then-recessed on press.
+   Greyscale for back/play/forward; cobalt for the add-note key.
    ===================================================================== */
 
-function Wordmark({ size = "md", title }: { size?: "sm" | "md" | "lg"; title?: string }) {
+// Dot-matrix glyph definitions (match iOS DotGlyphKind row strings exactly)
+const GLYPHS: Record<string, string[]> = {
+  back:    ["X....X", "X...XX", "X..XXX", "X.XXXX", "X..XXX", "X...XX", "X....X"],
+  play:    ["X...", "XX..", "XXX.", "XXXX", "XXX.", "XX..", "X..."],
+  pause:   ["XX.XX", "XX.XX", "XX.XX", "XX.XX", "XX.XX", "XX.XX", "XX.XX"],
+  forward: ["X....X", "XX...X", "XXX..X", "XXXX.X", "XXX..X", "XX...X", "X....X"],
+  note:    ["XXXXX....", ".......X.", "XXXXX.XXX", ".......X.", "XXX......"],
+};
+
+function DotGlyph({ name, size = 14, color = "#33302B" }: { name: string; size?: number; color?: string }) {
+  const rows = GLYPHS[name] ?? [];
+  const cols = Math.max(...rows.map((r) => r.length));
+  const pitch = size / Math.max(cols, rows.length);
+  const r = pitch * 0.36;
+  const w = cols * pitch;
+  const h = rows.length * pitch;
   return (
-    <span className={`wordmark wordmark-${size}`} title={title}>
-      WHITE LABEL<span className="cur" />
-    </span>
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" style={{ display: "block" }}>
+      {rows.flatMap((row, ri) =>
+        [...row].map((ch, ci) =>
+          ch === "X" ? (
+            <circle
+              key={`${ri}-${ci}`}
+              cx={(ci + 0.5) * pitch}
+              cy={(ri + 0.5) * pitch}
+              r={r}
+              fill={color}
+            />
+          ) : null
+        )
+      )}
+    </svg>
   );
 }
 
-function MonoMark({ size = 16 }: { size?: number }) {
+function FlatKey({
+  glyph,
+  held = false,
+  disabled = false,
+  face = "#D3CFC5",
+  ink = "#33302B",
+  shadow = "#8C887D",
+  onClick,
+  title,
+}: {
+  glyph: string;
+  held?: boolean;
+  disabled?: boolean;
+  face?: string;
+  ink?: string;
+  shadow?: string;
+  onClick?: () => void;
+  title?: string;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const down = held || pressed;
   return (
-    <span className="mono-mark" style={{ fontSize: size }}>
-      WL<span className="u" />
-    </span>
+    <button
+      className={`flat-key${down ? " down" : ""}${disabled ? " disabled" : ""}`}
+      style={{
+        "--fk-face": face,
+        "--fk-shadow": shadow,
+      } as React.CSSProperties}
+      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
+      onTouchStart={() => !disabled && setPressed(true)}
+      onTouchEnd={() => setPressed(false)}
+      onClick={disabled ? undefined : onClick}
+      title={title}
+      disabled={disabled}
+      aria-pressed={held}
+    >
+      <DotGlyph name={glyph} color={disabled ? "#999" : ink} />
+    </button>
   );
+}
+
+function TransportKeys({
+  playing,
+  canPlay,
+  canSeek,
+  canForward = false,
+  onBack,
+  onPlay,
+  onForward,
+  onNote,
+}: {
+  playing: boolean;
+  canPlay: boolean;
+  canSeek: boolean;
+  canForward?: boolean;
+  onBack: () => void;
+  onPlay: () => void;
+  onForward: () => void;
+  onNote?: () => void;
+}) {
+  return (
+    <div className="transport-keys">
+      <FlatKey glyph="back"    disabled={!canSeek}    onClick={onBack}    title="Restart" />
+      <FlatKey glyph={playing ? "pause" : "play"} held={playing} disabled={!canPlay} onClick={onPlay} title={playing ? "Pause" : "Play"} />
+      <FlatKey glyph="forward" disabled={!canForward} onClick={onForward} title="Next version" />
+      {onNote && (
+        <FlatKey
+          glyph="note"
+          face="#6E86EC"
+          ink="#fff"
+          shadow="#3A52C4"
+          onClick={onNote}
+          title="Add note"
+        />
+      )}
+    </div>
+  );
+}
+
+/* =====================================================================
+   SongOverlay — the iOS-style slide-up player + workspace panel.
+   Replaces the old "nowplaying" and "song" page modes.
+   On wide screens (≥960px): both panels side by side.
+   On narrow: tabbed, tab bar at top.
+   ===================================================================== */
+
+function SongOverlay({
+  open,
+  payload,
+  tab,
+  onTabChange,
+  onClose,
+  playlists,
+  onRefresh,
+  onRefreshPlaylists,
+}: {
+  open: boolean;
+  payload: SongPayload | null;
+  tab: "player" | "workspace";
+  onTabChange: (t: "player" | "workspace") => void;
+  onClose: () => void;
+  playlists: Awaited<ReturnType<typeof api.playlists>>;
+  onRefresh: () => void;
+  onRefreshPlaylists: () => void;
+}) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  // ESC to close
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+
+  // Focus trap: when overlay opens, focus it; Tab cycles within it
+  useEffect(() => {
+    if (!open) return;
+    const el = overlayRef.current;
+    if (!el) return;
+    const prev = document.activeElement as HTMLElement | null;
+    el.focus();
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(el.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
+      else            { if (document.activeElement === last)  { e.preventDefault(); first.focus(); } }
+    };
+    el.addEventListener("keydown", trap);
+    return () => { el.removeEventListener("keydown", trap); prev?.focus(); };
+  }, [open]);
+
+  useEffect(() => {
+    const el = overlayRef.current as (HTMLDivElement & { inert?: boolean }) | null;
+    if (!el) return;
+    el.inert = !open;
+    el.toggleAttribute("inert", !open);
+  }, [open]);
+
+  return (
+    <div
+      ref={overlayRef}
+      className={`song-overlay${open ? " open" : ""}`}
+      aria-hidden={!open}
+      aria-modal={open ? true : undefined}
+      role={open ? "dialog" : undefined}
+      aria-label="Song player and workspace"
+      tabIndex={open ? -1 : undefined}
+    >
+      {/* Narrow: tab bar */}
+      <div className="overlay-tabs">
+        <button
+          className={`overlay-tab${tab === "player" ? " active" : ""}`}
+          onClick={() => onTabChange("player")}
+        >
+          Now Playing
+        </button>
+        <button
+          className={`overlay-tab${tab === "workspace" ? " active" : ""}`}
+          onClick={() => onTabChange("workspace")}
+        >
+          Workspace
+        </button>
+        <button className="overlay-close-tab" onClick={onClose} aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Player panel — left on wide, full on narrow when tab=player */}
+      <div className={`overlay-panel overlay-player-panel${tab === "workspace" ? " narrow-hidden" : ""}`}>
+        {payload
+          ? <NowPlayingView payload={payload} onClose={onClose} onNote={() => onTabChange("workspace")} />
+          : <div className="overlay-loading">Loading…</div>
+        }
+      </div>
+
+      {/* Workspace panel — right on wide, full on narrow when tab=workspace */}
+      <div className={`overlay-panel overlay-workspace-panel${tab === "player" ? " narrow-hidden" : ""}`}>
+        {payload
+          ? (
+            <SongWorkspace
+              payload={payload}
+              playlists={playlists}
+              onRefresh={onRefresh}
+              onRefreshPlaylists={onRefreshPlaylists}
+            />
+          )
+          : <div className="overlay-loading">Loading…</div>
+        }
+      </div>
+    </div>
+  );
+}
+
+/* =====================================================================
+   Brand primitives — Wordmark, MonoMark, Stamp
+   ===================================================================== */
+
+function Wordmark({ size = "md", title, isPlaying = false }: { size?: "sm" | "md" | "lg"; title?: string; isPlaying?: boolean }) {
+  return <PlaybackWordmark size={size} title={title} isPlaying={isPlaying} />;
+}
+
+function MonoMark({ size = 16 }: { size?: number }) {
+  return <PlaybackMark size={size} />;
 }
 
 type StampKind = "private" | "notes-due" | "approved" | "latest";
@@ -3812,4 +4159,3 @@ function Stamp({
     .join(" ");
   return <span className={classes}>{children}</span>;
 }
-

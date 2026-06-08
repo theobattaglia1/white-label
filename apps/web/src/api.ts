@@ -98,12 +98,14 @@ export type SharedPayload = {
   versions: Version[];
   assets: FileAsset[];
   rooms: Room[];
+  notes: VisibleNote[];
   /** Set when the link's `target_type === "playlist"`. */
   playlist?: Playlist | null;
 };
 
 export const api = {
-  room: (id = "room-hudson-ingram-lp") => request<RoomPayload>(`/rooms/${id}`),
+  me: () => request<{ user: { member_number?: number; display_name: string; user_id: string } | null; memberships: unknown[] }>("/me"),
+  room: (id = "room-secret-album") => request<RoomPayload>(`/rooms/${id}`),
   song: (id: string) => request<SongPayload>(`/songs/${id}`),
   inbox: () =>
     request<
@@ -227,6 +229,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ version_id: versionId, state, note }),
     }),
+  sharedNote: (token: string, body: {
+    song_id: string;
+    anchor_version_id: string;
+    body: string;
+    timestamp_start_ms?: number;
+    scope?: "song" | "version";
+    visibility?: "everyone" | "internal" | "private";
+  }) => request<VisibleNote>(`/shared/${token}/notes`, { method: "POST", body: JSON.stringify(body) }),
 
   // === Real audio uploads (Supabase Storage) ============================
 
@@ -327,4 +337,3 @@ export function assetForVersion(assets: FileAsset[], version?: Version): FileAss
 export function versionsForSong(versions: Version[], songID: string): Version[] {
   return versions.filter((version) => version.song_id === songID).sort((a, b) => a.version_number - b.version_number);
 }
-

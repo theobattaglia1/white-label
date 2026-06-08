@@ -98,6 +98,21 @@ export type FinalizeUploadResult = {
   versionNumber: number;
 };
 
+export type FinalizeNewSongInput = Omit<FinalizeUploadInput, "songExternalId"> & {
+  title: string;
+  artist?: string;
+  projectName?: string;
+  roomExternalId?: string;
+  artworkStoragePath?: string;
+  artworkPublicUrl?: string;
+};
+
+export type FinalizeNewSongResult = FinalizeUploadResult & {
+  songId: string;
+  songExternalId: string;
+  roomExternalId?: string;
+};
+
 /**
  * After the client PUT completes, persist the file_asset + version rows in
  * Supabase. Returns the new IDs so the UI can refresh.
@@ -199,4 +214,185 @@ export async function finalizeUpload(input: FinalizeUploadInput): Promise<Finali
     versionExternalId,
     versionNumber: nextNumber,
   };
+}
+
+export async function finalizeNewSongUpload(input: FinalizeNewSongInput): Promise<FinalizeNewSongResult> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase not configured");
+
+  const workspaceExternal = input.workspaceExternalId ?? "wsp-amf-private";
+  const wsRes = await supabase.from("workspaces").select("workspace_id").eq("external_id", workspaceExternal).maybeSingle();
+  if (wsRes.error || !wsRes.data) throw new Error(`workspace not found: ${workspaceExternal}`);
+  const workspaceUuid = (wsRes.data as { workspace_id: string }).workspace_id;
+
+  const uploaderExternal = input.uploadedBy ?? "usr-theo";
+  const usrRes = await supabase.from("users").select("user_id").eq("external_id", uploaderExternal).maybeSingle();
+  if (usrRes.error || !usrRes.data) throw new Error(`uploader not found: ${uploaderExternal}`);
+  const uploaderUuid = (usrRes.data as { user_id: string }).user_id;
+
+  const room = await resolveRoom({
+    workspaceUuid,
+    createdByUuid: uploaderUuid,
+    roomExternalId: input.roomExternalId,
+    projectName: input.projectName,
+  });
+
+  const cleanTitle = input.title.trim() || filenameTitle(input.filename);
+  const songExternalId = `song-${slug(cleanTitle)}-${Date.now()}`;
+
+  const songInsert = await supabase
+    .from("songs")
+    .insert({
+      external_id: songExternalId,
+      workspace_id: workspaceUuid,
+      primary_room_id: room?.roomUuid ?? null,
+      title: cleanTitle,
+      artist_display_name: input.artist?.trim() || null,
+      project_name: input.projectName?.trim() || room?.title || null,
+      status: "in_review",
+      explicit_flag: false,
+      genre_tags: [],
+      mood_tags: [],
+      instrument_tags: [],
+      lyric_theme_tags: [],
+      release_readiness_status: "not_ready",
+      artwork_key: input.artworkStoragePath ?? null,
+      artwork_url: input.artworkPublicUrl ?? null,
+      created_by: uploaderUuid,
+    })
+    .select("song_id")
+    .single();
+  if (songInsert.error || !songInsert.data) throw new Error(`song insert failed: ${songInsert.error?.message}`);
+  const songUuid = (songInsert.data as { song_id: string }).song_id;
+
+  const assetExternalId = `asset-${songExternalId}-v1-${Date.now()}`;
+  const versionExternalId = `ver-${songExternalId}-v1-${Date.now()}`;
+
+  const assetInsert = await supabase
+    .from("file_assets")
+    .insert({
+      external_id: assetExternalId,
+      workspace_id: workspaceUuid,
+      original_filename: input.filename,
+      normalized_filename: input.filename.toLowerCase().replace(/\s+/g, "-"),
+      key_original: input.storagePath,
+      mime_type: input.contentType ?? "audio/mpeg",
+      file_size_bytes: input.fileSizeBytes,
+      duration_ms: input.durationMs ?? null,
+      sample_rate: input.sampleRate ?? null,
+      bit_depth: input.bitDepth ?? null,
+      loudness_lufs: input.loudnessLufs ?? null,
+      virus_scan_status: "clean",
+      transcoding_status: "ready",
+      playback_url: input.publicUrl,
+    })
+    .select("asset_id")
+    .single();
+  if (assetInsert.error || !assetInsert.data) throw new Error(`asset insert failed: ${assetInsert.error?.message}`);
+  const assetUuid = (assetInsert.data as { asset_id: string }).asset_id;
+
+  const versionInsert = await supabase
+    .from("versions")
+    .insert({
+      external_id: versionExternalId,
+      song_id: songUuid,
+      version_number: 1,
+      version_label: input.versionLabel ?? "Demo v1",
+      type: input.versionType ?? "demo",
+      is_current: true,
+      is_approved: false,
+      uploaded_by: uploaderUuid,
+      file_asset_id: assetUuid,
+    })
+    .select("version_id")
+    .single();
+  if (versionInsert.error || !versionInsert.data) throw new Error(`version insert failed: ${versionInsert.error?.message}`);
+  const versionUuid = (versionInsert.data as { version_id: string }).version_id;
+
+  const songUpdate = await supabase
+    .from("songs")
+    .update({ current_version_id: versionUuid, updated_at: new Date().toISOString() })
+    .eq("song_id", songUuid);
+  if (songUpdate.error) throw new Error(`song update failed: ${songUpdate.error.message}`);
+
+  return {
+    songId: songUuid,
+    songExternalId,
+    roomExternalId: room?.roomExternalId,
+    assetId: assetUuid,
+    assetExternalId,
+    versionId: versionUuid,
+    versionExternalId,
+    versionNumber: 1,
+  };
+}
+
+async function resolveRoom(input: {
+  workspaceUuid: string;
+  createdByUuid: string;
+  roomExternalId?: string;
+  projectName?: string;
+}): Promise<{ roomUuid: string; roomExternalId: string; title: string } | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  if (input.roomExternalId) {
+    const existing = await supabase
+      .from("rooms")
+      .select("room_id, external_id, title")
+      .eq("external_id", input.roomExternalId)
+      .maybeSingle();
+    if (existing.error) throw new Error(`room lookup failed: ${existing.error.message}`);
+    if (existing.data) {
+      const row = existing.data as { room_id: string; external_id?: string; title: string };
+      return { roomUuid: row.room_id, roomExternalId: row.external_id ?? input.roomExternalId, title: row.title };
+    }
+  }
+
+  const title = input.projectName?.trim();
+  if (!title) return null;
+
+  const byTitle = await supabase
+    .from("rooms")
+    .select("room_id, external_id, title")
+    .eq("workspace_id", input.workspaceUuid)
+    .eq("title", title)
+    .maybeSingle();
+  if (byTitle.error) throw new Error(`room lookup failed: ${byTitle.error.message}`);
+  if (byTitle.data) {
+    const row = byTitle.data as { room_id: string; external_id?: string; title: string };
+    return { roomUuid: row.room_id, roomExternalId: row.external_id ?? row.room_id, title: row.title };
+  }
+
+  const roomExternalId = `room-${slug(title)}-${Date.now()}`;
+  const inserted = await supabase
+    .from("rooms")
+    .insert({
+      external_id: roomExternalId,
+      workspace_id: input.workspaceUuid,
+      type: "project",
+      title,
+      visibility: "workspace",
+      status: "active",
+      default_version_visibility: "full_history",
+      default_download_policy: "none",
+      created_by: input.createdByUuid,
+    })
+    .select("room_id, title")
+    .single();
+  if (inserted.error || !inserted.data) throw new Error(`room insert failed: ${inserted.error?.message}`);
+  const row = inserted.data as { room_id: string; title: string };
+  return { roomUuid: row.room_id, roomExternalId, title: row.title };
+}
+
+function filenameTitle(filename: string): string {
+  return filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Untitled Song";
+}
+
+function slug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "untitled";
 }

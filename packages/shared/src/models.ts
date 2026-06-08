@@ -46,6 +46,7 @@ export type EventType =
   | "played_track"
   | "opened_link"
   | "downloaded_file"
+  | "invited_recipient"
   | "commented"
   | "mentioned_user"
   | "approved_version"
@@ -76,6 +77,7 @@ export interface User {
   auth_provider?: string;
   two_factor_enabled: boolean;
   notification_preferences: Record<string, unknown>;
+  member_number?: number;  // sequential account identity — PB-001 is the first
   created_at: string;
   updated_at: string;
 }
@@ -148,6 +150,8 @@ export interface Song {
   mood_tags: string[];
   instrument_tags: string[];
   lyric_theme_tags: string[];
+  artwork_key?: string;
+  artwork_url?: string;
   release_readiness_status: "ready" | "not_ready";
   created_by: string;
   created_at: string;
@@ -262,6 +266,21 @@ export interface ShareLink {
   created_at: string;
 }
 
+export type ShareRecipientRole = "listen" | "comment" | "download";
+
+export interface ShareRecipient {
+  recipient_id: string;
+  link_id: string;
+  email: string;
+  display_name?: string;
+  role: ShareRecipientRole;
+  invited_by: string;
+  invited_at: string;
+  last_sent_at?: string;
+  accepted_at?: string;
+  revoked_at?: string;
+}
+
 export interface ActivityEvent {
   event_id: string;
   workspace_id: string;
@@ -362,10 +381,10 @@ export interface WorkspaceSnapshot {
   tasks: Task[];
   approvals: Approval[];
   shareLinks: ShareLink[];
+  shareRecipients: ShareRecipient[];
   activityEvents: ActivityEvent[];
   notifications: NotificationItem[];
   savedViews: SavedView[];
   playlists: Playlist[];
   playlistItems: PlaylistItem[];
 }
-

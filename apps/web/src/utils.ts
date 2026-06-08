@@ -32,9 +32,9 @@ export function catalogNumber(id: string): string {
   return String(n);
 }
 
-/** Full "WL · XXXX" display form. */
+/** Full "PB · XXXX" display form. */
 export function catalogIdFor(songId: string): string {
-  return `WL · ${catalogNumber(songId)}`;
+  return `PB · ${catalogNumber(songId)}`;
 }
 
 /** Build a sleeve-mode CSS gradient string keyed off the song id. */

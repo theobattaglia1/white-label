@@ -25,6 +25,9 @@ struct HomeView: View {
     }
     private var needsEar: [Track] { store.tracks.filter { store.openCount($0.id) > 0 } }
     private let pinCardSize: CGFloat = 104
+    private var featuredHasArtwork: Bool {
+        featured.coverArt != nil || featured.importedArtworkPath != nil || featured.remoteArtworkURL != nil
+    }
 
     var body: some View {
         ScrollView {
@@ -121,31 +124,48 @@ struct HomeView: View {
 
     private var hero: some View {
         Button { openSong(featured.id) } label: {
-            ZStack(alignment: .bottomLeading) {
-                TrackArtwork(track: featured, cornerRadius: 18)
-                    .frame(height: 200)
-                    .overlay(
-                        LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    )
-                VStack(alignment: .leading, spacing: 8) {
-                    MonoLabel("Latest · \(featured.versionLabel)", color: .white.opacity(0.8), size: 9, tracking: 1.8)
-                    Text(store.displayTitle(featured.id, featured.title))
-                        .font(PB.display(30)).foregroundStyle(.white)
-                    HStack(spacing: 8) {
-                        Image(systemName: "play.fill").font(.system(size: 11))
-                        MonoLabel("Play", color: .white, size: 11, tracking: 1.5)
+            heroArtworkSurface
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        MonoLabel("Latest · \(featured.versionLabel)", color: .white.opacity(0.8), size: 9, tracking: 1.8)
+                        Text(store.displayTitle(featured.id, featured.title))
+                            .font(PB.display(30)).foregroundStyle(.white)
+                        HStack(spacing: 8) {
+                            Image(systemName: "play.fill").font(.system(size: 11))
+                            MonoLabel("Play", color: .white, size: 11, tracking: 1.5)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Capsule().fill(.white.opacity(0.18)))
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 1))
+                        .padding(.top, 2)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Capsule().fill(.white.opacity(0.18)))
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 1))
-                    .padding(.top, 2)
+                    .padding(20)
                 }
-                .padding(20)
-            }
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var heroArtworkSurface: some View {
+        if featuredHasArtwork {
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay { heroArtwork }
+        } else {
+            heroArtwork
+                .frame(height: 200)
+                .clipped()
+        }
+    }
+
+    private var heroArtwork: some View {
+        TrackArtwork(track: featured, cornerRadius: 18)
+            .overlay(
+                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var startPanel: some View {

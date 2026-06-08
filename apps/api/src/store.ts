@@ -35,6 +35,7 @@ import {
   persistShareLink,
   persistShareRecipientPatch,
   persistShareRecipients,
+  persistVersionPatch,
 } from "./supabase-persist";
 import { isSupabaseEnabled } from "./supabase";
 
@@ -261,6 +262,7 @@ export class WorkspaceStore {
           }
         : version
     );
+    void persistVersionPatch(versionID, patch).catch(() => undefined);
     return this.snapshot.versions.find((version) => version.version_id === versionID);
   }
 

@@ -16,6 +16,7 @@ import { getSupabase, isSupabaseEnabled } from "./supabase";
 import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthError } from "./auth";
 import { isAssistantLlmEnabled } from "./assistant";
 import { rateLimit } from "./ratelimit";
+import { persistSongPatch } from "./supabase-persist";
 
 /**
  * Builds and returns a fully-registered Fastify instance without binding a
@@ -454,6 +455,8 @@ server.patch("/songs/:id", async (request) => {
     "mood_tags",
     "instrument_tags",
     "lyric_theme_tags",
+    "artwork_key",
+    "artwork_url",
     "release_readiness_status",
   ]);
   const patch: Record<string, unknown> = {};
@@ -465,6 +468,7 @@ server.patch("/songs/:id", async (request) => {
       ? { ...song, ...patch, song_id: song.song_id, updated_at: new Date().toISOString() }
       : song,
   );
+  void persistSongPatch(id, patch as never).catch(() => undefined);
   return ok(store.getSong(id));
 });
 server.delete("/songs/:id", async (request) => {

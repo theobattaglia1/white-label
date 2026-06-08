@@ -211,6 +211,7 @@ final class WorkspaceStore {
         return stored.track
     }
 
+    @MainActor
     func updateTrack(
         _ id: String,
         title: String,
@@ -218,14 +219,23 @@ final class WorkspaceStore {
         project: String,
         versionLabel: String,
         importedArtworkPath: String?,
-        artworkPalette: [UInt]? = nil
-    ) {
+        artworkPalette: [UInt]? = nil,
+        artworkChanged: Bool = false
+    ) async throws {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedProject = project.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedVersion = versionLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let i = customTracks.firstIndex(where: { $0.id == id }) else {
-            updateServiceTrack(id, title: trimmedTitle, artist: trimmedArtist, project: trimmedProject, versionLabel: trimmedVersion)
+            try await updateServiceTrack(
+                id,
+                title: trimmedTitle,
+                artist: trimmedArtist,
+                project: trimmedProject,
+                versionLabel: trimmedVersion,
+                importedArtworkPath: importedArtworkPath,
+                artworkChanged: artworkChanged
+            )
             return
         }
         let previousArtwork = customTracks[i].importedArtworkPath
@@ -246,31 +256,54 @@ final class WorkspaceStore {
         persist()
     }
 
-    private func updateServiceTrack(_ id: String, title: String, artist: String, project: String, versionLabel: String) {
+    @MainActor
+    private func updateServiceTrack(
+        _ id: String,
+        title: String,
+        artist: String,
+        project: String,
+        versionLabel: String,
+        importedArtworkPath: String?,
+        artworkChanged: Bool
+    ) async throws {
         guard let i = serviceTracks.firstIndex(where: { $0.id == id }) else { return }
         let nextTitle = title.isEmpty ? serviceTracks[i].title : title
         let nextArtist = artist.isEmpty ? serviceTracks[i].artist : artist
         let nextProject = project.isEmpty ? serviceTracks[i].label : project
+        let nextVersion = versionLabel.isEmpty ? serviceTracks[i].versionLabel : versionLabel
         serviceTracks[i].title = nextTitle
         serviceTracks[i].artist = nextArtist
         serviceTracks[i].label = nextProject
-        if !versionLabel.isEmpty { serviceTracks[i].versionLabel = versionLabel }
+        serviceTracks[i].versionLabel = nextVersion
+        if artworkChanged {
+            serviceTracks[i].importedArtworkPath = importedArtworkPath
+            if importedArtworkPath == nil {
+                serviceTracks[i].remoteArtworkURL = nil
+            }
+        }
         syncState = .syncing
         syncMessage = "Syncing edits"
-        Task {
-            do {
-                _ = try await ServiceClient.shared.patchSong(id, title: nextTitle, artist: nextArtist, project: nextProject)
-                await MainActor.run {
-                    self.syncState = .synced
-                    self.syncMessage = "Synced with cloud"
-                    self.lastSavedAt = Date()
-                }
-            } catch {
-                await MainActor.run {
-                    self.syncState = .offline
-                    self.syncMessage = "Edit saved locally"
-                }
+
+        do {
+            _ = try await ServiceClient.shared.patchSong(
+                id,
+                title: nextTitle,
+                artist: nextArtist,
+                project: nextProject,
+                artworkPath: importedArtworkPath,
+                artworkChanged: artworkChanged
+            )
+            if let versionID = serviceTracks[i].remoteVersionID {
+                try await ServiceClient.shared.patchVersion(versionID, versionLabel: nextVersion)
             }
+            await refreshFromService()
+            syncState = .synced
+            syncMessage = "Synced with cloud"
+            lastSavedAt = Date()
+        } catch {
+            syncState = .offline
+            syncMessage = "Edit saved locally"
+            throw error
         }
     }
 

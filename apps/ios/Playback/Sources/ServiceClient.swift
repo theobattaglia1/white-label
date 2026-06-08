@@ -285,18 +285,54 @@ struct ServiceClient {
     }
 
     @discardableResult
-    func patchSong(_ id: String, title: String, artist: String, project: String) async throws -> APILibraryItem? {
-        let payload: [String: Any] = [
+    func patchSong(
+        _ id: String,
+        title: String,
+        artist: String,
+        project: String,
+        artworkPath: String? = nil,
+        artworkChanged: Bool = false
+    ) async throws -> APILibraryItem? {
+        var payload: [String: Any] = [
             "title": title,
             "artist_display_name": artist,
             "project_name": project,
         ]
+
+        if artworkChanged {
+            if let artworkPath,
+               let artworkURL = localFileURL(for: artworkPath) {
+                let workspaceID = await resolvedWorkspaceID(nil)
+                let artworkContentType = contentType(for: artworkURL)
+                let artworkSigned = try await post(
+                    "/storage/sign-upload",
+                    body: [
+                        "filename": artworkURL.lastPathComponent,
+                        "contentType": artworkContentType,
+                        "workspaceExternalId": workspaceID,
+                        "songExternalId": id
+                    ],
+                    as: APISignUpload.self
+                )
+                try await uploadFile(artworkURL, to: artworkSigned.uploadUrl, contentType: artworkContentType)
+                payload["artwork_key"] = artworkSigned.storagePath
+                payload["artwork_url"] = artworkSigned.publicUrl
+            } else {
+                payload["artwork_key"] = NSNull()
+                payload["artwork_url"] = NSNull()
+            }
+        }
+
         _ = try await patch("/songs/\(id)", body: payload, as: SongPayload.self)
         return nil
     }
 
     struct SongPayload: Decodable {
         let song: APISong
+    }
+
+    func patchVersion(_ id: String, versionLabel: String) async throws {
+        _ = try await patch("/versions/\(id)", body: ["version_label": versionLabel], as: APIVersion.self)
     }
 
     func createShareLink(targetType: String, targetID: String, allowDownload: Bool = false) async throws -> APICreatedLink {

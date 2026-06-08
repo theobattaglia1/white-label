@@ -1101,7 +1101,15 @@ struct EditSongSheet: View {
     @State private var importedArtwork: ImportedArtworkSelection?
     @State private var artworkItem: PhotosPickerItem?
     @State private var artworkError: String?
+    @State private var artworkChanged = false
     @State private var didLoad = false
+    @State private var isSaving = false
+    @State private var saveError: String?
+    @State private var showDiscardConfirmation = false
+    @State private var originalTitle = ""
+    @State private var originalArtist = ""
+    @State private var originalProject = ""
+    @State private var originalVersion = ""
 
     private var track: Track? { store.track(trackID) }
 
@@ -1120,25 +1128,9 @@ struct EditSongSheet: View {
                         sheetField("Project", text: $project, placeholder: "Project or room")
                         sheetField("Version", text: $version, placeholder: "Demo v1")
 
-                        Button {
-                            store.updateTrack(
-                                trackID,
-                                title: title,
-                                artist: artist,
-                                project: project,
-                                versionLabel: version,
-                                importedArtworkPath: importedArtwork?.relativePath,
-                                artworkPalette: importedArtwork?.paletteHexes
-                            )
-                            dismiss()
-                        } label: {
-                            Text("SAVE CHANGES").font(PB.mono(11)).tracking(1.5).foregroundStyle(PB.black)
-                                .frame(maxWidth: .infinity).padding(.vertical, 13)
-                                .background(Capsule().fill(canSave ? PB.cream : PB.pencil))
+                        if let saveError {
+                            MonoLabel(saveError, color: PB.redline, size: 9, tracking: 0.8)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!canSave)
-                        .opacity(canSave ? 1 : 0.55)
                     }
                 }
                 .padding(22)
@@ -1147,8 +1139,17 @@ struct EditSongSheet: View {
             .navigationTitle("Edit song")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { cancel() }
+                        .font(PB.mono(13))
+                        .foregroundStyle(PB.pencil)
+                        .disabled(isSaving)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.font(PB.mono(13)).foregroundStyle(PB.cobalt)
+                    Button(isSaving ? "Saving" : "Done") { saveAndDismiss() }
+                        .font(PB.mono(13))
+                        .foregroundStyle(canSave ? PB.cobalt : PB.pencil)
+                        .disabled(!canSave)
                 }
             }
             .toolbarBackground(PB.black, for: .navigationBar)
@@ -1156,6 +1157,13 @@ struct EditSongSheet: View {
         .presentationDetents([.large])
         .presentationBackground(PB.black)
         .foregroundStyle(PB.cream)
+        .interactiveDismissDisabled(hasUnsavedChanges || isSaving)
+        .confirmationDialog("Discard changes?", isPresented: $showDiscardConfirmation, titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Your song edits have not been saved.")
+        }
         .onAppear(perform: loadTrack)
         .onChange(of: artworkItem) { _, item in
             importArtwork(item)
@@ -1163,7 +1171,30 @@ struct EditSongSheet: View {
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !normalized(title).isEmpty && !isSaving
+    }
+
+    private var hasUnsavedChanges: Bool {
+        normalized(title) != originalTitle
+            || normalized(artist) != originalArtist
+            || normalized(project) != originalProject
+            || normalized(version) != originalVersion
+            || artworkChanged
+    }
+
+    private var hasVisibleArtwork: Bool {
+        importedArtwork != nil
+            || (!artworkChanged && (track?.remoteArtworkURL != nil || track?.coverArt != nil))
+    }
+
+    private var artworkTitle: String {
+        if let importedArtwork { return importedArtwork.displayName }
+        if hasVisibleArtwork { return "Current artwork" }
+        return "Choose artwork"
+    }
+
+    private var artworkSubtitle: String {
+        hasVisibleArtwork ? "Tap to change" : "Optional · image from Photos"
     }
 
     private var artworkPicker: some View {
@@ -1174,18 +1205,18 @@ struct EditSongSheet: View {
                     artworkPreview(path: importedArtwork?.relativePath)
                         .frame(width: 68, height: 68)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(importedArtwork?.displayName ?? "Choose artwork")
+                        Text(artworkTitle)
                             .font(PB.text(16)).foregroundStyle(PB.cream)
                             .lineLimit(1)
-                        MonoLabel(importedArtwork == nil ? "Optional · image from Photos" : "Tap to change",
+                        MonoLabel(artworkSubtitle,
                                   color: artworkError == nil ? PB.pencil : PB.redline,
                                   size: 9,
                                   tracking: 1)
                     }
                     Spacer()
-                    Image(systemName: importedArtwork == nil ? "photo" : "checkmark.circle.fill")
+                    Image(systemName: hasVisibleArtwork ? "checkmark.circle.fill" : "photo")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(importedArtwork == nil ? PB.pencil : PB.green)
+                        .foregroundStyle(hasVisibleArtwork ? PB.green : PB.pencil)
                 }
                 .padding(15)
                 .frame(minHeight: 92)
@@ -1194,10 +1225,12 @@ struct EditSongSheet: View {
             }
             .buttonStyle(.plain)
 
-            if importedArtwork != nil {
+            if hasVisibleArtwork {
                 Button {
                     importedArtwork = nil
                     artworkItem = nil
+                    artworkChanged = true
+                    saveError = nil
                 } label: {
                     MonoLabel("Remove artwork", color: PB.pencil, size: 9, tracking: 1)
                         .frame(minHeight: 32)
@@ -1214,10 +1247,15 @@ struct EditSongSheet: View {
     private func loadTrack() {
         guard !didLoad, let track else { return }
         didLoad = true
-        title = store.displayTitle(track.id, track.title)
+        let loadedTitle = store.displayTitle(track.id, track.title)
+        title = loadedTitle
         artist = track.artist
         project = track.label
         version = track.versionLabel
+        originalTitle = normalized(loadedTitle)
+        originalArtist = normalized(track.artist)
+        originalProject = normalized(track.label)
+        originalVersion = normalized(track.versionLabel)
         if let path = track.importedArtworkPath {
             importedArtwork = ImportedArtworkSelection(
                 relativePath: path,
@@ -1228,9 +1266,51 @@ struct EditSongSheet: View {
         }
     }
 
+    private func saveAndDismiss() {
+        guard canSave else { return }
+        guard hasUnsavedChanges else {
+            dismiss()
+            return
+        }
+        isSaving = true
+        saveError = nil
+        Task {
+            do {
+                try await store.updateTrack(
+                    trackID,
+                    title: title,
+                    artist: artist,
+                    project: project,
+                    versionLabel: version,
+                    importedArtworkPath: importedArtwork?.relativePath,
+                    artworkPalette: importedArtwork?.paletteHexes,
+                    artworkChanged: artworkChanged
+                )
+                await MainActor.run {
+                    isSaving = false
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    saveError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func cancel() {
+        if hasUnsavedChanges {
+            showDiscardConfirmation = true
+        } else {
+            dismiss()
+        }
+    }
+
     private func importArtwork(_ item: PhotosPickerItem?) {
         guard let item else { return }
         artworkError = nil
+        saveError = nil
         Task {
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -1240,7 +1320,10 @@ struct EditSongSheet: View {
                     data,
                     sourceName: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "artwork" : title
                 )
-                await MainActor.run { importedArtwork = selection }
+                await MainActor.run {
+                    importedArtwork = selection
+                    artworkChanged = true
+                }
             } catch {
                 await MainActor.run { artworkError = error.localizedDescription }
             }
@@ -1254,6 +1337,22 @@ struct EditSongSheet: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+            } else if !artworkChanged,
+                      let remote = track?.remoteArtworkURL,
+                      let url = URL(string: remote) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else if let track {
+                        MeshCover(colors: track.mesh, animate: false, fillsSafeArea: false)
+                    }
+                }
+            } else if !artworkChanged,
+                      let track,
+                      let image = TrackArtworkLoader.uiImage(for: track) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
             } else if let track {
                 MeshCover(colors: track.mesh, animate: false, fillsSafeArea: false)
             } else {
@@ -1264,6 +1363,10 @@ struct EditSongSheet: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(PB.cream.opacity(0.14), lineWidth: 0.75))
+    }
+
+    private func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

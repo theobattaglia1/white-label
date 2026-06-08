@@ -1,4 +1,4 @@
-import type { Note, ShareLink, ShareRecipient } from "@pmw/shared";
+import type { Note, ShareLink, ShareRecipient, Song } from "@pmw/shared";
 import { getSupabase } from "./supabase";
 
 /**
@@ -200,6 +200,49 @@ export async function persistShareRecipientPatch(recipient: ShareRecipient): Pro
     })
     .eq("external_id", recipient.recipient_id);
   if (error) console.warn("[supabase-persist] recipient patch failed:", error.message);
+}
+
+export async function persistSongPatch(
+  songExternalId: string,
+  patch: Partial<Pick<
+    Song,
+    | "title"
+    | "primary_room_id"
+    | "status"
+    | "artist_display_name"
+    | "project_name"
+    | "bpm"
+    | "song_key"
+    | "explicit_flag"
+    | "genre_tags"
+    | "mood_tags"
+    | "instrument_tags"
+    | "lyric_theme_tags"
+    | "artwork_key"
+    | "artwork_url"
+    | "release_readiness_status"
+  >>
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || Object.keys(patch).length === 0) return;
+  const { error } = await supabase
+    .from("songs")
+    .update(patch)
+    .eq("external_id", songExternalId);
+  if (error) console.warn("[supabase-persist] song patch failed:", error.message);
+}
+
+export async function persistVersionPatch(
+  versionExternalId: string,
+  patch: { version_label?: string; type?: string }
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || Object.keys(patch).length === 0) return;
+  const { error } = await supabase
+    .from("versions")
+    .update(patch)
+    .eq("external_id", versionExternalId);
+  if (error) console.warn("[supabase-persist] version patch failed:", error.message);
 }
 
 /** Mark a note reopened in Supabase. */

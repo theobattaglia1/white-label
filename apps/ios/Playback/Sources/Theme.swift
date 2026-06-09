@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Playback — v3 design tokens for iOS.
 /// Warm-dark studio palette + the Teenage Engineering type system
@@ -72,6 +75,9 @@ struct AppScreenHeader<Trailing: View>: View {
             HStack(alignment: .center, spacing: 10) {
                 PlaybackWordmark(capSize: 22, fontSize: 24, isPlaying: isPlaying)
                     .frame(width: 156, height: 26, alignment: .leading)
+                if let num = PlaybackAuthSession.shared.profile?.user.member_number {
+                    MonoLabel(String(format: "PB · %03d", num), color: PB.pencil.opacity(0.55), size: 9, tracking: 1.8)
+                }
                 Spacer(minLength: 0)
                 trailing()
             }
@@ -102,3 +108,282 @@ struct TopScrollFade: View {
         .ignoresSafeArea(edges: .top)
     }
 }
+
+enum ScrollTopAnchor: Hashable {
+    case top
+}
+
+struct TopTapScrollHotspot: View {
+    var action: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: max(proxy.safeAreaInsets.top, 36))
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: action)
+                    .ignoresSafeArea(edges: .top)
+                Spacer(minLength: 0)
+            }
+        }
+        .allowsHitTesting(true)
+    }
+}
+
+func scrollToTopMarker() -> some View {
+    Color.clear
+        .frame(height: 0)
+        .id(ScrollTopAnchor.top)
+}
+
+func scrollToTop(_ proxy: ScrollViewProxy) {
+    withAnimation(.easeInOut(duration: 0.28)) {
+        proxy.scrollTo(ScrollTopAnchor.top, anchor: .top)
+    }
+}
+
+struct HeaderCircleIcon: View {
+    var systemName: String
+    var color: Color = PB.cream
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: 44, height: 44)
+            .background(Circle().fill(PB.panel))
+            .overlay(Circle().strokeBorder(PB.cream.opacity(0.1), lineWidth: 1))
+    }
+}
+
+struct SelectionDragTarget: Equatable, Identifiable {
+    let id: String
+    let frame: CGRect
+}
+
+struct SelectionDragTargetKey: PreferenceKey {
+    static var defaultValue: [SelectionDragTarget] = []
+
+    static func reduce(value: inout [SelectionDragTarget], nextValue: () -> [SelectionDragTarget]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+extension View {
+    /// Presents the system share sheet when `item` becomes non-nil,
+    /// clears it after dismissal. `items` closure returns the array
+    /// to share (strings, URLs, etc.).
+    func shareSheet<T: Identifiable>(
+        item: Binding<T?>,
+        @ViewBuilder items: @escaping (T) -> [Any]
+    ) -> some View {
+        #if canImport(UIKit)
+        self.background(
+            ShareSheetPresenter(item: item, items: items)
+        )
+        #else
+        self
+        #endif
+    }
+
+    func selectionDragTarget(id: String) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: SelectionDragTargetKey.self,
+                    value: [SelectionDragTarget(id: id, frame: proxy.frame(in: .global))]
+                )
+            }
+        }
+    }
+
+    func twoFingerSelection(
+        enabled: Bool,
+        targets: [SelectionDragTarget],
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        #if canImport(UIKit)
+        background(TwoFingerSelectionBridge(enabled: enabled, targets: targets, onSelect: onSelect))
+        #else
+        self
+        #endif
+    }
+
+    func restoresSwipeBack() -> some View {
+        #if canImport(UIKit)
+        background(SwipeBackRestorer())
+        #else
+        self
+        #endif
+    }
+}
+
+#if canImport(UIKit)
+private struct TwoFingerSelectionBridge: UIViewRepresentable {
+    var enabled: Bool
+    var targets: [SelectionDragTarget]
+    var onSelect: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.enabled = enabled
+        context.coordinator.targets = targets
+        context.coordinator.onSelect = onSelect
+        DispatchQueue.main.async {
+            context.coordinator.install(from: uiView)
+        }
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var enabled = false {
+            didSet { recognizer?.isEnabled = enabled }
+        }
+        var targets: [SelectionDragTarget] = []
+        var onSelect: ((String) -> Void)?
+        private weak var hostView: UIView?
+        private var recognizer: UIPanGestureRecognizer?
+        private var selectedDuringGesture: Set<String> = []
+
+        func install(from view: UIView) {
+            guard let host = view.nearestSelectionGestureHost else { return }
+            if hostView === host {
+                recognizer?.isEnabled = enabled
+                return
+            }
+
+            uninstall()
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            pan.minimumNumberOfTouches = 2
+            pan.maximumNumberOfTouches = 2
+            pan.cancelsTouchesInView = false
+            pan.delaysTouchesBegan = false
+            pan.delaysTouchesEnded = false
+            pan.delegate = self
+            pan.isEnabled = enabled
+            host.addGestureRecognizer(pan)
+            hostView = host
+            recognizer = pan
+        }
+
+        func uninstall() {
+            if let recognizer, let hostView {
+                hostView.removeGestureRecognizer(recognizer)
+            }
+            recognizer = nil
+            hostView = nil
+            selectedDuringGesture.removeAll()
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard enabled, let view = recognizer.view else { return }
+
+            switch recognizer.state {
+            case .began:
+                selectedDuringGesture.removeAll()
+                selectTarget(at: recognizer.location(in: view), in: view)
+            case .changed:
+                selectTarget(at: recognizer.location(in: view), in: view)
+            case .ended, .cancelled, .failed:
+                selectedDuringGesture.removeAll()
+            default:
+                break
+            }
+        }
+
+        private func selectTarget(at point: CGPoint, in view: UIView) {
+            let globalPoint = view.convert(point, to: nil)
+            guard let target = targets.first(where: { $0.frame.insetBy(dx: -24, dy: -4).contains(globalPoint) }) else { return }
+            guard selectedDuringGesture.insert(target.id).inserted else { return }
+            onSelect?(target.id)
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            enabled && !targets.isEmpty
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
+    }
+}
+
+private extension UIView {
+    var nearestSelectionGestureHost: UIView? {
+        var candidate = superview
+        while let current = candidate {
+            if current is UIScrollView { return current }
+            candidate = current.superview
+        }
+        return window
+    }
+}
+
+private struct SwipeBackRestorer: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context: Context) {
+        uiViewController.restore()
+    }
+
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            restore()
+        }
+
+        func restore() {
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+            navigationController?.interactivePopGestureRecognizer?.delegate = nil
+        }
+    }
+}
+
+private struct ShareSheetPresenter<T: Identifiable>: UIViewControllerRepresentable {
+    @Binding var item: T?
+    var items: (T) -> [Any]
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ parent: UIViewController, context: Context) {
+        guard let item, context.coordinator.presented == nil else {
+            if item == nil { context.coordinator.presented?.dismiss(animated: true) }
+            return
+        }
+        let vc = UIActivityViewController(activityItems: items(item), applicationActivities: nil)
+        vc.completionWithItemsHandler = { _, _, _, _ in
+            context.coordinator.presented = nil
+            self.item = nil
+        }
+        vc.popoverPresentationController?.sourceView = parent.view
+        parent.present(vc, animated: true)
+        context.coordinator.presented = vc
+    }
+
+    final class Coordinator: NSObject {
+        let parent: ShareSheetPresenter
+        weak var presented: UIActivityViewController?
+        init(_ parent: ShareSheetPresenter) { self.parent = parent }
+    }
+}
+#endif

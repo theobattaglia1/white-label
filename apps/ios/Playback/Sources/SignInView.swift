@@ -7,12 +7,14 @@ struct SignInView: View {
     var auth: PlaybackAuthSession
     @State private var email = ""
     @State private var password = ""
+    @State private var displayName = ""
     @State private var mode: Mode = .signIn
 
     enum Mode { case signIn, signUp }
 
     private var canSubmit: Bool {
-        email.contains("@") && password.count >= 6 && !auth.isLoading
+        let nameOK = mode == .signIn || !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return email.contains("@") && password.count >= 6 && !auth.isLoading && nameOK
     }
 
     var body: some View {
@@ -34,6 +36,10 @@ struct SignInView: View {
                 }
 
                 VStack(spacing: 12) {
+                    if mode == .signUp {
+                        field("Display name", text: $displayName, keyboard: .default, isSecure: false,
+                              autocap: .words)
+                    }
                     field("Email", text: $email, keyboard: .emailAddress, isSecure: false)
                     field("Password", text: $password, keyboard: .default, isSecure: true)
                 }
@@ -77,7 +83,13 @@ struct SignInView: View {
     }
 
     @ViewBuilder
-    private func field(_ label: String, text: Binding<String>, keyboard: UIKeyboardType, isSecure: Bool) -> some View {
+    private func field(
+        _ label: String,
+        text: Binding<String>,
+        keyboard: UIKeyboardType,
+        isSecure: Bool,
+        autocap: TextInputAutocapitalization = .never
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             MonoLabel(label, color: PB.pencil, size: 10, tracking: 2)
             Group {
@@ -85,14 +97,14 @@ struct SignInView: View {
                     SecureField(label, text: text)
                 } else {
                     TextField(label, text: text)
-                        .textInputAutocapitalization(.never)
+                        .textInputAutocapitalization(autocap)
                         .keyboardType(keyboard)
                 }
             }
             .font(PB.text(17))
             .foregroundStyle(PB.cream)
             .tint(PB.cobalt)
-            .textContentType(isSecure ? .password : .emailAddress)
+            .textContentType(isSecure ? .password : (keyboard == .emailAddress ? .emailAddress : .name))
             .padding(15)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PB.panel))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(PB.cream.opacity(0.08), lineWidth: 1))
@@ -107,7 +119,7 @@ struct SignInView: View {
             case .signIn:
                 await auth.signIn(email: email, password: password)
             case .signUp:
-                await auth.signUp(email: email, password: password)
+                await auth.signUp(email: email, password: password, displayName: displayName)
             }
         }
     }

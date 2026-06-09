@@ -68,9 +68,12 @@ struct AuthClient {
         return try makeSession(from: response)
     }
 
-    func signUp(email: String, password: String) async throws -> AuthSessionModel {
+    func signUp(email: String, password: String, displayName: String = "") async throws -> AuthSessionModel {
         let url = Config.supabaseURLURL.appendingPathComponent("auth/v1/signup")
-        let response: TokenResponse = try await post(url: url, body: ["email": email, "password": password])
+        var body: [String: Any] = ["email": email, "password": password]
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { body["data"] = ["display_name": trimmed] }
+        let response: TokenResponse = try await postAny(url: url, body: body)
         return try makeSession(from: response)
     }
 
@@ -93,11 +96,15 @@ struct AuthClient {
     }
 
     private func post<T: Decodable>(url: URL, body: [String: String]) async throws -> T {
+        try await postAny(url: url, body: body)
+    }
+
+    private func postAny<T: Decodable>(url: URL, body: [String: Any]) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.httpBody = try JSONEncoder().encode(body)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         do {
             let (data, response) = try await session.data(for: request)
@@ -181,11 +188,11 @@ final class PlaybackAuthSession {
         isLoading = false
     }
 
-    func signUp(email: String, password: String) async {
+    func signUp(email: String, password: String, displayName: String = "") async {
         isLoading = true
         errorMessage = nil
         do {
-            let session = try await AuthClient.shared.signUp(email: email, password: password)
+            let session = try await AuthClient.shared.signUp(email: email, password: password, displayName: displayName)
             current = session
             keychainSaveFailed = !AuthKeychain.save(session)
             await refreshProfile()
@@ -196,14 +203,17 @@ final class PlaybackAuthSession {
     }
 
     func signOut() async {
-        if let token = current?.accessToken {
-            await AuthClient.shared.signOut(accessToken: token)
-        }
+        // Clear local state immediately so the UI reacts at once.
+        // Token revocation is best-effort and must not block the user.
+        let token = current?.accessToken
         current = nil
         profile = nil
         errorMessage = nil
         keychainSaveFailed = false
         AuthKeychain.delete()
+        if let token {
+            Task { await AuthClient.shared.signOut(accessToken: token) }
+        }
     }
 
     func switchWorkspace(_ id: String) {
@@ -212,7 +222,11 @@ final class PlaybackAuthSession {
     }
 
     func refreshProfile() async {
-        guard Config.useRealAuth, current != nil else { return }
+        // Run whenever the remote API is reachable — not just in real-auth mode.
+        // In dev mode (useRealAuth=false) this populates member_number for the
+        // PB·001 badge via the x-user-id fallback on GET /me.
+        guard Config.useRemoteAPI else { return }
+        if Config.useRealAuth { guard current != nil else { return } }
         do {
             let next = try await ServiceClient.shared.me()
             profile = next

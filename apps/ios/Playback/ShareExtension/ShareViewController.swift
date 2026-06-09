@@ -11,6 +11,7 @@ final class ShareViewController: UIViewController {
 
     private var stagedFileName: String?
     private var loadFailed = false
+    private var completesOnTap = false
 
     private let statusLabel = UILabel()
     private let fileLabel = UILabel()
@@ -130,7 +131,7 @@ final class ShareViewController: UIViewController {
         actionButton.layer.cornerRadius = 24
         actionButton.layer.cornerCurve = .continuous
         actionButton.isEnabled = false
-        actionButton.addTarget(self, action: #selector(openPlayback), for: .touchUpInside)
+        actionButton.addTarget(self, action: #selector(primaryAction), for: .touchUpInside)
         actionButton.translatesAutoresizingMaskIntoConstraints = false
 
         let cancelButton = UIButton(type: .system)
@@ -251,6 +252,8 @@ final class ShareViewController: UIViewController {
 
     private func showReady(fileName: String) {
         stagedFileName = fileName
+        loadFailed = false
+        completesOnTap = false
         spinner.stopAnimating()
         spinner.isHidden = true
         statusIcon.image = UIImage(systemName: "checkmark.circle.fill")
@@ -261,12 +264,14 @@ final class ShareViewController: UIViewController {
         detailLabel.letterSpacing(1.4)
         statusLabel.text = "Audio ready"
         statusLabel.letterSpacing(2)
+        actionButton.setTitle("ADD TO PLAYBACK", for: .normal)
         actionButton.isEnabled = true
         actionButton.backgroundColor = brandColor
     }
 
     private func showError(_ message: String) {
         loadFailed = true
+        completesOnTap = false
         spinner.stopAnimating()
         spinner.isHidden = true
         statusIcon.image = UIImage(systemName: "exclamationmark.triangle.fill")
@@ -281,6 +286,32 @@ final class ShareViewController: UIViewController {
         actionButton.backgroundColor = brandColor.withAlphaComponent(0.35)
     }
 
+    private func showSavedFallback() {
+        loadFailed = false
+        completesOnTap = true
+        spinner.stopAnimating()
+        spinner.isHidden = true
+        statusIcon.image = UIImage(systemName: "checkmark.circle.fill")
+        statusIcon.tintColor = UIColor(red: 0.37, green: 0.82, blue: 0.50, alpha: 1)
+        statusIcon.isHidden = false
+        fileLabel.text = stagedFileName.map(displayName) ?? "Audio saved"
+        detailLabel.text = "OPEN PLAYBACK TO REVIEW"
+        detailLabel.letterSpacing(1.4)
+        statusLabel.text = "Saved to Playback"
+        statusLabel.letterSpacing(2)
+        actionButton.setTitle("DONE", for: .normal)
+        actionButton.isEnabled = true
+        actionButton.backgroundColor = brandColor
+    }
+
+    @objc private func primaryAction() {
+        if completesOnTap {
+            extensionContext?.completeRequest(returningItems: nil)
+        } else {
+            openPlayback()
+        }
+    }
+
     @objc private func openPlayback() {
         guard !loadFailed, let stagedFileName else { return }
         var components = URLComponents()
@@ -293,12 +324,20 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        extensionContext?.open(url) { [weak self] success in
+        actionButton.isEnabled = false
+        actionButton.setTitle("OPENING PLAYBACK", for: .normal)
+
+        guard let extensionContext else {
+            showSavedFallback()
+            return
+        }
+
+        extensionContext.open(url) { [weak self] success in
             DispatchQueue.main.async {
                 if success {
                     self?.extensionContext?.completeRequest(returningItems: nil)
                 } else {
-                    self?.showError("Open Playback and add from Library")
+                    self?.showSavedFallback()
                 }
             }
         }

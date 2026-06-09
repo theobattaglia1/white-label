@@ -11,6 +11,7 @@ private struct IncomingAudioImport: Identifiable {
 /// App shell: a bottom nav, a persistent mini-player,
 /// and the full player presented over everything.
 struct AppShell: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var player = Player(queue: SampleData.tracks)
     @State private var workspace = WorkspaceStore()
     @State private var auth = PlaybackAuthSession.shared
@@ -47,11 +48,16 @@ struct AppShell: View {
                                 openSong(id, in: queue)
                             }
                     }
+                    .restoresSwipeBack()
                 case .library:
                     NavigationStack(path: $libPath) {
                         LibraryView(player: player, store: workspace, openSong: openSong,
-                                    onDropOnSong: { dropped, target in
-                                        let pl = workspace.createPlaylist(trackIDs: [target, dropped])
+                                    onDropOnSong: { ids in
+                                        let pl = workspace.createKeptPlaylist(
+                                            title: ids.count == 2
+                                                ? (workspace.track(ids[0]).map { $0.title } ?? "New") + " + " + (workspace.track(ids[1]).map { $0.title } ?? "")
+                                                : "\(ids.count) songs",
+                                            trackIDs: ids)
                                         libPath.append(pl)
                                     },
                                     onOpenPlaylist: { playlist in
@@ -61,6 +67,7 @@ struct AppShell: View {
                                 openSong(id, in: queue)
                             }
                     }
+                    .restoresSwipeBack()
                 case .explore:
                     NavigationStack {
                         ExploreView(player: player, store: workspace, openSong: openSong) { id, queue in
@@ -70,6 +77,7 @@ struct AppShell: View {
                             openSong(id, in: queue)
                         }
                     }
+                    .restoresSwipeBack()
                 case .inbox:
                     NavigationStack {
                         InboxView(player: player, store: workspace, openSong: openSong)
@@ -77,8 +85,10 @@ struct AppShell: View {
                                 openSong(id, in: queue)
                             }
                     }
+                    .restoresSwipeBack()
                 case .profile:
                     NavigationStack { ProfileView(player: player, store: workspace, auth: auth) }
+                        .restoresSwipeBack()
                 }
             }
             .tint(PB.cobalt)
@@ -140,13 +150,32 @@ struct AppShell: View {
             if let i = CommandLine.arguments.firstIndex(of: "-tab"),
                i + 1 < CommandLine.arguments.count,
                let t = AppTab(rawValue: CommandLine.arguments[i + 1]) { tab = t }
+            checkSharedImportInbox()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            checkSharedImportInbox()
+            guard Config.useRemoteAPI else { return }
+            Task {
+                let previousWorkspaceID = auth.activeWorkspaceID
+                await auth.refreshProfile()
+                // Only do a full library refresh if the workspace changed —
+                // e.g. a new membership was just granted on the server.
+                if auth.activeWorkspaceID != previousWorkspaceID {
+                    await workspace.refreshFromService()
+                    player.replaceQueue(workspace.tracks)
+                }
+            }
         }
         .task {
             if Config.useRealAuth {
                 await auth.bootstrap()
                 guard auth.isSignedIn else { return }
             }
-            await workspace.refreshFromService()
+            async let refresh: () = workspace.refreshFromService()
+            async let profile: () = auth.refreshProfile()
+            await refresh
+            await profile
             player.replaceQueue(workspace.tracks)
         }
         .onChange(of: auth.isSignedIn) { _, signedIn in
@@ -193,6 +222,36 @@ struct AppShell: View {
         showPlayer = false
         tab = .library
         incomingAudio = IncomingAudioImport(url: incomingURL, deleteAfterImport: true)
+    }
+
+    private func checkSharedImportInbox() {
+        guard incomingAudio == nil,
+              let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier)
+        else { return }
+
+        let inbox = container.appendingPathComponent("IncomingAudio", isDirectory: true)
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: inbox,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let candidates = urls
+            .filter { url in
+                url.isFileURL &&
+                importableAudioExtensions.contains(url.pathExtension.lowercased()) &&
+                FileManager.default.fileExists(atPath: url.path)
+            }
+            .sorted { lhs, rhs in
+                let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return lhsDate > rhsDate
+            }
+
+        guard let next = candidates.first else { return }
+        showPlayer = false
+        tab = .library
+        incomingAudio = IncomingAudioImport(url: next, deleteAfterImport: true)
     }
 }
 
@@ -267,7 +326,7 @@ struct TabBar: View {
         HStack(alignment: .top, spacing: 0) {
             item(.home, "house.fill", "Home")
             item(.library, "square.stack.3d.up.fill", "Library")
-            item(.explore, "magnifyingglass", "Explore")
+            item(.explore, "magnifyingglass", "Search")
             item(.inbox, "tray.fill", "Inbox", badge: inboxNew)
             item(.profile, "person.fill", "Profile")
         }

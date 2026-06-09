@@ -4,7 +4,11 @@ import SwiftUI
 struct PlaybackApp: App {
     var body: some Scene {
         WindowGroup {
-            AppShell()
+            ZStack {
+                PB.black.ignoresSafeArea()
+                AppShell()
+            }
+            .preferredColorScheme(.dark)
         }
     }
 }

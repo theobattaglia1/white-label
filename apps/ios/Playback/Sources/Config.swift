@@ -28,8 +28,14 @@ enum Config {
         guard useRemoteAPI else { return false }
         let raw = ProcessInfo.processInfo.environment["PLAYBACK_USE_REAL_AUTH"]
             ?? ProcessInfo.processInfo.environment["WL_USE_REAL_AUTH"]
-        if raw == "0" || raw == "false" { return false }
+        if let raw {
+            return raw != "0" && raw != "false"
+        }
+        #if DEBUG
+        return false
+        #else
         return true
+        #endif
     }
 
     /// Base URL for share links. Defaults to the Render deployment.

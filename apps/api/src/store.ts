@@ -662,7 +662,21 @@ export class WorkspaceStore {
   }
 
   inbox(userID: string) {
-    return this.snapshot.songs.map((song, index) => {
+    // Pick a real workspace member to show as "shared by" — the first member
+    // who isn't the current user. Falls back to "Workspace" when solo.
+    const workspaceID = this.snapshot.workspaces[0]?.workspace_id;
+    const sharer = workspaceID
+      ? this.snapshot.users.find(
+          (u) =>
+            u.user_id !== userID &&
+            this.snapshot.memberships.some(
+              (m) => m.workspace_id === workspaceID && m.user_id === u.user_id,
+            ),
+        )
+      : undefined;
+    const sharedBy = sharer?.display_name ?? "Workspace";
+
+    return this.snapshot.songs.map((song) => {
       const currentVersion = this.snapshot.versions.find((version) => version.version_id === song.current_version_id);
       const asset = this.snapshot.assets.find((candidate) => candidate.asset_id === currentVersion?.file_asset_id);
       const room = this.snapshot.rooms.find((candidate) => candidate.room_id === song.primary_room_id);
@@ -675,9 +689,13 @@ export class WorkspaceStore {
         room,
         current_version: currentVersion,
         asset,
-        shared_by: "Maya Chen",
-        new_since_last_listen: !listened || index === 0,
-        last_listened_at: listened ? "2026-05-22T16:30:00.000Z" : undefined,
+        shared_by: sharedBy,
+        new_since_last_listen: !listened,
+        last_listened_at: listened
+          ? this.snapshot.activityEvents
+              .filter((e) => e.actor_user_id === userID && e.event_type === "played_track" && e.version_id === currentVersion.version_id)
+              .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.created_at
+          : undefined,
       };
     }).filter(Boolean);
   }

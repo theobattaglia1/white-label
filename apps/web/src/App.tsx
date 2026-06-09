@@ -44,6 +44,8 @@ type ViewMode = "home" | "library" | "room" | "compare" | "inbox" | "links" | "a
 export function App() {
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
   if (sharedToken) return <SharedListeningPage token={sharedToken} />;
+  const joinToken = window.location.pathname.match(/^\/join\/([^/]+)/)?.[1];
+  if (joinToken) return <JoinPage token={joinToken} />;
   // Dev-only auth bypass — stripped in production builds so prod URLs cannot
   // be backdoored with ?dev=1.
   const devBypass =
@@ -3722,6 +3724,125 @@ function FindSimilarPanel({ song, onOpenSong }: { song: Song; onOpenSong: (id: s
         ))}
       </div>
     </section>
+  );
+}
+
+// ─── Join page ──────────────────────────────────────────────────────────────
+// Rendered when someone opens a /join/:token link. No auth required.
+
+const JOIN_API = import.meta.env.DEV ? "http://localhost:4317" : "https://white-label-api-6mnt.onrender.com";
+
+function JoinPage({ token }: { token: string }) {
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ email: string; testflightUrl: string | null; smsSent: boolean } | null>(null);
+
+  useEffect(() => {
+    fetch(`${JOIN_API}/join/${token}`)
+      .then((r) => r.json())
+      .then((j: { data?: { workspace_name?: string }; error?: string }) => {
+        if (j.error) setLinkError(j.error);
+        else setWorkspaceName(j.data?.workspace_name ?? "Playback");
+      })
+      .catch(() => setLinkError("Could not load this invite. Check your connection."));
+  }, [token]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !email.trim() || !password) { setFormError("All fields are required."); return; }
+    setBusy(true);
+    setFormError(null);
+    try {
+      const res = await fetch(`${JOIN_API}/join/${token}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ display_name: name.trim(), email: email.trim(), password, phone: phone.trim() || undefined }),
+      });
+      const j = await res.json() as { data?: { email: string; testflight_url: string | null; sms_sent: boolean }; error?: string };
+      if (!res.ok || j.error) { setFormError(j.error ?? "Something went wrong. Try again."); return; }
+      setDone({ email: j.data!.email, testflightUrl: j.data!.testflight_url, smsSent: j.data!.sms_sent });
+    } catch { setFormError("Network error. Check your connection and try again."); }
+    finally { setBusy(false); }
+  }
+
+  const s = {
+    page: { minHeight: "100vh", background: "#0c0907", display: "flex", flexDirection: "column" as const, alignItems: "center", justifyContent: "center", padding: "32px 20px", fontFamily: "'HelveticaNeue', sans-serif" },
+    card: { width: "100%", maxWidth: 420, color: "#f3ecde" },
+    kicker: { fontFamily: "monospace", fontSize: 10, letterSpacing: "0.18em", color: "#9b9285", textTransform: "uppercase" as const, margin: "0 0 8px" },
+    title: { fontSize: 36, fontWeight: 700, margin: "0 0 6px", letterSpacing: "-0.5px" },
+    sub: { fontSize: 14, color: "#9b9285", margin: "0 0 28px" },
+    label: { fontFamily: "monospace", fontSize: 10, letterSpacing: "0.14em", color: "#9b9285", textTransform: "uppercase" as const, display: "block", marginBottom: 6 },
+    input: { width: "100%", background: "#16110c", border: "1px solid rgba(243,236,222,0.12)", borderRadius: 10, padding: "13px 14px", color: "#f3ecde", fontSize: 16, outline: "none", boxSizing: "border-box" as const, marginBottom: 14 },
+    btn: { width: "100%", background: "#f3ecde", color: "#0c0907", border: "none", borderRadius: 24, padding: "15px", fontSize: 13, fontFamily: "monospace", letterSpacing: "0.14em", cursor: "pointer", fontWeight: 700, marginTop: 6 },
+    btnDisabled: { opacity: 0.45, cursor: "not-allowed" },
+    err: { color: "#ff4a22", fontFamily: "monospace", fontSize: 11, letterSpacing: "0.1em", marginTop: 12 },
+    success_title: { fontSize: 40, fontWeight: 700, margin: "0 0 8px" },
+    success_email: { background: "#16110c", border: "1px solid rgba(243,236,222,0.1)", borderRadius: 10, padding: "12px 14px", fontFamily: "monospace", fontSize: 13, color: "#4663e8", letterSpacing: "0.06em", margin: "16px 0" },
+    tfBtn: { display: "block", textAlign: "center" as const, background: "#4663e8", color: "#f3ecde", borderRadius: 24, padding: "15px", fontSize: 13, fontFamily: "monospace", letterSpacing: "0.14em", fontWeight: 700, textDecoration: "none", marginTop: 20 },
+  };
+
+  if (linkError) {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <p style={s.kicker}>Playback</p>
+          <h1 style={s.title}>Invalid link</h1>
+          <p style={{ ...s.sub, color: "#ff4a22" }}>{linkError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <p style={s.kicker}>Playback · {workspaceName}</p>
+          <h1 style={s.success_title}>You're in.</h1>
+          <p style={s.sub}>Open Playback on your iPhone and sign in with:</p>
+          <div style={s.success_email}>{done.email}</div>
+          {done.testflightUrl && (
+            <a href={done.testflightUrl} style={s.tfBtn}>Download on TestFlight →</a>
+          )}
+          {!done.testflightUrl && (
+            <p style={{ ...s.sub, marginTop: 16 }}>Ask the workspace owner for the TestFlight link to download the app.</p>
+          )}
+          {done.smsSent && (
+            <p style={{ ...s.kicker, marginTop: 18 }}>We also texted you the download link.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={s.page}>
+      <div style={s.card}>
+        <p style={s.kicker}>You've been invited to</p>
+        <h1 style={s.title}>{workspaceName ?? "…"}</h1>
+        <p style={s.sub}>Create your account to join.</p>
+        <form onSubmit={handleSubmit}>
+          <label style={s.label}>Your name</label>
+          <input style={s.input} placeholder="Alex Rivera" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
+          <label style={s.label}>Email</label>
+          <input style={s.input} type="email" placeholder="alex@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+          <label style={s.label}>Password</label>
+          <input style={s.input} type="password" placeholder="at least 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
+          <label style={s.label}>Phone <span style={{ color: "#9b9285", fontWeight: 400 }}>(optional — we'll text you the download link)</span></label>
+          <input style={s.input} type="tel" placeholder="+1 555 000 0000" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
+          <button type="submit" style={{ ...s.btn, ...(busy ? s.btnDisabled : {}) }} disabled={busy}>
+            {busy ? "Creating account…" : "CREATE ACCOUNT"}
+          </button>
+          {formError && <p style={s.err}>{formError}</p>}
+        </form>
+      </div>
+    </div>
   );
 }
 

@@ -6,77 +6,140 @@ struct ProfileView: View {
     var store: WorkspaceStore
     var auth: PlaybackAuthSession
     @AppStorage("wl.reduceMotion") private var reduceMotion = false
-    @AppStorage("wl.loudnessMatch") private var loudnessMatch = true
-    @AppStorage("wl.autoplayNext") private var autoplayNext = true
-    @AppStorage("wl.notifications") private var notifications = true
     @AppStorage("wl.defaultAccess") private var defaultAccess = "Restricted"
+    @State private var joinLinkURL: IdentifiableURL? = nil
+    @State private var isGeneratingLink = false
+    @State private var joinLinkError: String? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                AppScreenHeader(title: "Profile", isPlaying: player.isPlaying)
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                scrollToTopMarker()
+                VStack(alignment: .leading, spacing: 28) {
+                    AppScreenHeader(title: "Profile", isPlaying: player.isPlaying)
 
-                identityCard
+                    identityCard
 
-                section("Playback") {
-                    toggleRow("Loudness match", $loudnessMatch)
-                    toggleRow("Autoplay next", $autoplayNext)
-                }
-                section("Appearance") {
-                    toggleRow("Reduce motion", $reduceMotion)
-                }
-                section("Sharing") {
-                    menuRow("Default link access", $defaultAccess, ["Restricted", "Anyone with the link"])
-                }
-                section("Library") {
-                    valueRow("Mode", Config.useRemoteAPI ? "Cloud + offline" : "Offline-only")
-                    valueRow("Cloud library", cloudLabel)
-                    valueRow("Status", statusLabel)
-                    valueRow("Last save", lastSaveLabel)
-                }
-                if Config.useRealAuth {
-                    section("Account") {
-                        valueRow("Email", auth.email)
-                        workspaceRow
+                    section("Appearance") {
+                        toggleRow("Reduce motion", $reduceMotion)
                     }
-                    section("Workspace") {
-                        NavigationLink(destination: TeamScreen()) {
-                            HStack {
-                                Text("Manage team").font(PB.text(15)).foregroundStyle(PB.cream)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(PB.pencil)
+                    section("Sharing") {
+                        menuRow("Default link access", $defaultAccess, ["Restricted", "Anyone with the link"])
+                    }
+                    if Config.useRemoteAPI {
+                        inviteSection
+                    }
+
+                    section("Library") {
+                        valueRow("Mode", Config.useRemoteAPI ? "Cloud + offline" : "Offline-only")
+                        valueRow("Cloud library", cloudLabel)
+                        valueRow("Status", statusLabel)
+                        valueRow("Last save", lastSaveLabel)
+                    }
+                    if Config.useRealAuth {
+                        section("Account") {
+                            valueRow("Email", auth.email)
+                            workspaceRow
+                        }
+                        section("Workspace") {
+                            NavigationLink(destination: TeamScreen()) {
+                                HStack {
+                                    Text("Manage team").font(PB.text(15)).foregroundStyle(PB.cream)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(PB.pencil)
+                                }
+                                .padding(.horizontal, 15).padding(.vertical, 14)
                             }
-                            .padding(.horizontal, 15).padding(.vertical, 14)
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    if Config.useRealAuth {
+                        Button { Task { await auth.signOut() } } label: {
+                            Text("Sign out").font(PB.text(15)).foregroundStyle(PB.redline)
+                                .frame(maxWidth: .infinity).padding(.vertical, 15)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PB.panel))
                         }
                         .buttonStyle(.plain)
                     }
-                }
-                section("Notifications") {
-                    toggleRow("Push notifications", $notifications)
-                }
 
-                Button { Task { await auth.signOut() } } label: {
-                    Text("Sign out").font(PB.text(15)).foregroundStyle(PB.redline)
-                        .frame(maxWidth: .infinity).padding(.vertical, 15)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PB.panel))
+                    MonoLabel("Playback · v0.1", color: PB.pencil, size: 9, tracking: 1.4)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
-
-                MonoLabel("Playback · v0.1", color: PB.pencil, size: 9, tracking: 1.4)
-                    .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 150)
             }
-            .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 150)
+            .scrollIndicators(.hidden)
+            .background {
+                PB.black.ignoresSafeArea()
+                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                    .allowsHitTesting(false).ignoresSafeArea()
+            }
+            .overlay(alignment: .top) {
+                TopTapScrollHotspot { scrollToTop(scrollProxy) }
+            }
+            .foregroundStyle(PB.cream)
+            .toolbar(.hidden, for: .navigationBar)
         }
-        .scrollIndicators(.hidden)
-        .background {
-            PB.black.ignoresSafeArea()
-            AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
-                .allowsHitTesting(false).ignoresSafeArea()
+    }
+
+    private var inviteSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MonoLabel("Invite", color: PB.pencil, size: 10, tracking: 2)
+            Button {
+                generateInviteLink()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: isGeneratingLink ? "ellipsis" : "link.badge.plus")
+                        .font(.system(size: 15))
+                        .foregroundStyle(PB.cobalt)
+                        .frame(width: 22)
+                    Text(isGeneratingLink ? "Generating link…" : "Generate invite link")
+                        .font(PB.text(15))
+                        .foregroundStyle(PB.cream)
+                    Spacer()
+                }
+                .padding(.horizontal, 15).padding(.vertical, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingLink)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PB.panel))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(PB.cream.opacity(0.07), lineWidth: 1))
+
+            if let error = joinLinkError {
+                MonoLabel(error, color: PB.redline, size: 9, tracking: 1)
+            }
+
+            MonoLabel("Anyone with the link can sign up and join your workspace.", color: PB.pencil.opacity(0.6), size: 9, tracking: 0.6)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(PB.cream)
-        .toolbar(.hidden, for: .navigationBar)
+        .shareSheet(item: $joinLinkURL) { wrapper in
+            let message = "You've been invited to join me on Playback. Create your account here: \(wrapper.url.absoluteString)"
+            return [message]
+        }
+    }
+
+    private func generateInviteLink() {
+        guard !isGeneratingLink else { return }
+        joinLinkError = nil
+        isGeneratingLink = true
+        Task {
+            do {
+                let link = try await ServiceClient.shared.generateJoinLink()
+                await MainActor.run {
+                    isGeneratingLink = false
+                    if let url = URL(string: link.url) {
+                        joinLinkURL = IdentifiableURL(url)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isGeneratingLink = false
+                    joinLinkError = "Could not generate link. Try again."
+                }
+            }
+        }
     }
 
     private var lastSaveLabel: String {

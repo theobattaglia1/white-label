@@ -29,15 +29,18 @@ final class WorkspaceStore {
     var savedViews: [SavedViewSummary] = []
     var inbox: [InboxItem] = SampleData.inbox
     var activity: [String: Date] = [:]                // ref id → last opened
+    var deletedTrackIDs: Set<String> = []
     var syncState: WorkspaceSyncState = .ready
     var syncMessage: String = "Local library"
     var lastSavedAt: Date?
+    var isLibraryLoaded: Bool = false
     @ObservationIgnored private var draftIDs: Set<String> = []
+    @ObservationIgnored private var persistTask: Task<Void, Never>?
 
-    func touch(_ ref: String) { activity[ref] = Date(); persist() }
+    func touch(_ ref: String) { activity[Self.canonicalPinID(ref)] = Date(); persist() }
 
-    /// Taggable workspace members.
-    let members = ["PomPom", "Liz Rose", "Mira Tan", "Hudson", "Alex", "TB"]
+    /// Taggable workspace members — populated from API; falls back to an empty list.
+    var members: [String] = []
 
     private let notesKey = "wl.notes.v1"
     private let currentKey = "wl.current.v1"
@@ -48,13 +51,14 @@ final class WorkspaceStore {
     private let customTracksKey = "wl.customTracks.v1"
     private let inboxKey = "wl.inbox.v1"
     private let activityKey = "wl.activity.v1"
+    private let deletedTracksKey = "wl.deletedTracks.v1"
 
     // MARK: tracks
 
-    var isUsingServiceLibrary: Bool { !serviceTracks.isEmpty || syncState == .synced || syncState == .syncing }
+    var isUsingServiceLibrary: Bool { !serviceTracks.isEmpty || syncState == .synced }
     var tracks: [Track] {
-        if isUsingServiceLibrary { return customTracks.map(\.track) + serviceTracks }
-        return customTracks.map(\.track) + SampleData.tracks
+        let base = isUsingServiceLibrary ? customTracks.map(\.track) + serviceTracks : customTracks.map(\.track) + SampleData.tracks
+        return base.filter { !deletedTrackIDs.contains($0.id) }
     }
     var playlists: [Playlist] {
         if isUsingServiceLibrary {
@@ -74,7 +78,8 @@ final class WorkspaceStore {
     }
 
     func track(_ id: String) -> Track? {
-        customTracks.first { $0.id == id }?.track
+        guard !deletedTrackIDs.contains(id) else { return nil }
+        return customTracks.first { $0.id == id }?.track
             ?? serviceTracks.first { $0.id == id }
             ?? SampleData.track(id)
     }
@@ -88,10 +93,14 @@ final class WorkspaceStore {
             async let library = ServiceClient.shared.library()
             async let playlists = ServiceClient.shared.playlists()
             async let views = ServiceClient.shared.savedViews()
+            async let inboxItems = ServiceClient.shared.inbox()
+            async let membersList = ServiceClient.shared.members()
 
             let libraryItems = try await library
             let playlistSummaries = try await playlists
             let savedViewItems = (try? await views) ?? []
+            let fetchedInbox = (try? await inboxItems) ?? []
+            let fetchedMembers = (try? await membersList) ?? []
 
             var details: [ServiceClient.APIPlaylistDetail] = []
             for playlist in playlistSummaries {
@@ -101,13 +110,86 @@ final class WorkspaceStore {
             }
 
             adoptService(library: libraryItems, playlistDetails: details, savedViews: savedViewItems)
+            adoptInbox(fetchedInbox)
+            members = fetchedMembers.map(\.display_name).filter { !$0.isEmpty }
             lastSavedAt = Date()
             syncState = .synced
             syncMessage = "Synced with cloud"
+            isLibraryLoaded = true
         } catch {
             syncState = isUsingServiceLibrary ? .offline : .ready
             syncMessage = "Cloud sync unavailable"
+            isLibraryLoaded = true  // stop spinner even on failure
         }
+    }
+
+    @MainActor
+    func refreshNotes(for trackID: String) async {
+        guard Config.useRemoteAPI, !isCustomTrack(trackID) else { return }
+        guard let apiNotes = try? await ServiceClient.shared.notes(songID: trackID) else { return }
+        let mapped = apiNotes.map { n -> Note in
+            Note(
+                id: UUID(),
+                apiID: n.note_id,
+                positionMs: n.timestamp_start_ms,
+                author: n.author_display_name ?? n.author_guest_label ?? "Guest",
+                body: n.body,
+                resolved: n.status == "resolved",
+                versionLabel: n.anchor_version_label ?? "—"
+            )
+        }
+        // Keep notes that were composed locally and haven't synced yet (no apiID).
+        let localOnly = (notesByTrack[trackID] ?? []).filter { $0.apiID == nil }
+        notesByTrack[trackID] = localOnly + mapped
+    }
+
+    private func adoptInbox(_ items: [ServiceClient.APIInboxItem]) {
+        // Preserve any "heard" state the user set locally.
+        let heardIDs = Set(inbox.filter { !$0.isNew }.map(\.id))
+        inbox = items.compactMap { item in
+            InboxItem(
+                id: item.song.song_id,
+                trackID: item.song.song_id,
+                sharedBy: item.shared_by,
+                context: item.room?.title ?? "Workspace",
+                isNew: heardIDs.contains(item.song.song_id) ? false : item.new_since_last_listen
+            )
+        }
+    }
+
+    @MainActor
+    private func refreshPlaylists() async {
+        guard Config.useRemoteAPI else { return }
+        do {
+            let summaries = try await ServiceClient.shared.playlists()
+            var details: [ServiceClient.APIPlaylistDetail] = []
+            for playlist in summaries {
+                if let detail = try? await ServiceClient.shared.playlist(playlist.playlist_id) {
+                    details.append(detail)
+                }
+            }
+            // Adopt playlists only — leave library, rooms, and members intact.
+            var itemIDsByPlaylist: [String: [String: String]] = [:]
+            servicePlaylists = details.map { detail in
+                let entries = detail.items.sorted { $0.item.position < $1.item.position }
+                itemIDsByPlaylist[detail.playlist.playlist_id] = Dictionary(
+                    uniqueKeysWithValues: entries.compactMap { entry in
+                        guard let songID = entry.song?.song_id ?? entry.current_version?.song_id else { return nil }
+                        guard !deletedTrackIDs.contains(songID) else { return nil }
+                        return (songID, entry.item.playlist_item_id)
+                    })
+                return Playlist(
+                    id: detail.playlist.playlist_id,
+                    title: detail.playlist.title,
+                    subtitle: detail.playlist.description ?? "",
+                    trackIDs: entries.compactMap { entry in
+                        guard let songID = entry.song?.song_id ?? entry.current_version?.song_id else { return nil }
+                        return deletedTrackIDs.contains(songID) ? nil : songID
+                    }
+                )
+            }
+            servicePlaylistItemIDs = itemIDsByPlaylist
+        } catch {}
     }
 
     @MainActor
@@ -312,11 +394,14 @@ final class WorkspaceStore {
         playlistDetails: [ServiceClient.APIPlaylistDetail],
         savedViews: [ServiceClient.APISavedView]
     ) {
-        let tracks = library.map { item in serviceTrack(from: item) }
+        let tracks = library
+            .map { item in serviceTrack(from: item) }
+            .filter { !deletedTrackIDs.contains($0.id) }
         serviceTracks = tracks
 
         var grouped: [String: (title: String, artist: String, ids: [String])] = [:]
         for item in library {
+            guard !deletedTrackIDs.contains(item.song.song_id) else { continue }
             guard let room = item.room else { continue }
             var value = grouped[room.room_id] ?? (room.title, item.song.artist_display_name ?? "", [])
             value.ids.append(item.song.song_id)
@@ -332,13 +417,17 @@ final class WorkspaceStore {
             let entries = detail.items.sorted { $0.item.position < $1.item.position }
             itemIDsByPlaylist[detail.playlist.playlist_id] = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
                 guard let songID = entry.song?.song_id ?? entry.current_version?.song_id else { return nil }
+                guard !deletedTrackIDs.contains(songID) else { return nil }
                 return (songID, entry.item.playlist_item_id)
             })
             return Playlist(
                 id: detail.playlist.playlist_id,
                 title: detail.playlist.title,
                 subtitle: detail.playlist.description ?? "",
-                trackIDs: entries.compactMap { $0.song?.song_id ?? $0.current_version?.song_id }
+                trackIDs: entries.compactMap { entry in
+                    guard let songID = entry.song?.song_id ?? entry.current_version?.song_id else { return nil }
+                    return deletedTrackIDs.contains(songID) ? nil : songID
+                }
             )
         }
         servicePlaylistItemIDs = itemIDsByPlaylist
@@ -403,11 +492,24 @@ final class WorkspaceStore {
         isCustomTrack(id) || serviceTracks.contains { $0.id == id }
     }
 
-    func deleteTrack(_ id: String) {
-        guard let i = customTracks.firstIndex(where: { $0.id == id }) else { return }
-        let removed = customTracks.remove(at: i)
+    @discardableResult
+    func deleteTrack(_ id: String) -> Bool {
+        let wasCustom = customTracks.firstIndex(where: { $0.id == id })
+        let wasService = serviceTracks.contains { $0.id == id }
+        let wasSample = SampleData.track(id) != nil
+        let wasVisible = tracks.contains { $0.id == id }
+        guard wasCustom != nil || wasService || wasSample || wasVisible else { return false }
+
+        let removed = wasCustom.map { customTracks.remove(at: $0) }
+        deletedTrackIDs.insert(id)
+        serviceTracks.removeAll { $0.id == id }
         localPlaylists.indices.forEach { localPlaylists[$0].trackIDs.removeAll { $0 == id } }
+        servicePlaylists.indices.forEach { servicePlaylists[$0].trackIDs.removeAll { $0 == id } }
         customRooms.indices.forEach { customRooms[$0].trackIDs.removeAll { $0 == id } }
+        serviceRooms.indices.forEach { serviceRooms[$0].trackIDs.removeAll { $0 == id } }
+        Array(servicePlaylistItemIDs.keys).forEach { key in
+            servicePlaylistItemIDs[key]?[id] = nil
+        }
         pins.removeAll {
             guard let ref = PinRef($0) else { return false }
             return ref.kind == .song && ref.targetID == id
@@ -418,19 +520,52 @@ final class WorkspaceStore {
         versionsByTrack[id] = nil
         titleOverrides[id] = nil
         activity.removeValue(forKey: PinRef(kind: .song, targetID: id).id)
-        deleteImportedFile(at: removed.importedAudioPath)
-        deleteImportedFile(at: removed.importedArtworkPath)
+        if let removed {
+            deleteImportedFile(at: removed.importedAudioPath)
+            deleteImportedFile(at: removed.importedArtworkPath)
+        }
         persist()
+        return true
     }
 
     // MARK: pins
 
-    func isPinned(_ ref: String) -> Bool { pins.contains(ref) }
+    private static func canonicalPinID(_ ref: String) -> String {
+        PinRef(ref)?.id ?? ref
+    }
+
+    private static func normalizedPins(_ values: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+        for value in values {
+            let canonical = canonicalPinID(value)
+            guard seen.insert(canonical).inserted else { continue }
+            result.append(canonical)
+        }
+        return result
+    }
+
+    func isPinned(_ ref: String) -> Bool {
+        let canonical = Self.canonicalPinID(ref)
+        return pins.contains { Self.canonicalPinID($0) == canonical }
+    }
+
     func togglePin(_ ref: String) {
-        if let i = pins.firstIndex(of: ref) { pins.remove(at: i) } else { pins.append(ref) }
+        let canonical = Self.canonicalPinID(ref)
+        if let i = pins.firstIndex(where: { Self.canonicalPinID($0) == canonical }) {
+            pins.remove(at: i)
+        } else {
+            pins.append(canonical)
+        }
+        pins = Self.normalizedPins(pins)
         persist()
     }
-    func movePin(from: IndexSet, to: Int) { pins.move(fromOffsets: from, toOffset: to); persist() }
+
+    func movePin(from: IndexSet, to: Int) {
+        pins = Self.normalizedPins(pins)
+        pins.move(fromOffsets: from, toOffset: to)
+        persist()
+    }
 
     // MARK: playlists (mutable; drafts aren't persisted until kept)
 
@@ -546,7 +681,8 @@ final class WorkspaceStore {
                     self.localPlaylists.removeAll { $0.id == localID }
                     self.persist()
                 }
-                await refreshFromService()
+                await refreshPlaylists()
+                await MainActor.run { self.syncState = .synced; self.syncMessage = "Synced with cloud" }
             } catch {
                 await MainActor.run {
                     self.syncState = .offline
@@ -568,7 +704,8 @@ final class WorkspaceStore {
         Task {
             do {
                 try await ServiceClient.shared.reorderPlaylist(playlistID: id, itemIDs: itemIDs)
-                await refreshFromService()
+                await refreshPlaylists()
+                await MainActor.run { self.syncState = .synced; self.syncMessage = "Synced with cloud" }
             } catch {
                 await MainActor.run {
                     self.syncState = .offline
@@ -588,7 +725,8 @@ final class WorkspaceStore {
         Task {
             do {
                 try await ServiceClient.shared.removeFromPlaylist(playlistID: id, itemID: itemID)
-                await refreshFromService()
+                await refreshPlaylists()
+                await MainActor.run { self.syncState = .synced; self.syncMessage = "Synced with cloud" }
             } catch {
                 await MainActor.run {
                     self.syncState = .offline
@@ -659,7 +797,8 @@ final class WorkspaceStore {
         Task {
             do {
                 _ = try await ServiceClient.shared.addToPlaylist(playlistID: id, songID: trackID)
-                await refreshFromService()
+                await refreshPlaylists()
+                await MainActor.run { self.syncState = .synced; self.syncMessage = "Synced with cloud" }
             } catch {
                 await MainActor.run {
                     self.syncState = .offline
@@ -756,36 +895,75 @@ final class WorkspaceStore {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let v = currentVersion(track)?.label ?? "—"
-        let note = Note(id: UUID(), positionMs: positionMs, author: "TB", body: trimmed, resolved: false, versionLabel: v)
+        let note = Note(id: UUID(), positionMs: positionMs, author: "You", body: trimmed, resolved: false, versionLabel: v)
         notesByTrack[track, default: []].append(note)
         persist()
+
+        guard Config.useRemoteAPI,
+              let versionID = remoteVersionID(for: track) else { return }
+        let noteLocalID = note.id
+        Task { @MainActor in
+            guard let api = try? await ServiceClient.shared.createNote(
+                songID: track, versionID: versionID, body: trimmed, positionMs: positionMs
+            ) else { return }
+            if var arr = notesByTrack[track], let i = arr.firstIndex(where: { $0.id == noteLocalID }) {
+                arr[i].apiID = api.note_id
+                notesByTrack[track] = arr
+            }
+        }
     }
 
     func toggleResolved(_ track: String, _ id: UUID) {
         guard var arr = notesByTrack[track], let i = arr.firstIndex(where: { $0.id == id }) else { return }
         arr[i].resolved.toggle()
+        let newStatus = arr[i].resolved ? "resolved" : "open"
+        let apiID = arr[i].apiID
         notesByTrack[track] = arr
         persist()
+
+        if Config.useRemoteAPI, let apiID {
+            Task { try? await ServiceClient.shared.patchNote(noteID: apiID, status: newStatus, body: nil) }
+        }
     }
 
     func updateNote(_ track: String, _ id: UUID, body: String, positionMs: Int?) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, var arr = notesByTrack[track], let i = arr.firstIndex(where: { $0.id == id }) else { return }
         let old = arr[i]
-        arr[i] = Note(id: old.id, positionMs: positionMs, author: old.author, body: trimmed, resolved: old.resolved, versionLabel: old.versionLabel)
+        arr[i] = Note(id: old.id, apiID: old.apiID, positionMs: positionMs,
+                      author: old.author, body: trimmed, resolved: old.resolved, versionLabel: old.versionLabel)
         notesByTrack[track] = arr
         persist()
+
+        if Config.useRemoteAPI, let apiID = old.apiID {
+            Task { try? await ServiceClient.shared.patchNote(noteID: apiID, status: nil, body: trimmed) }
+        }
     }
 
     func deleteNote(_ track: String, _ id: UUID) {
         notesByTrack[track]?.removeAll { $0.id == id }
         persist()
+        // No DELETE /notes endpoint — local removal only for now.
+    }
+
+    private func remoteVersionID(for trackID: String) -> String? {
+        serviceTracks.first(where: { $0.id == trackID })?.remoteVersionID
     }
 
     // MARK: persistence (local; real API later)
 
     private func persist() {
+        persistTask?.cancel()
+        persistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            self?.executePersist()
+        }
+    }
+
+    private func executePersist() {
         syncState = .saving
+        pins = Self.normalizedPins(pins)
         let enc = JSONEncoder()
         if let d = try? enc.encode(notesByTrack) { UserDefaults.standard.set(d, forKey: notesKey) }
         if let d = try? enc.encode(currentByTrack) { UserDefaults.standard.set(d, forKey: currentKey) }
@@ -797,6 +975,7 @@ final class WorkspaceStore {
         if let d = try? enc.encode(customTracks) { UserDefaults.standard.set(d, forKey: customTracksKey) }
         if let d = try? enc.encode(inbox) { UserDefaults.standard.set(d, forKey: inboxKey) }
         if let d = try? enc.encode(activity) { UserDefaults.standard.set(d, forKey: activityKey) }
+        if let d = try? enc.encode(deletedTrackIDs) { UserDefaults.standard.set(d, forKey: deletedTracksKey) }
         lastSavedAt = Date()
         syncState = .ready
         syncMessage = "Saved locally"
@@ -818,7 +997,7 @@ final class WorkspaceStore {
         }
         if let d = UserDefaults.standard.data(forKey: pinsKey),
            let v = try? dec.decode([String].self, from: d) {
-            pins = v
+            pins = Self.normalizedPins(v)
         }
         if let d = UserDefaults.standard.data(forKey: playlistsKey),
            let v = try? dec.decode([Playlist].self, from: d), !v.isEmpty {
@@ -839,6 +1018,10 @@ final class WorkspaceStore {
         if let d = UserDefaults.standard.data(forKey: activityKey),
            let v = try? dec.decode([String: Date].self, from: d) {
             activity = v
+        }
+        if let d = UserDefaults.standard.data(forKey: deletedTracksKey),
+           let v = try? dec.decode(Set<String>.self, from: d) {
+            deletedTrackIDs = v
         }
     }
 
@@ -948,5 +1131,60 @@ final class WorkspaceStore {
                 Note(id: UUID(), positionMs: 64_000, author: "Mira Tan", body: "Love the clean master direction. Ship-adjacent.", resolved: false, versionLabel: "Clean v3"),
             ],
         ]
+    }
+}
+
+extension WorkspaceStore {
+    var artistSummaries: [ArtistSummary] {
+        var buckets: [String: (name: String, trackIDs: [String], projectIDs: [String])] = [:]
+
+        for track in tracks {
+            let name = Self.normalizedArtistName(track.artist)
+            guard !name.isEmpty else { continue }
+            let key = Self.artistLookupKey(name)
+            var bucket = buckets[key] ?? (name: name, trackIDs: [], projectIDs: [])
+            if !bucket.trackIDs.contains(track.id) {
+                bucket.trackIDs.append(track.id)
+            }
+            buckets[key] = bucket
+        }
+
+        for room in rooms {
+            let name = Self.normalizedArtistName(room.artist)
+            guard !name.isEmpty else { continue }
+            let key = Self.artistLookupKey(name)
+            var bucket = buckets[key] ?? (name: name, trackIDs: [], projectIDs: [])
+            if !bucket.projectIDs.contains(room.id) {
+                bucket.projectIDs.append(room.id)
+            }
+            buckets[key] = bucket
+        }
+
+        return buckets.map { key, value in
+            ArtistSummary(id: key, name: value.name, trackIDs: value.trackIDs, projectIDs: value.projectIDs)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func artistTracks(_ artist: ArtistSummary) -> [Track] {
+        artist.trackIDs.compactMap { track($0) }
+    }
+
+    func artistProjects(_ artist: ArtistSummary) -> [Room] {
+        artist.projectIDs.compactMap { id in rooms.first { $0.id == id } }
+    }
+
+    static func normalizedArtistName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        return artistLookupKey(trimmed) == artistLookupKey("Unknown Artist") ? "" : trimmed
+    }
+
+    static func artistLookupKey(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 }

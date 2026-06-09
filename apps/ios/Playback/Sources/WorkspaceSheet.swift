@@ -36,6 +36,7 @@ struct WorkspacePage: View {
         .foregroundStyle(PB.cream)
         .contentShape(Rectangle())
         .onTapGesture { composing = false }   // tap anywhere empty to dismiss the keyboard
+        .task(id: trackID) { await store.refreshNotes(for: trackID) }
         .onChange(of: composeToken) { _, _ in
             // focus after the slide-up settles, so the keyboard doesn't fight the scroll
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { composing = true }

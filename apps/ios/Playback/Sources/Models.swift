@@ -142,9 +142,10 @@ struct Version: Identifiable, Hashable {
 
 struct Note: Identifiable, Hashable, Codable {
     let id: UUID
+    var apiID: String?     // server note_id, populated after successful POST /notes
     let positionMs: Int?   // nil = general note, otherwise pinned to a timestamp
     let author: String
-    let body: String
+    var body: String
     var resolved: Bool
     let versionLabel: String
 }
@@ -156,6 +157,13 @@ struct Playlist: Identifiable, Hashable, Codable {
     var trackIDs: [String]
 }
 
+struct ArtistSummary: Identifiable, Hashable {
+    let id: String
+    let name: String
+    var trackIDs: [String]
+    var projectIDs: [String]
+}
+
 /// A pinned item on Home — encoded as "type:id" (song / playlist / room).
 enum PinKind: String { case song, playlist, room }
 struct PinRef: Identifiable, Hashable {
@@ -164,8 +172,21 @@ struct PinRef: Identifiable, Hashable {
     var id: String { "\(kind.rawValue):\(targetID)" }
     init(kind: PinKind, targetID: String) { self.kind = kind; self.targetID = targetID }
     init?(_ encoded: String) {
-        let parts = encoded.split(separator: ":", maxSplits: 1).map(String.init)
-        guard parts.count == 2, let k = PinKind(rawValue: parts[0]) else { return nil }
+        let parts = encoded.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let rawKind = parts[0].lowercased()
+        let k: PinKind?
+        switch rawKind {
+        case "song":
+            k = .song
+        case "playlist":
+            k = .playlist
+        case "room", "rooms", "project", "projects":
+            k = .room
+        default:
+            k = PinKind(rawValue: rawKind)
+        }
+        guard let k else { return nil }
         kind = k; targetID = parts[1]
     }
 }
@@ -196,6 +217,12 @@ struct SavedViewSummary: Identifiable, Hashable {
 struct CreatedShareLinkSummary: Hashable {
     let linkID: String
     let url: String
+}
+
+struct IdentifiableURL: Identifiable {
+    let id = UUID()
+    let url: URL
+    init(_ url: URL) { self.url = url }
 }
 
 extension Int {

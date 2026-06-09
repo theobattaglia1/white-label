@@ -127,6 +127,30 @@ server.get("/me", async (request, reply) => {
     workspaces: store.data.workspaces.filter((workspace) => workspaceIDs.has(workspace.workspace_id)),
   });
 });
+
+server.patch("/me", async (request, reply) => {
+  const auth = await requireAuthedFromRequest(request);
+  const body = request.body as { display_name?: string };
+  const trimmed = body.display_name?.trim();
+  if (!trimmed) return reply.code(400).send({ error: "display_name is required" });
+
+  const idx = store.data.users.findIndex((u) => u.user_id === auth.userID);
+  if (idx < 0) return reply.code(404).send({ error: "User not found" });
+
+  store.data.users = store.data.users.map((u) =>
+    u.user_id === auth.userID ? { ...u, display_name: trimmed } : u,
+  );
+
+  const supabase = getSupabase();
+  if (supabase) {
+    void supabase
+      .from("users")
+      .update({ display_name: trimmed })
+      .eq("user_id", auth.userID);
+  }
+
+  return ok(store.data.users.find((u) => u.user_id === auth.userID));
+});
 server.get("/workspaces", async () => ok(store.data.workspaces));
 server.get("/workspaces/:id", async (request) => {
   const { id } = request.params as { id: string };
@@ -177,7 +201,39 @@ server.post("/workspaces/:id/invite", async (request, reply) => {
   if (!wsRes.data) return reply.code(404).send({ error: "Workspace not found" });
   const workspaceUuid = (wsRes.data as { workspace_id: string }).workspace_id;
 
-  // Upsert invite row (idempotent — re-inviting same email refreshes the role)
+  // Check whether this email already has a confirmed Playback account.
+  // "Confirmed" means auth_uid is set — the trigger ran and linked them.
+  const existingRes = await supabase
+    .from("users")
+    .select("user_id, auth_uid")
+    .eq("email", email)
+    .maybeSingle();
+  const existing = existingRes.data as { user_id: string; auth_uid: string | null } | null;
+
+  if (existing?.auth_uid) {
+    // ── Path B: user already confirmed ──────────────────────────────────────
+    // Grant membership immediately; no invite email needed.
+    const memberRes = await supabase.from("memberships").upsert(
+      { workspace_id: workspaceUuid, user_id: existing.user_id, role },
+      { onConflict: "workspace_id,user_id" },
+    );
+    if (memberRes.error) {
+      return reply.code(500).send({ error: `Could not grant membership: ${memberRes.error.message}` });
+    }
+    // Clean up any stale invite row for this email + workspace.
+    await supabase.from("workspace_invites")
+      .delete()
+      .eq("workspace_id", workspaceUuid)
+      .eq("email", email);
+    // Refresh in-memory snapshot so the next GET /me sees the new membership.
+    try { await store.hydrate(); } catch { /* non-fatal */ }
+    server.log.info({ email, role }, "invite: existing confirmed user — membership granted immediately");
+    return ok({ invited: true, email, role, invite_id: null, immediate: true });
+  }
+
+  // ── Path A: user doesn't exist yet ──────────────────────────────────────
+  // Write the invite row; the handle_new_auth_user trigger will convert it
+  // to a membership when they confirm their email after signing up.
   const upsertRes = await supabase.from("workspace_invites").upsert({
     workspace_id: workspaceUuid,
     email,
@@ -190,7 +246,7 @@ server.post("/workspaces/:id/invite", async (request, reply) => {
     return reply.code(500).send({ error: `Could not save invite: ${upsertRes.error.message}` });
   }
 
-  // Send the invite email via Supabase Auth admin API
+  // Send the magic-link invite email via Supabase Auth admin API.
   const appUrl = process.env.APP_URL ?? "https://playback-web.onrender.com";
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     redirectTo: appUrl,
@@ -198,12 +254,10 @@ server.post("/workspaces/:id/invite", async (request, reply) => {
   });
 
   if (inviteError) {
-    // Non-fatal: invite row exists. If the user already has an account, they
-    // can log in and the trigger handles membership on their next confirmed sign-in.
-    server.log.warn({ email, err: inviteError.message }, "invite email warning — invite row saved");
+    server.log.warn({ email, err: inviteError.message }, "invite email warning — invite row saved, email failed");
   }
 
-  return ok({ invited: true, email, role, invite_id: (upsertRes.data as { invite_id: string }).invite_id });
+  return ok({ invited: true, email, role, invite_id: (upsertRes.data as { invite_id: string }).invite_id, immediate: false });
 });
 
 server.get("/workspaces/:id/invites", async (request, reply) => {
@@ -527,7 +581,17 @@ server.post("/songs/:id/versions", async (request) => {
 server.get("/songs/:id/notes", async (request) => {
   const { id } = request.params as { id: string };
   const current = store.getSong(id).currentVersion;
-  return ok(current ? store.getVersionNotes(current.version_id) : []);
+  if (!current) return ok([]);
+  const notes = store.getVersionNotes(current.version_id);
+  const userByID = new Map(store.data.users.map((u) => [u.user_id, u]));
+  return ok(
+    notes.map((note) => ({
+      ...note,
+      author_display_name: note.author_user_id
+        ? (userByID.get(note.author_user_id)?.display_name ?? null)
+        : null,
+    })),
+  );
 });
 server.get("/songs/:id/analytics", async (request) => {
   const { id } = request.params as { id: string };
@@ -638,7 +702,162 @@ server.post("/links/:id/revoke", async (request) => {
   return ok(store.revokeLink(id, auth));
 });
 
-server.get("/inbox", async (request) => ok(store.inbox(authFromRequest(request).userID)));
+// ===== Workspace join links (shareable invite links) ====================
+
+/** Owner generates a shareable link. Anyone with the URL can claim it to
+ *  create an account and land in the workspace — no email pre-registration. */
+server.post("/workspaces/:id/join-links", async (request, reply) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  const body = request.body as { role?: string } | undefined;
+
+  const supabase = getSupabase();
+  if (!supabase) return reply.code(503).send({ error: "Requires Supabase" });
+
+  const wsRes = await supabase.from("workspaces").select("workspace_id, name").eq("external_id", id).maybeSingle();
+  if (!wsRes.data) return reply.code(404).send({ error: "Workspace not found" });
+  const { workspace_id: workspaceUuid, name: workspaceName } = wsRes.data as { workspace_id: string; name: string };
+
+  const role = (body?.role as string | undefined) ?? "viewer";
+  const { data, error } = await supabase
+    .from("workspace_join_links")
+    .insert({ workspace_id: workspaceUuid, role, created_by: auth.userID })
+    .select("link_id, token")
+    .single();
+
+  if (error || !data) return reply.code(500).send({ error: error?.message ?? "Could not create link" });
+
+  const { token } = data as { link_id: string; token: string };
+  const appUrl = process.env.APP_URL ?? "https://playback.allmyfriendsinc.com";
+  return ok({ token, url: `${appUrl}/join/${token}`, workspace_name: workspaceName });
+});
+
+/** Public — validates token and returns workspace name for the sign-up page. */
+server.get("/join/:token", async (request, reply) => {
+  const { token } = request.params as { token: string };
+  const supabase = getSupabase();
+  if (!supabase) return reply.code(503).send({ error: "Requires Supabase" });
+
+  const { data } = await supabase
+    .from("workspace_join_links")
+    .select("link_id, workspace_id, role, expires_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (!data) return reply.code(404).send({ error: "This invite link is invalid or has already been used." });
+  const link = data as { link_id: string; workspace_id: string; role: string; expires_at: string | null };
+  if (link.expires_at && new Date(link.expires_at) < new Date()) {
+    return reply.code(410).send({ error: "This invite link has expired." });
+  }
+
+  const wsRes = await supabase.from("workspaces").select("name").eq("workspace_id", link.workspace_id).single();
+  return ok({ valid: true, workspace_name: (wsRes.data as { name: string } | null)?.name ?? "Playback", role: link.role });
+});
+
+/** Public — creates the account, grants membership, optionally sends SMS. */
+server.post("/join/:token/claim", async (request, reply) => {
+  const { token } = request.params as { token: string };
+  const body = request.body as { display_name?: string; email?: string; password?: string; phone?: string };
+
+  if (!body.display_name?.trim() || !body.email?.trim() || !body.password) {
+    return reply.code(400).send({ error: "Name, email, and password are required." });
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return reply.code(503).send({ error: "Requires Supabase" });
+
+  // Validate the token
+  const { data: linkData } = await supabase
+    .from("workspace_join_links")
+    .select("link_id, workspace_id, role, expires_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (!linkData) return reply.code(404).send({ error: "This invite link is invalid or has already been used." });
+  const link = linkData as { link_id: string; workspace_id: string; role: string; expires_at: string | null };
+  if (link.expires_at && new Date(link.expires_at) < new Date()) {
+    return reply.code(410).send({ error: "This invite link has expired." });
+  }
+
+  const email = body.email!.toLowerCase().trim();
+  const displayName = body.display_name!.trim();
+
+  // Check if an account already exists
+  const { data: existing } = await supabase.from("users").select("user_id, auth_uid").eq("email", email).maybeSingle();
+  const existingUser = existing as { user_id: string; auth_uid: string | null } | null;
+
+  let resolvedUserID: string;
+
+  if (existingUser?.auth_uid) {
+    // Already confirmed — just grant membership
+    resolvedUserID = existingUser.user_id;
+  } else {
+    // Create a new auto-confirmed account (the link is the trust gate)
+    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+      email,
+      password: body.password!,
+      email_confirm: true,
+      user_metadata: { display_name: displayName },
+    });
+    if (createErr || !created?.user) {
+      const msg = createErr?.message ?? "";
+      if (msg.toLowerCase().includes("already")) {
+        return reply.code(409).send({ error: "An account with that email already exists. Sign in on Playback." });
+      }
+      return reply.code(500).send({ error: msg || "Account creation failed." });
+    }
+    resolvedUserID = created.user.id;
+  }
+
+  // Grant workspace membership (belt-and-suspenders alongside the trigger)
+  await supabase.from("memberships").upsert(
+    { workspace_id: link.workspace_id, user_id: resolvedUserID, role: link.role },
+    { onConflict: "workspace_id,user_id" },
+  );
+
+  // Consume the join link (one-time use)
+  await supabase.from("workspace_join_links").delete().eq("link_id", link.link_id);
+
+  // Refresh in-memory store so the next GET /me sees the membership
+  try { await store.hydrate(); } catch { /* non-fatal */ }
+
+  // Best-effort SMS — only fires when Twilio env vars + a TestFlight URL are set
+  const testflightUrl = process.env.TESTFLIGHT_URL;
+  let smsSent = false;
+  if (body.phone?.trim() && testflightUrl) {
+    smsSent = await sendSms(
+      body.phone.trim(),
+      `You're in! Download Playback here: ${testflightUrl}\n\nSign in with ${email}`,
+    );
+  }
+
+  return ok({ email, display_name: displayName, testflight_url: testflightUrl ?? null, sms_sent: smsSent });
+});
+
+/** Twilio SMS — fires only when TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
+ *  TWILIO_FROM_NUMBER are set. Never throws. */
+async function sendSms(to: string, message: string): Promise<boolean> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER;
+  if (!sid || !authToken || !from) return false;
+  try {
+    const creds = Buffer.from(`${sid}:${authToken}`).toString("base64");
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${creds}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ To: to, From: from, Body: message }).toString(),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
+// ===== Inbox ============================================================
+
+server.get("/inbox", async (request) => {
+  const auth = await authedFromRequest(request);
+  return ok(store.inbox(auth.userID));
+});
 server.post("/inbox/:songId/action", async (request) => {
   const { songId } = request.params as { songId: string };
   return ok({ song_id: songId, accepted: true, action: (request.body as { action?: string }).action ?? "save" });

@@ -237,6 +237,40 @@ struct ServiceClient {
         let revoked: Bool
     }
 
+    struct APINote: Decodable {
+        let note_id: String
+        let song_id: String
+        let anchor_version_id: String
+        let body: String
+        let status: String
+        let timestamp_start_ms: Int?
+        let author_user_id: String?
+        let author_guest_label: String?
+        let author_display_name: String?
+        let anchor_version_label: String?
+    }
+
+    struct APIInboxItem: Decodable {
+        struct MinSong: Decodable {
+            let song_id: String
+            let title: String
+            let artist_display_name: String?
+        }
+        struct MinRoom: Decodable {
+            let room_id: String
+            let title: String
+        }
+        let song: MinSong
+        let room: MinRoom?
+        let shared_by: String
+        let new_since_last_listen: Bool
+    }
+
+    struct APIUserPatch: Decodable {
+        let user_id: String
+        let display_name: String
+    }
+
     func me() async throws -> MePayload {
         try await get("/me", as: MePayload.self)
     }
@@ -395,6 +429,49 @@ struct ServiceClient {
 
     func revokeRecipient(linkID: String, recipientID: String) async throws -> APIShareRecipient {
         try await delete("/links/\(linkID)/recipients/\(recipientID)", as: APIShareRecipient.self)
+    }
+
+    struct APIJoinLink: Decodable {
+        let token: String
+        let url: String
+        let workspace_name: String?
+    }
+
+    func generateJoinLink(workspaceID: String? = nil, role: String = "viewer") async throws -> APIJoinLink {
+        let id = await resolvedWorkspaceID(workspaceID)
+        return try await post("/workspaces/\(id)/join-links", body: ["role": role], as: APIJoinLink.self)
+    }
+
+    func notes(songID: String) async throws -> [APINote] {
+        try await get("/songs/\(songID)/notes", as: [APINote].self)
+    }
+
+    @discardableResult
+    func createNote(songID: String, versionID: String, body: String, positionMs: Int?) async throws -> APINote {
+        var payload: [String: Any] = [
+            "song_id": songID,
+            "anchor_version_id": versionID,
+            "body": body,
+        ]
+        if let ms = positionMs { payload["timestamp_start_ms"] = ms }
+        return try await post("/notes", body: payload, as: APINote.self)
+    }
+
+    @discardableResult
+    func patchNote(noteID: String, status: String?, body: String?) async throws -> APINote {
+        var payload: [String: Any] = [:]
+        if let status { payload["status"] = status }
+        if let body { payload["body"] = body }
+        return try await patch("/notes/\(noteID)", body: payload, as: APINote.self)
+    }
+
+    func inbox() async throws -> [APIInboxItem] {
+        try await get("/inbox", as: [APIInboxItem].self)
+    }
+
+    @discardableResult
+    func patchMe(displayName: String) async throws -> APIUserPatch {
+        try await patch("/me", body: ["display_name": displayName], as: APIUserPatch.self)
     }
 
     func uploadNewSong(

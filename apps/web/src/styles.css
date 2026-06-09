@@ -882,7 +882,10 @@ h2 {
   transition: background var(--motion-fast);
 }
 .song-card-waveband .play:hover { background: #25221d; }
+.song-card-waveband .play:disabled { background: var(--pencil-cool); cursor: default; }
 .song-card-waveband .wave-host { flex: 1; min-width: 0; }
+.wave-host.no-audio { display: flex; align-items: center; }
+.no-audio-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; color: var(--pencil-cool); opacity: .6; }
 .song-card-waveband .times {
   font-family: var(--font-mono);
   font-size: 12px;

@@ -2116,7 +2116,9 @@ function SongWorkspace({
               <div className="actions">
                 <button
                   className="btn red primary"
-                  onClick={() => activeVersion && activeAsset && player.play(payload.song, activeVersion, activeAsset)}
+                  onClick={() => activeVersion && activeAsset?.playback_url && player.play(payload.song, activeVersion, activeAsset)}
+                  disabled={!activeAsset?.playback_url}
+                  title={!activeAsset?.playback_url ? "Upload a revision to add audio" : undefined}
                 >
                   <Play size={14} /> Play
                 </button>
@@ -2161,30 +2163,44 @@ function SongWorkspace({
             </div>
           </div>
           <div className="song-card-waveband">
-            <button
-              className="play"
-              aria-label={player.isPlaying ? "Pause" : "Play"}
-              onClick={() => {
-                if (player.isPlaying) player.toggle();
-                else if (activeVersion && activeAsset) player.play(payload.song, activeVersion, activeAsset);
-              }}
-            >
-              {player.isPlaying ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-            <div className="wave-host">
-              <Waveform
-                peaks={activeAsset?.waveform_peaks ?? []}
-                positionMs={player.positionMs}
-                durationMs={activeAsset?.duration_ms ?? 1}
-                onSeek={(position) => {
-                  player.seek(position);
-                  setNoteTimestamp(position);
-                }}
-              />
-            </div>
-            <div className="times">
-              {formatTimestamp(player.positionMs)} / {formatTimestamp(activeAsset?.duration_ms)}
-            </div>
+            {activeAsset?.playback_url ? (
+              <>
+                <button
+                  className="play"
+                  aria-label={player.isPlaying ? "Pause" : "Play"}
+                  onClick={() => {
+                    if (player.isPlaying) player.toggle();
+                    else if (activeVersion && activeAsset) player.play(payload.song, activeVersion, activeAsset);
+                  }}
+                >
+                  {player.isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                </button>
+                <div className="wave-host">
+                  <Waveform
+                    peaks={activeAsset?.waveform_peaks ?? []}
+                    positionMs={player.positionMs}
+                    durationMs={activeAsset?.duration_ms ?? 1}
+                    onSeek={(position) => {
+                      player.seek(position);
+                      setNoteTimestamp(position);
+                    }}
+                  />
+                </div>
+                <div className="times">
+                  {formatTimestamp(player.positionMs)} / {formatTimestamp(activeAsset?.duration_ms)}
+                </div>
+              </>
+            ) : (
+              <>
+                <button className="play" disabled aria-label="No audio yet" style={{ opacity: 0.3 }}>
+                  <Play size={16} />
+                </button>
+                <div className="wave-host no-audio">
+                  <span className="no-audio-label">No audio — upload a revision to add it</span>
+                </div>
+                <div className="times" style={{ opacity: 0.3 }}>--:--</div>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -81,6 +81,23 @@ function ok<T>(value: T): { data: T } {
 }
 
 server.get("/health", async () => ok({ status: "ok", product: "playback" }));
+
+server.post("/internal/hydrate", async (request, reply) => {
+  if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_WRITE_SECRET) {
+    return reply.code(404).send({ error: "Not found" });
+  }
+  assertInternalSecret(request.headers);
+  if (!isSupabaseEnabled()) return reply.code(503).send({ error: "Requires Supabase" });
+  await store.hydrate();
+  const snapshot = store.data;
+  return ok({
+    hydrated: true,
+    songs: snapshot.songs.length,
+    versions: snapshot.versions.length,
+    assets: snapshot.assets.length,
+  });
+});
+
 // Destructive: wipes the in-memory snapshot back to seed. NEVER expose in
 // production — an unauthenticated POST would let anyone reachable on the
 // internet reset every connected client's workspace. Registered only outside

@@ -47,7 +47,21 @@ export type RecentItem = {
   last_activity_at: string;
 };
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4317";
+const CURRENT_RENDER_API_URL = "https://white-label-api-6mnt.onrender.com";
+const LEGACY_RENDER_API_URLS = new Set([
+  "https://white-label-api.onrender.com",
+  "https://white-label-api.onrender.com/",
+]);
+
+function resolveAPIURL() {
+  const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (configured && !LEGACY_RENDER_API_URLS.has(configured)) {
+    return configured.replace(/\/$/, "");
+  }
+  return import.meta.env.DEV ? "http://localhost:4317" : CURRENT_RENDER_API_URL;
+}
+
+const API_URL = resolveAPIURL();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Attach the current Supabase session JWT if logged in; otherwise fall back

@@ -37,11 +37,16 @@ import { LivingCover, coverHue, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_M
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import { PlaybackWordmark, PlaybackMark } from "./PlaybackWordmark";
+import { FirstListenPage, ListeningRoomPage } from "./ListeningFlows";
 import type { Session } from "@supabase/supabase-js";
 
 type ViewMode = "home" | "library" | "room" | "compare" | "inbox" | "links" | "assistant" | "playlist" | "team";
 
 export function App() {
+  const firstListenToken = window.location.pathname.match(/^\/listen\/([^/]+)/)?.[1];
+  if (firstListenToken) return <FirstListenPage token={firstListenToken} />;
+  const listeningRoomToken = window.location.pathname.match(/^\/room\/([^/]+)/)?.[1];
+  if (listeningRoomToken) return <ListeningRoomPage token={listeningRoomToken} />;
   const sharedToken = window.location.pathname.match(/^\/shared\/([^/]+)/)?.[1];
   if (sharedToken) return <SharedListeningPage token={sharedToken} />;
   const joinToken = window.location.pathname.match(/^\/join\/([^/]+)/)?.[1];

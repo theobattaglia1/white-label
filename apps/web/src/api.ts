@@ -1,4 +1,28 @@
-import type { ActivityEvent, AssistantAnswer, FileAsset, Playlist, PlaylistItem, Room, SavedView, ShareLink, Song, Version, VisibleNote } from "@pmw/shared";
+import type {
+  ActivityEvent,
+  AssistantAnswer,
+  DecisionResponse,
+  DecisionResponseValue,
+  FileAsset,
+  ListeningEvent,
+  ListeningEventType,
+  ListeningReport,
+  ListeningRoom,
+  ListeningRoomParticipant,
+  ListeningRoomState,
+  ListeningRoomTrack,
+  Playlist,
+  PlaylistItem,
+  Room,
+  SavedView,
+  ShareLink,
+  ShareSession,
+  ShareSessionRecipient,
+  Song,
+  TimestampedReaction,
+  Version,
+  VisibleNote,
+} from "@pmw/shared";
 import { supabase } from "./auth";
 
 // =====================================================================
@@ -115,6 +139,37 @@ export type SharedPayload = {
   notes: VisibleNote[];
   /** Set when the link's `target_type === "playlist"`. */
   playlist?: Playlist | null;
+};
+
+export type FirstListenPayload = {
+  session: ShareSession;
+  recipient: ShareSessionRecipient;
+  sender: { user_id: string; display_name: string; email: string } | null;
+  song: Song;
+  version: Version;
+  asset: FileAsset | null;
+  room: Room | null;
+  can_play: boolean;
+  can_request_replay: boolean;
+  replay_granted: boolean;
+  report: ListeningReport | null;
+};
+
+export type ListeningRoomPayload = {
+  room: ListeningRoom;
+  tracks: ListeningRoomTrack[];
+  songs: Song[];
+  versions: Version[];
+  assets: FileAsset[];
+  participants: ListeningRoomParticipant[];
+  state: ListeningRoomState;
+  reactions: TimestampedReaction[];
+  decisions: DecisionResponse[];
+  events: ListeningEvent[];
+  report: ListeningReport | null;
+  summary: Record<string, unknown>;
+  host: { user_id: string; display_name: string; email: string } | null;
+  project: Room | null;
 };
 
 export const api = {
@@ -262,6 +317,79 @@ export const api = {
     scope?: "song" | "version";
     visibility?: "everyone" | "internal" | "private";
   }) => request<VisibleNote>(`/shared/${token}/notes`, { method: "POST", body: JSON.stringify(body) }),
+
+  firstListen: async (token: string) => {
+    const payload = await request<FirstListenPayload>(`/listen/${token}`);
+    if (payload.asset && !payload.asset.playback_url) {
+      payload.asset = { ...payload.asset, playback_url: `${API_URL}/listen/${token}/stream/${payload.version.version_id}` };
+    }
+    return payload;
+  },
+  firstListenEvent: (token: string, body: {
+    event_type: ListeningEventType;
+    playback_position_ms?: number;
+    percent_complete?: number;
+    intensity?: number;
+    note_text?: string;
+    metadata?: Record<string, unknown>;
+  }) => request<{ event: ListeningEvent; report: Record<string, unknown>; recipient: ShareSessionRecipient }>(
+    `/listen/${token}/events`,
+    { method: "POST", body: JSON.stringify(body) },
+  ),
+  firstListenDecision: (token: string, body: {
+    response_value: DecisionResponseValue;
+    text_note?: string;
+    confidence?: number;
+    voice_note_storage_path?: string;
+  }) => request<{ response: DecisionResponse; report: Record<string, unknown> }>(
+    `/listen/${token}/decision`,
+    { method: "POST", body: JSON.stringify(body) },
+  ),
+  requestFirstListenReplay: (token: string) =>
+    request<FirstListenPayload>(`/listen/${token}/replay-request`, { method: "POST", body: JSON.stringify({}) }),
+
+  recipientRoom: async (token: string) => {
+    const payload = await request<ListeningRoomPayload>(`/room/${token}`);
+    const versionIdByAsset = new Map<string, string>();
+    for (const version of payload.versions) {
+      versionIdByAsset.set(version.file_asset_id, version.version_id);
+    }
+    payload.assets = payload.assets.map((asset) => {
+      if (asset.playback_url) return asset;
+      const versionID = versionIdByAsset.get(asset.asset_id);
+      return versionID ? { ...asset, playback_url: `${API_URL}/room/${token}/stream/${versionID}` } : asset;
+    });
+    return payload;
+  },
+  recipientRoomState: (token: string) => request<ListeningRoomState>(`/room/${token}/state`),
+  joinRoom: (token: string, body: { display_name?: string; email?: string; phone?: string; participant_id?: string }) =>
+    request<{ participant: ListeningRoomParticipant; room: ListeningRoomPayload }>(
+      `/room/${token}/join`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  roomEvent: (token: string, body: {
+    participant_id?: string;
+    event_type: ListeningEventType;
+    playback_position_ms?: number;
+    percent_complete?: number;
+    intensity?: number;
+    note_text?: string;
+    reaction_type?: string;
+    metadata?: Record<string, unknown>;
+  }) => request<{ event: ListeningEvent; room: ListeningRoomPayload }>(
+    `/room/${token}/events`,
+    { method: "POST", body: JSON.stringify(body) },
+  ),
+  roomFirstTake: (token: string, body: { participant_id?: string; response_value: DecisionResponseValue; text_note?: string }) =>
+    request<{ response: DecisionResponse; room: ListeningRoomPayload }>(
+      `/room/${token}/first-take`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  roomNote: (token: string, body: { participant_id?: string; playback_position_ms?: number; note_text?: string; reaction_type?: string }) =>
+    request<{ event: ListeningEvent; room: ListeningRoomPayload }>(
+      `/room/${token}/notes`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 
   // === Real audio uploads (Supabase Storage) ============================
 

@@ -84,6 +84,12 @@ struct ServiceClient {
         let open_note_count: Int
     }
 
+    struct APISimpleRoom: Decodable {
+        let room_id: String
+        let title: String
+        let type: String
+    }
+
     struct APIPlaylist: Decodable {
         let playlist_id: String
         let workspace_id: String
@@ -127,6 +133,175 @@ struct ServiceClient {
         }
         let link: Link
         let token: String
+    }
+
+    struct APIShareSession: Decodable, Identifiable, Hashable {
+        var id: String { share_session_id }
+        let share_session_id: String
+        let song_id: String
+        let room_id: String?
+        let version_id: String?
+        let share_type: String
+        let decision_request_type: String
+        let context_note: String?
+        let expires_at: String?
+        let replay_grants_count: Int
+        let status: String
+        let created_at: String
+        let updated_at: String
+    }
+
+    struct APIShareSessionRecipient: Decodable, Identifiable, Hashable {
+        var id: String { recipient_id }
+        let recipient_id: String
+        let share_session_id: String
+        let recipient_email: String?
+        let recipient_phone: String?
+        let display_name: String?
+        let access_state: String
+        let opened_at: String?
+        let started_at: String?
+        let completed_at: String?
+        let replay_requested_at: String?
+        let replay_granted_at: String?
+        let last_position_ms: Int?
+    }
+
+    struct APIDecisionResponse: Decodable, Identifiable, Hashable {
+        var id: String { decision_response_id }
+        let decision_response_id: String
+        let response_value: String
+        let text_note: String?
+        let transcript: String?
+        let created_at: String
+    }
+
+    struct APITimestampedReaction: Decodable, Identifiable, Hashable {
+        var id: String { timestamped_reaction_id }
+        let timestamped_reaction_id: String
+        let playback_position_ms: Int
+        let reaction_type: String
+        let intensity: Int?
+        let note_text: String?
+        let created_at: String
+    }
+
+    struct APIListeningReport: Decodable, Identifiable, Hashable {
+        var id: String { listening_report_id }
+        let listening_report_id: String
+        let report_type: String
+        let visibility: String
+        let summary_json: APIJSONValue
+        let created_at: String
+        let updated_at: String
+    }
+
+    enum APIJSONValue: Decodable, Hashable, CustomStringConvertible {
+        case string(String)
+        case number(Double)
+        case bool(Bool)
+        case object([String: APIJSONValue])
+        case array([APIJSONValue])
+        case null
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() { self = .null }
+            else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+            else if let value = try? container.decode(Double.self) { self = .number(value) }
+            else if let value = try? container.decode(String.self) { self = .string(value) }
+            else if let value = try? container.decode([String: APIJSONValue].self) { self = .object(value) }
+            else if let value = try? container.decode([APIJSONValue].self) { self = .array(value) }
+            else { self = .null }
+        }
+
+        var description: String {
+            switch self {
+            case .string(let value): return value
+            case .number(let value): return value.rounded() == value ? String(Int(value)) : String(value)
+            case .bool(let value): return value ? "true" : "false"
+            case .object(let value):
+                return value.map { "\($0.key): \($0.value.description)" }.sorted().joined(separator: "\n")
+            case .array(let value): return value.map(\.description).joined(separator: ", ")
+            case .null: return ""
+            }
+        }
+    }
+
+    struct APICreatedFirstListen: Decodable {
+        let session: APIShareSession
+        let recipient: APIShareSessionRecipient
+        let token: String
+        let url_path: String
+    }
+
+    struct APIFirstListenDetail: Decodable {
+        let session: APIShareSession
+        let recipients: [APIShareSessionRecipient]
+        let decisions: [APIDecisionResponse]
+        let reactions: [APITimestampedReaction]
+        let song: APISong
+        let version: APIVersion
+        let room: APISimpleRoom?
+    }
+
+    struct APIListeningRoom: Decodable, Identifiable, Hashable {
+        var id: String { listening_room_id }
+        let listening_room_id: String
+        let room_id: String?
+        let room_type: String
+        let title: String
+        let context_note: String?
+        let decision_request_type: String?
+        let scheduled_start_at: String?
+        let started_at: String?
+        let ended_at: String?
+        let lifecycle_state: String
+        let retention_policy: String
+    }
+
+    struct APIListeningRoomTrack: Decodable, Identifiable, Hashable {
+        var id: String { listening_room_track_id }
+        let listening_room_track_id: String
+        let song_id: String
+        let version_id: String?
+        let sort_order: Int
+    }
+
+    struct APIListeningRoomParticipant: Decodable, Identifiable, Hashable {
+        var id: String { participant_id }
+        let participant_id: String
+        let display_name: String?
+        let recipient_email: String?
+        let role_in_room: String
+        let joined_at: String?
+        let completed_at: String?
+        let first_take_submitted_at: String?
+    }
+
+    struct APIListeningRoomState: Decodable, Hashable {
+        let playback_state: String
+        let host_position_ms: Int
+        let host_started_at_server_time: String?
+        let updated_at: String
+    }
+
+    struct APICreatedListeningRoom: Decodable {
+        let room: APIListeningRoom
+        let tracks: [APIListeningRoomTrack]
+        let host: APIListeningRoomParticipant
+        let token: String
+        let url_path: String
+    }
+
+    struct APIListeningRoomDetail: Decodable {
+        let room: APIListeningRoom
+        let tracks: [APIListeningRoomTrack]
+        let participants: [APIListeningRoomParticipant]
+        let state: APIListeningRoomState
+        let reactions: [APITimestampedReaction]
+        let decisions: [APIDecisionResponse]
+        let report: APIListeningReport?
     }
 
     struct APISignUpload: Decodable {
@@ -386,6 +561,84 @@ struct ServiceClient {
         return try await post("/links", body: body, as: APICreatedLink.self)
     }
 
+    func createFirstListen(
+        trackID: String,
+        versionID: String?,
+        decisionRequestType: String,
+        contextNote: String?,
+        recipientEmail: String?,
+        displayName: String?,
+        expiresAt: Date?
+    ) async throws -> APICreatedFirstListen {
+        var body: [String: Any] = [
+            "song_id": trackID,
+            "decision_request_type": decisionRequestType,
+        ]
+        if let versionID { body["version_id"] = versionID }
+        if let contextNote, !contextNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["context_note"] = contextNote
+        }
+        if let recipientEmail, !recipientEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["recipient_email"] = recipientEmail
+        }
+        if let displayName, !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["display_name"] = displayName
+        }
+        if let expiresAt { body["expires_at"] = Self.isoFormatter.string(from: expiresAt) }
+        return try await post("/first-listens", body: body, as: APICreatedFirstListen.self)
+    }
+
+    func firstListen(_ id: String) async throws -> APIFirstListenDetail {
+        try await get("/first-listens/\(id)", as: APIFirstListenDetail.self)
+    }
+
+    func firstListenReport(_ id: String) async throws -> APIListeningReport {
+        try await get("/first-listens/\(id)/report", as: APIListeningReport.self)
+    }
+
+    func grantFirstListenReplay(sessionID: String, recipientID: String) async throws -> APIFirstListenDetail {
+        try await post("/first-listens/\(sessionID)/recipients/\(recipientID)/grant-replay", body: [:], as: APIFirstListenDetail.self)
+    }
+
+    func createListeningRoom(
+        trackID: String,
+        versionID: String?,
+        roomType: String,
+        title: String?,
+        contextNote: String?,
+        decisionRequestType: String,
+        scheduledStartAt: Date?,
+        retentionPolicy: String
+    ) async throws -> APICreatedListeningRoom {
+        var body: [String: Any] = [
+            "song_id": trackID,
+            "room_type": roomType,
+            "decision_request_type": decisionRequestType,
+            "retention_policy": retentionPolicy,
+        ]
+        if let versionID { body["version_id"] = versionID }
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { body["title"] = title }
+        if let contextNote, !contextNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { body["context_note"] = contextNote }
+        if let scheduledStartAt { body["scheduled_start_at"] = Self.isoFormatter.string(from: scheduledStartAt) }
+        return try await post("/listening-rooms", body: body, as: APICreatedListeningRoom.self)
+    }
+
+    func listeningRoom(_ id: String) async throws -> APIListeningRoomDetail {
+        try await get("/listening-rooms/\(id)", as: APIListeningRoomDetail.self)
+    }
+
+    func startListeningRoom(_ id: String) async throws -> APIListeningRoomDetail {
+        try await post("/listening-rooms/\(id)/start", body: ["host_position_ms": 0], as: APIListeningRoomDetail.self)
+    }
+
+    func pauseListeningRoom(_ id: String, positionMs: Int) async throws -> APIListeningRoomDetail {
+        try await post("/listening-rooms/\(id)/state", body: ["playback_state": "paused", "host_position_ms": positionMs], as: APIListeningRoomDetail.self)
+    }
+
+    func endListeningRoom(_ id: String) async throws -> APIListeningReport {
+        try await post("/listening-rooms/\(id)/end", body: [:], as: APIListeningReport.self)
+    }
+
     func members(workspaceID: String? = nil) async throws -> [APIMember] {
         let id = await resolvedWorkspaceID(workspaceID)
         return try await get("/workspaces/\(id)/members", as: [APIMember].self)
@@ -548,6 +801,12 @@ struct ServiceClient {
     private func delete<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
         try await send(method: "DELETE", path: path, body: nil, as: type)
     }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     private func resolvedWorkspaceID(_ workspaceID: String?) async -> String {
         if let workspaceID { return workspaceID }

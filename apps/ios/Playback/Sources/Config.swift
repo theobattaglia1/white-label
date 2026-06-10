@@ -38,11 +38,23 @@ enum Config {
         #endif
     }
 
-    /// Base URL for share links. Defaults to the Render deployment.
-    /// When playback.fm is live, change this to "https://playback.fm".
-    static let appURL = "https://playback.allmyfriendsinc.com"
+    /// Base URL for recipient web links. Defaults to the deployed web surface,
+    /// but can be pointed at localhost for Simulator QA.
+    static var appURL: String {
+        ProcessInfo.processInfo.environment["PLAYBACK_APP_URL"]
+            ?? ProcessInfo.processInfo.environment["WL_APP_URL"]
+            ?? "https://playback.allmyfriendsinc.com"
+    }
 
     static func shareURL(token: String) -> String {
         "\(appURL)/shared/\(token)"
+    }
+
+    static func firstListenURL(token: String) -> String {
+        "\(appURL)/listen/\(token)"
+    }
+
+    static func listeningRoomURL(token: String) -> String {
+        "\(appURL)/room/\(token)"
     }
 }

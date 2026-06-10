@@ -1,7 +1,14 @@
 import type {
   ActivityEvent,
   Approval,
+  DecisionResponse,
   FileAsset,
+  ListeningEvent,
+  ListeningReport,
+  ListeningRoom,
+  ListeningRoomParticipant,
+  ListeningRoomState,
+  ListeningRoomTrack,
   Mention,
   Membership,
   Note,
@@ -12,8 +19,11 @@ import type {
   SavedView,
   ShareLink,
   ShareRecipient,
+  ShareSession,
+  ShareSessionRecipient,
   Song,
   Task,
+  TimestampedReaction,
   User,
   Version,
   Workspace,
@@ -748,6 +758,16 @@ const playlistItems: PlaylistItem[] = [
 ];
 
 const shareRecipients: ShareRecipient[] = [];
+const shareSessions: ShareSession[] = [];
+const shareSessionRecipients: ShareSessionRecipient[] = [];
+const listeningEvents: ListeningEvent[] = [];
+const decisionResponses: DecisionResponse[] = [];
+const timestampedReactions: TimestampedReaction[] = [];
+const listeningRooms: ListeningRoom[] = [];
+const listeningRoomTracks: ListeningRoomTrack[] = [];
+const listeningRoomParticipants: ListeningRoomParticipant[] = [];
+const listeningRoomStates: ListeningRoomState[] = [];
+const listeningReports: ListeningReport[] = [];
 
 export function createSeedSnapshot(): WorkspaceSnapshot {
   return structuredClone({
@@ -769,5 +789,15 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     savedViews,
     playlists,
     playlistItems,
+    shareSessions,
+    shareSessionRecipients,
+    listeningEvents,
+    decisionResponses,
+    timestampedReactions,
+    listeningRooms,
+    listeningRoomTracks,
+    listeningRoomParticipants,
+    listeningRoomStates,
+    listeningReports,
   });
 }

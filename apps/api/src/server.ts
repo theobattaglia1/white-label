@@ -1,5 +1,5 @@
 import cors from "@fastify/cors";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import { store, type AuthContext } from "./store";
 import {
@@ -926,6 +926,151 @@ server.post("/assistant/ask", async (request, reply) => {
       .send({ error: "Too many questions in a short window — give it a moment." });
   }
   return ok(await store.askLlm(question, { song_id: body.song_id, version_id: body.version_id }));
+});
+
+function redactRecipientAsset<T extends { playback_url?: string } | null>(asset: T): T {
+  if (!asset?.playback_url || !/^https?:\/\//i.test(asset.playback_url)) return asset;
+  return { ...asset, playback_url: undefined };
+}
+
+async function redirectToPlayableAsset(reply: FastifyReply, asset: { playback_url?: string; key_original?: string } | null | undefined) {
+  if (!asset) {
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio is not available." });
+  }
+  if (asset.playback_url?.startsWith("/")) {
+    return reply.code(302).header("location", asset.playback_url).send();
+  }
+  if (!asset.key_original) {
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio is not available." });
+  }
+  try {
+    const url = await signPlaybackUrl(asset.key_original);
+    return reply.code(302).header("location", url).send();
+  } catch (err) {
+    server.log.warn({ err }, "signPlaybackUrl failed for protected stream");
+    return reply.code(404).send({ error: "audio_unavailable", message: "Audio is not available." });
+  }
+}
+
+// ===== First Listen ======================================================
+
+server.post("/first-listens", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  return ok(store.createFirstListenShare(auth, request.body as never));
+});
+server.get("/first-listens/:id", async (request) => {
+  const { id } = request.params as { id: string };
+  return ok(store.getFirstListenShare(id));
+});
+server.get("/first-listens/:id/report", async (request) => {
+  const { id } = request.params as { id: string };
+  return ok(store.getFirstListenReport(id));
+});
+server.post("/first-listens/:id/recipients/:recipientId/grant-replay", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id, recipientId } = request.params as { id: string; recipientId: string };
+  return ok(store.grantFirstListenReplay(id, recipientId, auth));
+});
+
+server.get("/listen/:token", async (request) => {
+  const { token } = request.params as { token: string };
+  const payload = store.resolveFirstListen(token);
+  return ok({
+    ...payload,
+    asset: redactRecipientAsset(payload.asset),
+  });
+});
+server.get("/listen/:token/stream/:versionId", async (request, reply) => {
+  const { token, versionId } = request.params as { token: string; versionId: string };
+  const asset = store.assertFirstListenStream(token, versionId);
+  return redirectToPlayableAsset(reply, asset);
+});
+server.post("/listen/:token/events", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.recordFirstListenEvent(token, request.body as never));
+});
+server.post("/listen/:token/decision", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.submitFirstListenDecision(token, request.body as never));
+});
+server.post("/listen/:token/replay-request", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.requestFirstListenReplay(token));
+});
+
+// ===== Listening Room ====================================================
+
+server.post("/listening-rooms", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  return ok(store.createListeningRoom(auth, request.body as never));
+});
+server.get("/listening-rooms/:id", async (request) => {
+  const { id } = request.params as { id: string };
+  return ok(store.getListeningRoom(id));
+});
+server.post("/listening-rooms/:id/state", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  return ok(store.updateListeningRoomState(id, auth, request.body as never));
+});
+server.post("/listening-rooms/:id/start", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  const body = request.body as { host_position_ms?: number };
+  return ok(store.updateListeningRoomState(id, auth, { playback_state: "playing", host_position_ms: body.host_position_ms ?? 0 }));
+});
+server.post("/listening-rooms/:id/end", async (request) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  return ok(store.endListeningRoom(id, auth));
+});
+server.get("/listening-rooms/:id/report", async (request) => {
+  const { id } = request.params as { id: string };
+  return ok(store.getListeningRoomReport(id));
+});
+
+server.get("/room/:token", async (request) => {
+  const { token } = request.params as { token: string };
+  const payload = store.resolveListeningRoom(token);
+  return ok({
+    ...payload,
+    assets: payload.assets.map(redactRecipientAsset),
+  });
+});
+server.get("/room/:token/state", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.resolveListeningRoom(token).state);
+});
+server.get("/room/:token/stream/:versionId", async (request, reply) => {
+  const { token, versionId } = request.params as { token: string; versionId: string };
+  const payload = store.resolveListeningRoom(token);
+  const version = payload.versions.find((candidate) => candidate.version_id === versionId);
+  if (!version) throw new Error("Version is not available through this Listening Room");
+  const asset = payload.assets.find((candidate) => candidate.asset_id === version.file_asset_id);
+  return redirectToPlayableAsset(reply, asset);
+});
+server.post("/room/:token/join", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.joinListeningRoom(token, request.body as never));
+});
+server.post("/room/:token/events", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.recordRoomEvent(token, request.body as never));
+});
+server.post("/room/:token/first-take", async (request) => {
+  const { token } = request.params as { token: string };
+  return ok(store.submitRoomFirstTake(token, request.body as never));
+});
+server.post("/room/:token/notes", async (request) => {
+  const { token } = request.params as { token: string };
+  const body = request.body as { participant_id?: string; playback_position_ms?: number; note_text?: string; reaction_type?: string };
+  return ok(store.recordRoomEvent(token, {
+    participant_id: body.participant_id,
+    event_type: "timestamp_marker",
+    playback_position_ms: body.playback_position_ms,
+    note_text: body.note_text,
+    reaction_type: (body.reaction_type as never) ?? "text_note",
+  }));
 });
 
 server.get("/shared/:token", async (request) => {

@@ -41,6 +41,54 @@ export type ApprovalState = "approved" | "revision_requested" | "passed";
 export type LinkAccess = "public" | "password" | "identity_required";
 export type VersionPolicy = "latest_only" | "full_history";
 export type DownloadPolicy = "none" | "current" | "all";
+export type DecisionRequestType =
+  | "general_reaction"
+  | "single_candidate"
+  | "meeting_interest"
+  | "forward_interest"
+  | "sync_fit"
+  | "mix_note"
+  | "version_comparison";
+export type DecisionResponseValue =
+  | "love"
+  | "hold"
+  | "pass"
+  | "need_context"
+  | "needs_revision"
+  | "would_forward";
+export type ShareSessionType = "first_listen" | "standard" | "room_invite";
+export type ShareAccessState =
+  | "unused"
+  | "opened"
+  | "started"
+  | "completed"
+  | "expired"
+  | "replay_requested"
+  | "replay_granted"
+  | "revoked";
+export type ListeningEventType =
+  | "opened"
+  | "started"
+  | "paused"
+  | "resumed"
+  | "completed"
+  | "abandoned"
+  | "replay_requested"
+  | "decision_submitted"
+  | "pulse"
+  | "timestamp_marker"
+  | "voice_reply_uploaded"
+  | "joined"
+  | "left"
+  | "room_started"
+  | "room_ended";
+export type TimestampedReactionType = "pulse" | "marker" | "emoji" | "run_it_back" | "voice_note" | "text_note";
+export type ListeningRoomType = "first_listen_room" | "revision_room" | "single_room" | "mix_notes_room";
+export type ListeningRoomLifecycleState = "draft" | "scheduled" | "live" | "ended" | "archived" | "expired" | "canceled";
+export type ListeningRoomRetentionPolicy = "disappear_after_room" | "visible_24h" | "save_to_project";
+export type ListeningRoomPlaybackState = "lobby" | "playing" | "paused" | "ended";
+export type ListeningReportType = "first_listen" | "listening_room";
+export type ListeningReportVisibility = "private" | "visible_24h" | "project";
 export type EventType =
   | "uploaded_version"
   | "played_track"
@@ -281,6 +329,174 @@ export interface ShareRecipient {
   revoked_at?: string;
 }
 
+export interface ShareSession {
+  share_session_id: string;
+  workspace_id: string;
+  artist_id?: string;
+  artist_name?: string;
+  song_id: string;
+  room_id?: string;
+  version_id?: string;
+  sender_user_id: string;
+  share_type: ShareSessionType;
+  decision_request_type: DecisionRequestType;
+  context_note?: string;
+  voice_preface_storage_path?: string;
+  token_hash: string;
+  demo_token?: string;
+  expires_at?: string;
+  max_first_listens: number;
+  replay_grants_count: number;
+  status: ShareAccessState;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShareSessionRecipient {
+  recipient_id: string;
+  share_session_id: string;
+  recipient_user_id?: string;
+  recipient_email?: string;
+  recipient_phone?: string;
+  display_name?: string;
+  access_state: ShareAccessState;
+  opened_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  expired_at?: string;
+  replay_requested_at?: string;
+  replay_granted_at?: string;
+  last_position_ms?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListeningEvent {
+  listening_event_id: string;
+  share_session_id?: string;
+  listening_room_id?: string;
+  recipient_id?: string;
+  participant_id?: string;
+  song_id: string;
+  version_id?: string;
+  event_type: ListeningEventType;
+  playback_position_ms?: number;
+  percent_complete?: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DecisionResponse {
+  decision_response_id: string;
+  share_session_id?: string;
+  listening_room_id?: string;
+  recipient_id?: string;
+  participant_id?: string;
+  song_id: string;
+  version_id?: string;
+  decision_request_type: DecisionRequestType;
+  response_value: DecisionResponseValue;
+  confidence?: number;
+  text_note?: string;
+  voice_note_storage_path?: string;
+  transcript?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimestampedReaction {
+  timestamped_reaction_id: string;
+  share_session_id?: string;
+  listening_room_id?: string;
+  recipient_id?: string;
+  participant_id?: string;
+  song_id: string;
+  version_id?: string;
+  playback_position_ms: number;
+  reaction_type: TimestampedReactionType;
+  intensity?: number;
+  note_text?: string;
+  voice_note_storage_path?: string;
+  transcript?: string;
+  created_at: string;
+}
+
+export interface ListeningRoom {
+  listening_room_id: string;
+  workspace_id: string;
+  host_user_id: string;
+  artist_id?: string;
+  artist_name?: string;
+  room_id?: string;
+  room_type: ListeningRoomType;
+  title: string;
+  context_note?: string;
+  decision_request_type?: DecisionRequestType;
+  scheduled_start_at?: string;
+  started_at?: string;
+  ended_at?: string;
+  lifecycle_state: ListeningRoomLifecycleState;
+  retention_policy: ListeningRoomRetentionPolicy;
+  token_hash: string;
+  demo_token?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListeningRoomTrack {
+  listening_room_track_id: string;
+  listening_room_id: string;
+  song_id: string;
+  version_id?: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ListeningRoomParticipant {
+  participant_id: string;
+  listening_room_id: string;
+  user_id?: string;
+  recipient_email?: string;
+  recipient_phone?: string;
+  display_name?: string;
+  role_in_room: "host" | "listener";
+  joined_at?: string;
+  left_at?: string;
+  completed_at?: string;
+  first_take_submitted_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListeningRoomState {
+  listening_room_id: string;
+  current_track_id?: string;
+  current_version_id?: string;
+  playback_state: ListeningRoomPlaybackState;
+  host_position_ms: number;
+  host_started_at_server_time?: string;
+  updated_at: string;
+}
+
+export interface ListeningReport {
+  listening_report_id: string;
+  report_type: ListeningReportType;
+  share_session_id?: string;
+  listening_room_id?: string;
+  workspace_id: string;
+  artist_id?: string;
+  artist_name?: string;
+  song_id?: string;
+  room_id?: string;
+  version_id?: string;
+  summary_json: Record<string, unknown>;
+  created_by: string;
+  visibility: ListeningReportVisibility;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ActivityEvent {
   event_id: string;
   workspace_id: string;
@@ -387,4 +603,14 @@ export interface WorkspaceSnapshot {
   savedViews: SavedView[];
   playlists: Playlist[];
   playlistItems: PlaylistItem[];
+  shareSessions: ShareSession[];
+  shareSessionRecipients: ShareSessionRecipient[];
+  listeningEvents: ListeningEvent[];
+  decisionResponses: DecisionResponse[];
+  timestampedReactions: TimestampedReaction[];
+  listeningRooms: ListeningRoom[];
+  listeningRoomTracks: ListeningRoomTrack[];
+  listeningRoomParticipants: ListeningRoomParticipant[];
+  listeningRoomStates: ListeningRoomState[];
+  listeningReports: ListeningReport[];
 }

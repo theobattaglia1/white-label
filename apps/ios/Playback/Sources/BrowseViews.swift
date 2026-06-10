@@ -2601,6 +2601,28 @@ struct InboxView: View {
         store.tracks.filter { selectedTrackIDs.contains($0.id) }
     }
 
+    /// True when the inbox has entries but none of them resolve to a track —
+    /// the state a fresh launch lands in until the cloud library has synced.
+    private var hasUnresolvedItems: Bool {
+        !items.isEmpty && !items.contains { store.track($0.trackID) != nil }
+    }
+
+    /// The one-shot launch sync can fail (the hosted API cold-starts slower
+    /// than the request timeout), leaving persisted inbox items pointing at a
+    /// track catalog that never loaded. Keep retrying the library fetch while
+    /// the rows can't resolve so the inbox recovers without a relaunch.
+    @MainActor
+    private func resolveInboxTracksIfNeeded() async {
+        guard Config.useRemoteAPI else { return }
+        while !Task.isCancelled && hasUnresolvedItems {
+            if store.syncState != .syncing {
+                await store.refreshFromService()
+            }
+            if !hasUnresolvedItems { break }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+        }
+    }
+
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
@@ -2650,6 +2672,22 @@ struct InboxView: View {
                             }
                         }
                     }
+
+                    // Inbox items persist across launches, but the track
+                    // catalog they reference is memory-only and arrives via
+                    // cloud sync. If the first sync fails (cold API start,
+                    // flaky network) every row resolves to nil and the list
+                    // renders empty under a non-zero "N new" header. Surface
+                    // the state instead of a silent blank, and let the retry
+                    // task below bring the rows back.
+                    if hasUnresolvedItems {
+                        MonoLabel(store.syncState == .syncing
+                                    ? "Syncing library…"
+                                    : "Waiting for cloud library — retrying…",
+                                  color: PB.pencil, size: 10, tracking: 1.4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 18)
+                    }
                 }
                 .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 150)
             }
@@ -2665,6 +2703,7 @@ struct InboxView: View {
                 TopTapScrollHotspot { scrollToTop(scrollProxy) }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .task { await resolveInboxTracksIfNeeded() }
             .onPreferenceChange(SelectionDragTargetKey.self) { targets in
                 selectionDragTargets = targets
             }

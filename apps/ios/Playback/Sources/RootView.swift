@@ -112,6 +112,9 @@ struct AppShell: View {
                 }
                 TabBar(tab: $tab, inboxNew: workspace.inboxNewCount)
             }
+            // Keep the bar anchored when the keyboard rises — a floating tab
+            // bar over the keyboard reads as a layout glitch.
+            .ignoresSafeArea(.keyboard)
             .accessibilityHidden(showPlayer)
 
             if showPlayer {
@@ -336,6 +339,8 @@ struct MiniPlayerBar: View {
                         .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
+                // Playback state is announced here, not on the wordmark.
+                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -372,6 +377,7 @@ struct TabBar: View {
             VStack(spacing: 5) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon).font(.system(size: 18))
+                        .accessibilityHidden(true)
                     if badge > 0 {
                         // Same semantic as the Inbox header's "N new" count.
                         Text("\(min(badge, 99))")
@@ -388,8 +394,13 @@ struct TabBar: View {
             }
             .foregroundStyle(tab == t ? PB.cream : PB.pencil)
             .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
+            // ≥44pt hit target: the 35pt content keeps its visual height, the
+            // tappable shape extends into the bar's padding above and below.
+            .contentShape(Rectangle().inset(by: -6))
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(badge > 0 ? "\(label), \(badge) new" : label)
+        .accessibilityAddTraits(tab == t ? [.isSelected] : [])
     }
 }

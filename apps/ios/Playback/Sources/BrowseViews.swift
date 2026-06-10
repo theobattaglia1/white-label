@@ -1018,7 +1018,10 @@ struct LibraryView: View {
                 Label("Playlist", systemImage: "text.badge.plus")
             }
         } label: {
+            // Label the inner control too — the Menu surfaces it to VoiceOver
+            // as an unnamed pop-up button otherwise.
             HeaderCircleIcon(systemName: "plus")
+                .accessibilityLabel("Add")
         }
         .accessibilityLabel("Add")
     }

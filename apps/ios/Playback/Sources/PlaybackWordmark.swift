@@ -38,8 +38,10 @@ struct PlaybackWordmark: View {
                     .padding(.leading, capSize * 0.16)
             }
         }
-        .accessibilityElement()
-        .accessibilityLabel(isPlaying ? "Playback — playing" : "Playback — stopped")
+        // One element, brand name only — transport state belongs to the
+        // mini player / transport controls, not the logo.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Playback")
     }
 
     private func slidingOffset(_ date: Date) -> CGFloat {

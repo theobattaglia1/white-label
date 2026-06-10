@@ -36,6 +36,9 @@ struct AppShell: View {
     private func openSong(_ id: String, in queue: [Track]) {
         player.replaceQueue(queue.isEmpty ? workspace.tracks : queue)
         player.open(id)
+        // TODO: resume at the track's stored last position ("Left off at m:ss")
+        // once per-track playback positions are persisted — the store only
+        // tracks last-opened dates today.
         workspace.touch(PinRef(kind: .song, targetID: id).id)
         withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { showPlayer = true }
     }
@@ -48,7 +51,8 @@ struct AppShell: View {
                 switch tab {
                 case .home:
                     NavigationStack {
-                        HomeView(player: player, store: workspace, openSong: openSong)
+                        HomeView(player: player, store: workspace, openSong: openSong,
+                                 openLibrary: { tab = .library })
                             .navDestinations(player: player, store: workspace, openSong: openSong) { id, queue in
                                 openSong(id, in: queue)
                             }

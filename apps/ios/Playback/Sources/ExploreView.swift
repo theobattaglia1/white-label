@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Global search and index for the workspace.
+/// Global search for the workspace.
 struct ExploreView: View {
     var player: Player
     var store: WorkspaceStore
@@ -15,9 +15,17 @@ struct ExploreView: View {
     @State private var selectionDragTargets: [SelectionDragTarget] = []
     @FocusState private var searchFocused: Bool
 
+    /// Most recently played/opened songs — backs the "Recently played"
+    /// section (mirrors Home's activity ordering).
     private var reviewTracks: [Track] {
-        let flagged = store.tracks.filter { store.openCount($0.id) > 0 }
-        return Array((flagged.isEmpty ? store.tracks : flagged).prefix(5))
+        let sorted = store.tracks.enumerated().sorted { lhs, rhs in
+            let lhsDate = store.activity[PinRef(kind: .song, targetID: lhs.element.id).id]
+                ?? Date(timeIntervalSince1970: TimeInterval(1000 - lhs.offset))
+            let rhsDate = store.activity[PinRef(kind: .song, targetID: rhs.element.id).id]
+                ?? Date(timeIntervalSince1970: TimeInterval(1000 - rhs.offset))
+            return lhsDate > rhsDate
+        }
+        return Array(sorted.map(\.element).prefix(5))
     }
 
     private var trimmedQuery: String {
@@ -241,13 +249,6 @@ struct ExploreView: View {
 
     @ViewBuilder
     private var indexSections: some View {
-        section("Index") {
-            indexRow(icon: "person.crop.circle", title: "Artists", detail: "\(store.artistSummaries.count)")
-            indexRow(icon: "text.badge.plus", title: "Playlists", detail: "\(store.playlists.count)")
-            indexRow(icon: "folder", title: "Projects", detail: "\(store.rooms.count)")
-            indexRow(icon: "music.note", title: "Songs", detail: "\(store.tracks.count)")
-        }
-
         if !matchingSavedViews.isEmpty {
             section("Smart views") {
                 ForEach(matchingSavedViews.prefix(4)) { view in
@@ -262,7 +263,7 @@ struct ExploreView: View {
         }
 
         if !reviewTracks.isEmpty {
-            section("Recent signals") {
+            section("Recently played") {
                 ForEach(reviewTracks) { track in
                     exploreSongItem(track, queue: reviewTracks,
                                     trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil)
@@ -451,24 +452,6 @@ struct ExploreView: View {
 
     private func syncStripLabel(_ count: Int, singular: String, plural: String) -> String {
         count == 1 ? "1 \(singular)" : "\(count) \(plural)"
-    }
-
-    private func indexRow(icon: String, title: String, detail: String) -> some View {
-        HStack(spacing: 13) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(PB.cream)
-                .frame(width: 44, height: 44)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PB.cream.opacity(0.08)))
-            Text(title).font(PB.display(17)).foregroundStyle(PB.cream)
-            Spacer()
-            MonoLabel(detail, color: PB.pencil, size: 9, tracking: 1)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(PB.cream.opacity(0.06)).frame(height: 1).padding(.leading, 69)
-        }
     }
 
     private func artistResultRow(_ artist: ArtistSummary) -> some View {

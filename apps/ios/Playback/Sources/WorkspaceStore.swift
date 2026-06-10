@@ -10,6 +10,16 @@ enum WorkspaceSyncState: String, Codable {
     case error = "Save failed"
 }
 
+/// One row of Home's "On your desk" list: what surfaced and why.
+struct DeskEntry: Identifiable {
+    let ref: PinRef
+    let score: Double
+    /// Live reason ("3 open notes", "Shared by Maya") — nil means the row
+    /// falls back to its static subtitle.
+    let reason: String?
+    var id: String { ref.id }
+}
+
 /// Holds the workspace layer — versions and notes per track — seeded with the
 /// sample catalog. Notes added while listening are kept here for the session.
 @Observable
@@ -35,6 +45,7 @@ final class WorkspaceStore {
     var lastSavedAt: Date?
     var isLibraryLoaded: Bool = false
     @ObservationIgnored private var draftIDs: Set<String> = []
+    @ObservationIgnored private var pendingRemoteDeletedIDs: Set<String> = []
     @ObservationIgnored private var persistTask: Task<Void, Never>?
 
     func touch(_ ref: String) { activity[Self.canonicalPinID(ref)] = Date(); persist() }
@@ -394,6 +405,12 @@ final class WorkspaceStore {
         playlistDetails: [ServiceClient.APIPlaylistDetail],
         savedViews: [ServiceClient.APISavedView]
     ) {
+        let serviceIDs = Set(library.map { $0.song.song_id })
+        let staleLocalDeletes = deletedTrackIDs.intersection(serviceIDs).subtracting(pendingRemoteDeletedIDs)
+        if !staleLocalDeletes.isEmpty {
+            deletedTrackIDs.subtract(staleLocalDeletes)
+        }
+
         let tracks = library
             .map { item in serviceTrack(from: item) }
             .filter { !deletedTrackIDs.contains($0.id) }
@@ -525,6 +542,9 @@ final class WorkspaceStore {
             deleteImportedFile(at: removed.importedArtworkPath)
         }
         persist()
+        if wasService {
+            syncDeletedTrack(id)
+        }
         return true
     }
 
@@ -736,6 +756,29 @@ final class WorkspaceStore {
         }
     }
 
+    private func syncDeletedTrack(_ trackID: String) {
+        guard Config.useRemoteAPI else { return }
+        pendingRemoteDeletedIDs.insert(trackID)
+        syncState = .syncing
+        syncMessage = "Deleting song"
+        Task {
+            do {
+                try await ServiceClient.shared.deleteSong(trackID)
+                await MainActor.run {
+                    self.pendingRemoteDeletedIDs.remove(trackID)
+                    self.syncState = .synced
+                    self.syncMessage = "Synced with cloud"
+                }
+            } catch {
+                await MainActor.run {
+                    self.pendingRemoteDeletedIDs.remove(trackID)
+                    self.syncState = .offline
+                    self.syncMessage = "Delete saved locally"
+                }
+            }
+        }
+    }
+
     @MainActor
     func createShareLink(for track: Track, allowDownload: Bool = false) async throws -> String {
         try await createShareLinkDetails(for: track, allowDownload: allowDownload).url
@@ -848,6 +891,88 @@ final class WorkspaceStore {
         guard let i = inbox.firstIndex(where: { $0.id == id }) else { return }
         inbox[i].isNew.toggle()
         persist()
+    }
+
+    // MARK: attention ("On your desk")
+
+    /// Scored attention list backing Home's "On your desk" section.
+    /// score = 3 × pending signal (new inbox share / open notes)
+    ///       + 2 × recency of user touch (7-day linear decay)
+    ///       + 1 × play frequency — approximated by the same recency until a
+    ///         real play history exists. // TODO: true 7-day play frequency.
+    func deskEntries(limit: Int = 6, excluding excludedRefIDs: Set<String> = []) -> [DeskEntry] {
+        let now = Date()
+        func recency(_ refID: String) -> Double {
+            guard let date = activity[refID] else { return 0 }
+            let days = now.timeIntervalSince(date) / 86_400
+            return max(0, 1 - days / 7)
+        }
+        func noteReason(_ count: Int) -> String {
+            "\(count) open \(count == 1 ? "note" : "notes")"
+        }
+
+        var entries: [DeskEntry] = []
+
+        for track in tracks {
+            let ref = PinRef(kind: .song, targetID: track.id)
+            guard !excludedRefIDs.contains(ref.id) else { continue }
+            var score = 0.0
+            var reason: String?
+            let openNotes = openCount(track.id)
+            if openNotes > 0 {
+                score += 3
+                reason = noteReason(openNotes)
+            }
+            if let share = inbox.first(where: { $0.trackID == track.id && $0.isNew }) {
+                score += 3
+                if reason == nil { reason = "Shared by \(share.sharedBy)" }
+            }
+            // TODO: "Left off at m:ss" reason + score once per-track last
+            // playback positions are persisted (none exist in the store yet).
+            let touch = recency(ref.id)
+            score += 2 * touch
+            score += 1 * touch  // play-frequency stand-in, see header comment
+            if score > 0 { entries.append(DeskEntry(ref: ref, score: score, reason: reason)) }
+        }
+
+        for playlist in playlists {
+            let ref = PinRef(kind: .playlist, targetID: playlist.id)
+            guard !excludedRefIDs.contains(ref.id) else { continue }
+            var score = 0.0
+            var reason: String?
+            let openNotes = playlist.trackIDs.reduce(0) { $0 + openCount($1) }
+            if openNotes > 0 {
+                score += 3
+                reason = noteReason(openNotes)
+            }
+            let unheard = playlist.trackIDs.filter { id in inbox.contains { $0.trackID == id && $0.isNew } }.count
+            if unheard > 0, !playlist.trackIDs.isEmpty {
+                score += 3
+                if reason == nil {
+                    reason = "\(playlist.trackIDs.count - unheard) of \(playlist.trackIDs.count) heard"
+                }
+            }
+            let touch = recency(ref.id)
+            score += 3 * touch
+            if score > 0 { entries.append(DeskEntry(ref: ref, score: score, reason: reason)) }
+        }
+
+        for room in rooms {
+            let ref = PinRef(kind: .room, targetID: room.id)
+            guard !excludedRefIDs.contains(ref.id) else { continue }
+            var score = 0.0
+            var reason: String?
+            let openNotes = room.trackIDs.reduce(0) { $0 + openCount($1) }
+            if openNotes > 0 {
+                score += 3
+                reason = noteReason(openNotes)
+            }
+            let touch = recency(ref.id)
+            score += 3 * touch
+            if score > 0 { entries.append(DeskEntry(ref: ref, score: score, reason: reason)) }
+        }
+
+        return Array(entries.sorted { $0.score > $1.score }.prefix(limit))
     }
 
     func displayTitle(_ id: String, _ fallback: String) -> String {

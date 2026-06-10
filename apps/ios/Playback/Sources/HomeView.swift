@@ -20,9 +20,9 @@ struct HomeView: View {
     var player: Player
     var store: WorkspaceStore
     var openSong: (String) -> Void
+    var openLibrary: () -> Void = {}
     @State private var creationSheet: HomeCreationSheet?
     @State private var heroIndex = 0
-    @State private var recentVisibleCount = 12
     @State private var bulkMode: BulkSelectionMode?
     @State private var selectedTrackIDs: Set<String> = []
     @State private var confirmBulkDelete = false
@@ -32,8 +32,7 @@ struct HomeView: View {
     @State private var springboardPlaylist: Playlist?
     private let heroAdvance = Timer.publish(every: 12, on: .main, in: .common).autoconnect()
 
-    private let recentCountStep = 5
-    private let maxRecentCount = 30
+    private let maxDeskCount = 6
     private let pinsPerPage = 3
     private let heroAspectRatio: CGFloat = 3.0 / 4.0
     private var heroFrameWidth: CGFloat {
@@ -88,11 +87,19 @@ struct HomeView: View {
         }
         .map(\.element)
     }
-    private var displayedRecents: [PinRef] {
-        Array(recents.prefix(min(recentVisibleCount, maxRecentCount)))
-    }
-    private var canShowMoreRecents: Bool {
-        displayedRecents.count < recents.count && displayedRecents.count < maxRecentCount
+    /// Scored attention list, deduped against the hero carousel and topped up
+    /// with plain recency so Home is never empty. Capped at `maxDeskCount`.
+    private var deskItems: [DeskEntry] {
+        let excluded = Set(heroTrackIDs.map { PinRef(kind: .song, targetID: $0).id })
+        var items = store.deskEntries(limit: maxDeskCount, excluding: excluded)
+        if items.count < maxDeskCount {
+            let seen = Set(items.map(\.id))
+            for ref in recents where !seen.contains(ref.id) && !excluded.contains(ref.id) {
+                items.append(DeskEntry(ref: ref, score: 0, reason: nil))
+                if items.count == maxDeskCount { break }
+            }
+        }
+        return items
     }
     private var selectedTracks: [Track] {
         store.tracks.filter { selectedTrackIDs.contains($0.id) }
@@ -104,10 +111,6 @@ struct HomeView: View {
             seen.insert(track.id)
             return true
         }
-    }
-
-    private func showMoreRecents() {
-        recentVisibleCount = min(recentVisibleCount + recentCountStep, maxRecentCount, recents.count)
     }
 
     private func beginSelection(with id: String, mode: BulkSelectionMode) {
@@ -165,16 +168,14 @@ struct HomeView: View {
                         }
                     }
 
-                    if !recents.isEmpty {
-                        section("Recent") {
+                    if !deskItems.isEmpty {
+                        section("On your desk") {
                             VStack(spacing: 0) {
-                                ForEach(displayedRecents, id: \.id) { ref in
-                                    recentRow(ref)
+                                ForEach(deskItems) { entry in
+                                    deskRow(entry)
                                 }
 
-                                if canShowMoreRecents {
-                                    moreRecentsButton
-                                }
+                                moreRecentsButton
                             }
                         }
                     }
@@ -541,12 +542,12 @@ struct HomeView: View {
         }
     }
 
-    private func trackRow(_ t: Track, showOpen: Bool) -> some View {
+    private func trackRow(_ t: Track, showOpen: Bool, subtitle: String? = nil) -> some View {
         HStack(spacing: 13) {
             swatch(t, 44)
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.displayTitle(t.id, t.title)).font(PB.display(17)).foregroundStyle(PB.cream)
-                MonoLabel("\(t.artist) · \(t.versionLabel)", color: PB.pencil, size: 9, tracking: 1.2)
+                MonoLabel(subtitle ?? "\(t.artist) · \(t.versionLabel)", color: PB.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
             if showOpen, store.openCount(t.id) > 0 {
@@ -558,56 +559,20 @@ struct HomeView: View {
         .contentShape(Rectangle())
     }
 
-    private func homeTrackItem(_ t: Track, showOpen: Bool) -> some View {
-        let inHolding = bulkMode == .holding && !selectedTrackIDs.isEmpty
-        let isSelected = selectedTrackIDs.contains(t.id)
-        // In holding mode: selected rows carry the full pile; unselected rows are
-        // drop targets so the user can "drop on a song to create playlist."
-        let dragEnabled = bulkMode == nil || (inHolding && isSelected)
-        let dropEnabled = bulkMode == nil || (inHolding && !isSelected)
-
-        return HStack(spacing: 8) {
-            if bulkMode != nil {
-                Button { toggleSelection(t.id) } label: {
-                    SelectionMark(isSelected: isSelected)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isSelected
-                    ? "Deselect \(store.displayTitle(t.id, t.title))"
-                    : "Select \(store.displayTitle(t.id, t.title))")
-            }
-
-            Button {
-                if bulkMode != nil {
-                    toggleSelection(t.id)
-                } else {
-                    openSong(t.id)
-                }
-            } label: {
-                trackRow(t, showOpen: showOpen)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                beginSelection(with: t.id, mode: .holding)
-            })
-
-            // Pile badge — visible on selected rows in holding mode
-            if inHolding && isSelected {
-                PileBadge(count: selectedTrackIDs.count)
-                    .padding(.trailing, 4)
-            }
+    private func homeTrackItem(_ t: Track, showOpen: Bool, subtitle: String? = nil) -> some View {
+        InteractiveSongItem(
+            track: t,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            onOpen: { openSong(t.id) },
+            onSpringboardDrop: handleSpringboardDrop
+        ) {
+            trackRow(t, showOpen: showOpen, subtitle: subtitle)
+        } idleAccessory: {
+            EmptyView()
         }
-        .springboardDraggable(trackID: t.id, track: t, store: store,
-                              enabled: bulkMode == nil)
-        .springboardPileDraggable(pileIDs: Array(selectedTrackIDs),
-                                  pileTracks: selectedTracks,
-                                  store: store,
-                                  enabled: inHolding && isSelected)
-        .springboardDropTarget(targetID: t.id, enabled: dropEnabled,
-                               onDrop: handleSpringboardDrop)
-        .songActionsMenu(store, t)
-        .selectionDragTarget(id: t.id)
     }
 
     private func createPlaylistFromSelection() {
@@ -667,11 +632,11 @@ struct HomeView: View {
 
     private var moreRecentsButton: some View {
         Button {
-            showMoreRecents()
+            openLibrary()
         } label: {
             HStack(spacing: 8) {
                 MonoLabel("More", color: PB.cobalt, size: 10, tracking: 1.6)
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(PB.cobalt)
             }
@@ -680,7 +645,7 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Show more recent items")
+        .accessibilityLabel("Open library")
     }
 
     /// Songs, playlists, and projects ordered by recent activity (untouched
@@ -702,17 +667,17 @@ struct HomeView: View {
         return entries.sorted { $0.1 > $1.1 }.map { $0.0 }
     }
 
-    @ViewBuilder private func recentRow(_ ref: PinRef) -> some View {
-        if ref.kind == .song, let track = store.track(ref.targetID) {
-            homeTrackItem(track, showOpen: false)
+    @ViewBuilder private func deskRow(_ entry: DeskEntry) -> some View {
+        if entry.ref.kind == .song, let track = store.track(entry.ref.targetID) {
+            homeTrackItem(track, showOpen: false, subtitle: entry.reason)
         } else {
-            recentNavigationRow(ref)
+            recentNavigationRow(entry.ref, reason: entry.reason)
         }
     }
 
-    @ViewBuilder private func recentNavigationRow(_ ref: PinRef) -> some View {
+    @ViewBuilder private func recentNavigationRow(_ ref: PinRef, reason: String? = nil) -> some View {
         let cover = pinnedCover(ref, store) ?? featured
-        let sub = pinnedSubtitle(ref)
+        let sub = reason ?? pinnedSubtitle(ref)
         let row = HStack(spacing: 13) {
             TrackArtwork(track: cover, cornerRadius: 8)
                 .frame(width: 44, height: 44)
@@ -743,6 +708,10 @@ struct HomeView: View {
     @ViewBuilder private func pinCard(_ ref: PinRef, size: CGFloat? = nil) -> some View {
         let size = size ?? pinCardSize
         let cover = pinnedCover(ref, store) ?? featured
+        let pinnedTrack = ref.kind == .song ? store.track(ref.targetID) : nil
+        let inHolding = bulkMode == .holding && !selectedTrackIDs.isEmpty
+        let isSelected = selectedTrackIDs.contains(ref.targetID)
+        let dropEnabled = ref.kind == .song && (bulkMode == nil || (inHolding && !isSelected))
         let card = VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .topTrailing) {
                 TrackArtwork(track: cover, cornerRadius: 12)
@@ -776,30 +745,52 @@ struct HomeView: View {
         Group {
             switch ref.kind {
             case .song:
-                Button {
-                    if bulkMode != nil {
-                        toggleSelection(ref.targetID)
-                    } else {
-                        openSong(ref.targetID)
+                if let pinnedTrack {
+                    Button {
+                        if bulkMode != nil {
+                            toggleSelection(ref.targetID)
+                        } else {
+                            openSong(ref.targetID)
+                        }
+                    } label: {
+                        card
                     }
-                } label: {
-                    card
+                    .buttonStyle(.plain)
+                    .overlay(alignment: .topTrailing) {
+                        if bulkMode == nil {
+                            SongActionsButton(store: store, track: pinnedTrack)
+                                .scaleEffect(0.72)
+                                .frame(width: 34, height: 34)
+                                .padding(2)
+                        }
+                    }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                        beginSelection(with: ref.targetID, mode: .holding)
+                    })
+                    .springboardDraggable(trackID: ref.targetID, track: pinnedTrack, store: store,
+                                          enabled: bulkMode == nil)
+                    .springboardPileDraggable(pileIDs: Array(selectedTrackIDs),
+                                              pileTracks: selectedTracks,
+                                              store: store,
+                                              enabled: inHolding && isSelected)
+                    .springboardDropTarget(targetID: ref.targetID, enabled: dropEnabled,
+                                           onDrop: handleSpringboardDrop)
+                    .selectionDragTarget(id: ref.targetID)
                 }
-                .buttonStyle(.plain)
-                .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                    beginSelection(with: ref.targetID, mode: .holding)
-                })
             case .playlist:
                 if let pl = store.playlist(ref.targetID) {
-                    NavigationLink(value: pl) { card }.buttonStyle(.plain)
+                    NavigationLink(value: pl) { card }
+                        .buttonStyle(.plain)
+                        .pinMenu(store, ref)
                 } else { card }
             case .room:
                 if let rm = store.rooms.first(where: { $0.id == ref.targetID }) {
-                    NavigationLink(value: rm) { card }.buttonStyle(.plain)
+                    NavigationLink(value: rm) { card }
+                        .buttonStyle(.plain)
+                        .pinMenu(store, ref)
                 } else { card }
             }
         }
-        .pinMenu(store, ref)
     }
 
     private func pinnedSubtitle(_ ref: PinRef) -> String {

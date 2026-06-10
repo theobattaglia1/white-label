@@ -462,7 +462,9 @@ final class WorkspaceStore {
         let song = item.song
         let version = item.current_version
         let asset = item.asset
-        let colors = Self.palette(for: abs(song.song_id.hashValue))
+        // Stable per-song palette — `hashValue` is reseeded every launch,
+        // which made fallback covers reshuffle between runs.
+        let colors = MeshPalette.hexes(for: song.song_id)
         return Track(
             id: song.song_id,
             remoteAudioURL: serviceURL(asset?.playback_url),
@@ -1297,6 +1299,14 @@ extension WorkspaceStore {
 
     func artistProjects(_ artist: ArtistSummary) -> [Room] {
         artist.projectIDs.compactMap { id in rooms.first { $0.id == id } }
+    }
+
+    /// Tracks in a room that still resolve in the library — the single source
+    /// of truth for project song counts. `room.trackIDs` can carry stale ids
+    /// (deleted songs, static sample rooms), which made project counts drift
+    /// from the artist counts computed from `tracks`.
+    func roomTracks(_ room: Room) -> [Track] {
+        room.trackIDs.compactMap { track($0) }
     }
 
     static func normalizedArtistName(_ value: String) -> String {

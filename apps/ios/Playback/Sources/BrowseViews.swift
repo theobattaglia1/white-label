@@ -1038,12 +1038,7 @@ struct LibraryView: View {
             if let cover {
                 trackSwatch(cover, 44)
             } else {
-                Image(systemName: "person.crop.circle")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(PB.cream)
-                    .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PB.panel))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(PB.cream.opacity(0.1), lineWidth: 1))
+                InitialsCover(id: artist.id, name: artist.name, size: 44)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name).font(PB.display(17)).foregroundStyle(PB.cream)
@@ -1177,12 +1172,20 @@ struct LibraryView: View {
     }
 
     private func roomRow(_ rm: Room) -> some View {
-        let cover = rm.trackIDs.compactMap { store.track($0) }.first
+        let tracks = store.roomTracks(rm)
+        let songText = tracks.count == 1 ? "1 song" : "\(tracks.count) songs"
+        // Skip the artist prefix when the project is self-titled — repeating
+        // the title as the subtitle reads as duplicate context.
+        let selfTitled = rm.title.compare(rm.artist, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
         return HStack(spacing: 13) {
-            if let cover { trackSwatch(cover, 44) }
+            if let cover = tracks.first {
+                trackSwatch(cover, 44)
+            } else {
+                InitialsCover(id: rm.id, name: rm.title, size: 44)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(rm.title).font(PB.display(17)).foregroundStyle(PB.cream)
-                MonoLabel("\(rm.artist) · \(rm.trackIDs.count) songs", color: PB.pencil, size: 9, tracking: 1.2)
+                MonoLabel(selfTitled ? songText : "\(rm.artist) · \(songText)", color: PB.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(PB.pencil)
@@ -1450,21 +1453,16 @@ struct ArtistDetailView: View {
     }
 
     private func artistProjectRow(_ room: Room) -> some View {
-        let cover = room.trackIDs.compactMap { store.track($0) }.first
+        let tracks = store.roomTracks(room)
         return HStack(spacing: 13) {
-            if let cover {
+            if let cover = tracks.first {
                 trackSwatch(cover, 44)
             } else {
-                Image(systemName: "folder")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(PB.cream)
-                    .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PB.panel))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(PB.cream.opacity(0.1), lineWidth: 1))
+                InitialsCover(id: room.id, name: room.title, size: 44)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(room.title).font(PB.display(17)).foregroundStyle(PB.cream)
-                MonoLabel("\(room.trackIDs.count) songs", color: PB.pencil, size: 9, tracking: 1.2)
+                MonoLabel(tracks.count == 1 ? "1 song" : "\(tracks.count) songs", color: PB.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(PB.pencil)

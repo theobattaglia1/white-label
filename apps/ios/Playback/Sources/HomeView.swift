@@ -818,13 +818,21 @@ struct HomeView: View {
     }
 
     private func roomRow(_ rm: Room) -> some View {
-        HStack(spacing: 13) {
-            let cover = rm.trackIDs.compactMap { store.track($0) }.first ?? featured
-            TrackArtwork(track: cover, cornerRadius: 8)
-                .frame(width: 44, height: 44)
+        let tracks = store.roomTracks(rm)
+        let songText = tracks.count == 1 ? "1 song" : "\(tracks.count) songs"
+        // Skip the artist prefix when the project is self-titled — repeating
+        // the title as the subtitle reads as duplicate context.
+        let selfTitled = rm.title.compare(rm.artist, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        return HStack(spacing: 13) {
+            if let cover = tracks.first {
+                TrackArtwork(track: cover, cornerRadius: 8)
+                    .frame(width: 44, height: 44)
+            } else {
+                InitialsCover(id: rm.id, name: rm.title, size: 44)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(rm.title).font(PB.display(17)).foregroundStyle(PB.cream)
-                MonoLabel("\(rm.artist) · \(rm.trackIDs.count) songs", color: PB.pencil, size: 9, tracking: 1.2)
+                MonoLabel(selfTitled ? songText : "\(rm.artist) · \(songText)", color: PB.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(PB.pencil)

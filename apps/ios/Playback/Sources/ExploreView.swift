@@ -463,11 +463,7 @@ struct ExploreView: View {
                 TrackArtwork(track: cover, cornerRadius: 7)
                     .frame(width: 46, height: 46)
             } else {
-                Image(systemName: "person.crop.circle")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(PB.cream)
-                    .frame(width: 46, height: 46)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PB.cream.opacity(0.08)))
+                InitialsCover(id: artist.id, name: artist.name, size: 46, cornerRadius: 7)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name)
@@ -509,21 +505,11 @@ struct ExploreView: View {
         }
     }
 
-    private var syncColor: Color {
-        switch store.syncState {
-        case .synced: return PB.green
-        case .syncing, .saving: return PB.cobalt
-        case .offline, .error: return PB.redline
-        default: return PB.pencil
-        }
-    }
-
     private var syncStrip: some View {
+        // Cloud status detail lives on Profile — this strip stays a plain
+        // library count so the same state isn't reported in two places.
         HStack(spacing: 10) {
-            Circle()
-                .fill(syncColor)
-                .frame(width: 7, height: 7)
-            MonoLabel(store.syncMessage, color: PB.pencil, size: 9, tracking: 1.2)
+            MonoLabel("Library", color: PB.pencil, size: 9, tracking: 1.2)
             Spacer()
             MonoLabel("\(store.tracks.count) songs", color: PB.cream.opacity(0.7), size: 9, tracking: 1.2)
         }

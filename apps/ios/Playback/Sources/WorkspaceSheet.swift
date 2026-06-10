@@ -148,7 +148,7 @@ struct WorkspacePage: View {
                 MonoLabel("\(store.openCount(trackID)) open", color: PB.redline, size: 9, tracking: 1.4)
             }
             composer
-            ForEach(store.notes(trackID)) { note in
+            ForEach(dedupedNotes) { note in
                 noteRow(note)
             }
         }
@@ -237,7 +237,7 @@ struct WorkspacePage: View {
                             .frame(width: 28, height: 20)
                     }
                 }
-                Text(styled(note.body))
+                Text(styled(displayBody(note.body)))
                     .font(PB.text(14))
                     .foregroundStyle(note.resolved ? PB.pencil : PB.cream.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)
@@ -248,6 +248,27 @@ struct WorkspacePage: View {
     }
 
     // MARK: helpers
+
+    /// Server sync can briefly double-insert a note (local echo + fetched
+    /// copy). Collapse render-time duplicates with the same author, body, and
+    /// timestamp — the canonical record still lives in the store.
+    private var dedupedNotes: [Note] {
+        var seen = Set<String>()
+        return store.notes(trackID).filter { note in
+            seen.insert("\(note.author)|\(note.body)|\(note.positionMs ?? -1)").inserted
+        }
+    }
+
+    /// Older server report notes rendered raw JSON ("… · decisions {} · top
+    /// moments 0"). Humanize those fragments at display time; the stored note
+    /// body is left untouched.
+    private func displayBody(_ body: String) -> String {
+        guard body.contains("decisions {") || body.contains("· top moments") else { return body }
+        var out = body
+        out = out.replacingOccurrences(of: "decisions {}", with: "no decisions")
+        out = out.replacingOccurrences(of: " · top moments 0", with: "")
+        return out
+    }
 
     private func insertMention(_ member: String) {
         let first = member.split(separator: " ").first.map(String.init) ?? member

@@ -16,10 +16,17 @@ final class Player {
     var isPlaying: Bool = false
     var positionMs: Int = 0
     var started: Bool = false
+    /// True when a real source (remote stream / imported file) failed or
+    /// stalled — the UI surfaces this instead of pretending to play.
+    var audioUnavailable: Bool = false
 
     @ObservationIgnored private var audio: AVAudioPlayer?
     @ObservationIgnored private var remoteAudio: AVPlayer?
     @ObservationIgnored private var ticker: Timer?
+    @ObservationIgnored private var itemStatusObservation: NSKeyValueObservation?
+    @ObservationIgnored private var timeControlObservation: NSKeyValueObservation?
+    @ObservationIgnored private var stallStartedAt: Date?
+    @ObservationIgnored private let stallGraceSeconds: TimeInterval = 3
 
     init(queue: [Track], index: Int = 0) {
         self.queue = queue
@@ -67,6 +74,9 @@ final class Player {
 
     func play() {
         if audio == nil && remoteAudio == nil { load() }
+        // Retry a stream that previously failed instead of replaying a dead item.
+        if remoteAudio?.currentItem?.status == .failed { load() }
+        stallStartedAt = nil
         audio?.play()
         remoteAudio?.play()
         isPlaying = true
@@ -113,13 +123,19 @@ final class Player {
     private func load() {
         audio = nil
         remoteAudio = nil
+        itemStatusObservation = nil
+        timeControlObservation = nil
+        stallStartedAt = nil
+        audioUnavailable = false
         if let path = track.importedAudioPath, let url = importedAudioURL(path) {
             audio = try? AVAudioPlayer(contentsOf: url)
             audio?.prepareToPlay()
             return
         }
         if let remote = track.remoteAudioURL, let url = remoteAudioURL(remote) {
-            remoteAudio = AVPlayer(url: url)
+            let item = AVPlayerItem(url: url)
+            remoteAudio = AVPlayer(playerItem: item)
+            observeRemote(item)
             return
         }
         guard let file = track.audio else { return }
@@ -139,6 +155,37 @@ final class Player {
                 .appendingPathComponent(path)
         }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Watch the stream's health: hard failures flip `audioUnavailable`
+    /// immediately; buffering longer than the grace period counts as a stall.
+    private func observeRemote(_ item: AVPlayerItem) {
+        itemStatusObservation = item.observe(\.status) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            DispatchQueue.main.async { self?.markAudioUnavailable() }
+        }
+        timeControlObservation = remoteAudio?.observe(\.timeControlStatus) { [weak self] player, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch player.timeControlStatus {
+                case .playing:
+                    self.stallStartedAt = nil
+                    self.audioUnavailable = false
+                case .waitingToPlayAtSpecifiedRate:
+                    if self.stallStartedAt == nil { self.stallStartedAt = Date() }
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    /// Stop pretending: surface the failure, un-latch the transport, pause.
+    private func markAudioUnavailable() {
+        guard !audioUnavailable else { return }
+        audioUnavailable = true
+        stallStartedAt = nil
+        pause()
     }
 
     private func remoteAudioURL(_ value: String) -> URL? {
@@ -216,8 +263,20 @@ final class Player {
                 if seconds.isFinite { self.positionMs = Int(seconds * 1000) }
                 if player.rate == 0, self.isPlaying, self.positionMs >= self.durationMs - 250 {
                     self.next()
+                } else if self.isPlaying, player.timeControlStatus != .playing {
+                    // stream isn't actually moving — give it a grace period, then stop pretending
+                    if self.stallStartedAt == nil { self.stallStartedAt = Date() }
+                    if let start = self.stallStartedAt, Date().timeIntervalSince(start) > self.stallGraceSeconds {
+                        self.markAudioUnavailable()
+                    }
+                } else {
+                    self.stallStartedAt = nil
                 }
+            } else if self.track.remoteAudioURL != nil || self.track.importedAudioPath != nil {
+                // a real source failed to load — never tick virtually for it
+                self.markAudioUnavailable()
             } else {
+                // virtual ticker is for bundled sample/demo tracks only
                 self.positionMs += 50
                 if self.positionMs >= self.durationMs { self.next() }
             }

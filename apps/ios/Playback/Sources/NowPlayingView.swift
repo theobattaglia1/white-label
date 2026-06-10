@@ -49,8 +49,7 @@ struct NowPlayingView: View {
                 TransportBar(
                     isPlaying: player.isPlaying,
                     onBack:    { player.prev() },
-                    onPlay:    { player.play() },
-                    onPause:   { player.pause() },
+                    onToggle:  { player.toggle() },
                     onForward: { player.next() },
                     onNote:    { onQuickNote() }
                 )
@@ -167,6 +166,15 @@ struct NowPlayingView: View {
     // MARK: - Scrubber
 
     private var scrubber: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if player.audioUnavailable {
+                MonoLabel("AUDIO UNAVAILABLE", color: PB.redline, size: 9, tracking: 1.6)
+            }
+            scrubberRow
+        }
+    }
+
+    private var scrubberRow: some View {
         HStack(spacing: 12) {
             Text(player.positionMs.clock)
                 .font(PB.mono(10)).foregroundStyle(PB.cream.opacity(0.5)).monospacedDigit()

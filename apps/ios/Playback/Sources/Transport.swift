@@ -9,8 +9,7 @@ import UIKit
 struct TransportBar: View {
     var isPlaying: Bool
     var onBack: () -> Void
-    var onPlay: () -> Void
-    var onPause: () -> Void
+    var onToggle: () -> Void
     var onForward: () -> Void
     var onNote: () -> Void
 
@@ -21,8 +20,8 @@ struct TransportBar: View {
     var body: some View {
         HStack(spacing: 13) {
             key(.back, held: false, face: greyFace, wall: greyWall, ink: darkInk, onBack)
-            key(.play, held: isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onPlay)
-            key(.pause, held: !isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onPause)
+            // single play/pause toggle — pause glyph while playing, latched down
+            key(isPlaying ? .pause : .play, held: isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onToggle)
             key(.forward, held: false, face: greyFace, wall: greyWall, ink: darkInk, onForward)
             key(.note, held: false, face: noteFace, wall: noteWall, ink: PB.cream, onNote)
         }

@@ -69,6 +69,17 @@ struct AmbientDotField: View {
     }
 }
 
+/// Hosts the dot field and observes the player in its own body, so the
+/// 50ms position ticks invalidate only this lightweight view — never the
+/// whole screen that embeds it as a background.
+struct AmbientPlayerBackdrop: View {
+    var player: Player
+
+    var body: some View {
+        AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+    }
+}
+
 #Preview {
     ZStack {
         Color(hex: 0x0C0907).ignoresSafeArea()

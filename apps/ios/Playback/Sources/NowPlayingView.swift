@@ -121,12 +121,14 @@ struct NowPlayingView: View {
 
     // MARK: - Status row
 
+    // Buttons live OUTSIDE the timeline views: rebuilding the whole row at
+    // display refresh rate starved their tap recognition (inert chevron).
     private var statusRow: some View {
-        TimelineView(.animation) { ctx in
-            HStack(alignment: .bottom, spacing: 10) {
-                let angle = (ctx.date.timeIntervalSinceReferenceDate
-                    .truncatingRemainder(dividingBy: 9) / 9) * 360
-                Button { onMenu() } label: {
+        HStack(alignment: .bottom, spacing: 10) {
+            Button { onMenu() } label: {
+                TimelineView(.animation) { ctx in
+                    let angle = (ctx.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 9) / 9) * 360
                     ZStack {
                         Circle().fill(PB.cream.opacity(0.92))
                         Circle().strokeBorder(PB.cream.opacity(0.25), lineWidth: 0.75)
@@ -135,31 +137,32 @@ struct NowPlayingView: View {
                     }
                     .frame(width: 26, height: 26)
                     .rotationEffect(.degrees(angle))
-                    .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open player menu")
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open player menu")
+            TimelineView(.everyMinute) { ctx in
                 Text(ctx.date.formatted(.dateTime.hour().minute()))
                     .font(PB.mono(12)).tracking(1)
-                    .accessibilityHidden(true)
-                Spacer()
-                Button { onExit() } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(PB.cream.opacity(0.6))
-                        .frame(width: 28, height: 22).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close player")
-                Spacer()
-                MonoLabel(
-                    ctx.date.formatted(.dateTime.day().month(.twoDigits).year()),
-                    color: PB.cream.opacity(0.6), size: 10, tracking: 1.4
-                )
-                .accessibilityHidden(true)
             }
-            .foregroundStyle(PB.cream.opacity(0.85))
+            .accessibilityHidden(true)
+            Spacer()
+            Button { onExit() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(PB.cream.opacity(0.6))
+                    .frame(width: 44, height: 26).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close player")
+            Spacer()
+            MonoLabel(
+                track.versionLabel.uppercased(),
+                color: PB.cream.opacity(0.6), size: 10, tracking: 1.4
+            )
         }
+        .foregroundStyle(PB.cream.opacity(0.85))
         .frame(height: 26)
     }
 

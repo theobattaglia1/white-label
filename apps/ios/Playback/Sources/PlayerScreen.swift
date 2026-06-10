@@ -17,7 +17,9 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack {
             PB.black.ignoresSafeArea()
-            AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+            // Observes position ticks in its own body so the whole player
+            // doesn't re-evaluate every 50ms (kept taps from registering).
+            AmbientPlayerBackdrop(player: player)
                 .allowsHitTesting(false).ignoresSafeArea()
             GeometryReader { geo in
                 let top = geo.safeAreaInsets.top

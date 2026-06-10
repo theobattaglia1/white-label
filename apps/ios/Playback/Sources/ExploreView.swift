@@ -7,6 +7,12 @@ struct ExploreView: View {
     var openSong: (String) -> Void
     var openQueue: (String, [Track]) -> Void = { _, _ in }
     @State private var query = ""
+    @State private var bulkMode: BulkSelectionMode?
+    @State private var selectedTrackIDs: Set<String> = []
+    @State private var confirmBulkDelete = false
+    @State private var exploreNotice: PlaylistEditNotice?
+    @State private var springboardPlaylist: Playlist?
+    @State private var selectionDragTargets: [SelectionDragTarget] = []
     @FocusState private var searchFocused: Bool
 
     private var reviewTracks: [Track] {
@@ -20,35 +26,45 @@ struct ExploreView: View {
 
     private var hasQuery: Bool { !trimmedQuery.isEmpty }
 
+    /// Query folded once per filter pass instead of once per compared field.
+    private var queryKey: String {
+        trimmedQuery.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
     private var matchingArtists: [ArtistSummary] {
         guard hasQuery else { return store.artistSummaries }
-        return store.artistSummaries.filter { matches($0.name) }
+        let key = queryKey
+        return store.artistSummaries.filter { matches($0.name, key) }
     }
 
     private var matchingPlaylists: [Playlist] {
         guard hasQuery else { return store.playlists }
-        return store.playlists.filter { matches($0.title) || matches($0.subtitle) }
+        let key = queryKey
+        return store.playlists.filter { matches($0.title, key) || matches($0.subtitle, key) }
     }
 
     private var matchingProjects: [Room] {
         guard hasQuery else { return store.rooms }
-        return store.rooms.filter { matches($0.title) || matches($0.artist) }
+        let key = queryKey
+        return store.rooms.filter { matches($0.title, key) || matches($0.artist, key) }
     }
 
     private var matchingTracks: [Track] {
         guard hasQuery else { return store.tracks }
+        let key = queryKey
         return store.tracks.filter {
-            matches(store.displayTitle($0.id, $0.title))
-                || matches($0.artist)
-                || matches($0.label)
-                || matches($0.versionLabel)
-                || matches($0.catalog)
+            matches(store.displayTitle($0.id, $0.title), key)
+                || matches($0.artist, key)
+                || matches($0.label, key)
+                || matches($0.versionLabel, key)
+                || matches($0.catalog, key)
         }
     }
 
     private var matchingSavedViews: [SavedViewSummary] {
         guard hasQuery else { return store.savedViews }
-        return store.savedViews.filter { matches($0.name) || matches($0.detail) }
+        let key = queryKey
+        return store.savedViews.filter { matches($0.name, key) || matches($0.detail, key) }
     }
 
     private var hasResults: Bool {
@@ -59,14 +75,39 @@ struct ExploreView: View {
             || !matchingSavedViews.isEmpty
     }
 
+    private var visibleInteractionTracks: [Track] {
+        hasQuery ? matchingTracks : reviewTracks
+    }
+
+    private var selectedTracks: [Track] {
+        store.tracks.filter { selectedTrackIDs.contains($0.id) }
+    }
+
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
                 scrollToTopMarker()
                 VStack(alignment: .leading, spacing: 24) {
-                    AppScreenHeader(title: "Search", isPlaying: player.isPlaying)
+                    AppScreenHeader(title: "Search", isPlaying: player.isPlaying) {
+                        if !visibleInteractionTracks.isEmpty {
+                            Button {
+                                if bulkMode == nil {
+                                    bulkMode = .selecting
+                                } else {
+                                    clearSelection()
+                                }
+                            } label: {
+                                HeaderCircleIcon(systemName: bulkMode == nil ? "checkmark.circle" : "xmark.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(bulkMode == nil ? "Select songs" : "Done selecting")
+                        }
+                    }
                     searchField
                     syncStrip
+                    if let exploreNotice {
+                        editNotice(exploreNotice)
+                    }
 
                     if hasQuery {
                         resultSections
@@ -82,7 +123,9 @@ struct ExploreView: View {
             .scrollDismissesKeyboard(.interactively)
             .background {
                 PB.black.ignoresSafeArea()
-                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                // Observes position ticks in its own body — keeps this screen
+                // from re-laying-out 20×/sec while audio plays (search lag).
+                AmbientPlayerBackdrop(player: player)
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
             }
@@ -102,6 +145,53 @@ struct ExploreView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     searchFocused = true
                 }
+            }
+            .onPreferenceChange(SelectionDragTargetKey.self) { targets in
+                selectionDragTargets = targets
+            }
+            .twoFingerSelection(
+                enabled: !visibleInteractionTracks.isEmpty,
+                targets: selectionDragTargets,
+                onSelect: selectDuringDrag
+            )
+            .overlay(alignment: .bottom) {
+                if let bulkMode, !selectedTrackIDs.isEmpty {
+                    BulkSongActionBar(
+                        count: selectedTrackIDs.count,
+                        mode: bulkMode,
+                        playlists: store.playlists,
+                        rooms: store.rooms,
+                        projectLabel: "Project",
+                        canDelete: true,
+                        removeLabel: nil,
+                        onNewPlaylist: createPlaylistFromSelection,
+                        onAddToPlaylist: addSelection(to:),
+                        onMoveToProject: addSelection(to:),
+                        onShare: shareSelection,
+                        onDelete: { confirmBulkDelete = true },
+                        onRemove: nil,
+                        onClear: clearSelection
+                    )
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 94)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: selectedTrackIDs)
+            .confirmationDialog(
+                "Delete selected songs?",
+                isPresented: $confirmBulkDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete \(selectedTrackIDs.count) \(selectedTrackIDs.count == 1 ? "song" : "songs")", role: .destructive) {
+                    deleteSelectedSongs()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the selected songs from your Playback library. Imported audio and artwork files on this device will be deleted.")
+            }
+            .sheet(item: $springboardPlaylist) { playlist in
+                PlaylistDetailView(playlist: playlist, player: player, store: store, openSong: openSong, openQueue: openQueue)
             }
         }
     }
@@ -174,11 +264,8 @@ struct ExploreView: View {
         if !reviewTracks.isEmpty {
             section("Recent signals") {
                 ForEach(reviewTracks) { track in
-                    Button { openQueue(track.id, reviewTracks) } label: {
-                        songResultRow(track, trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil)
-                    }
-                    .buttonStyle(.plain)
-                    .songActionsMenu(store, track)
+                    exploreSongItem(track, queue: reviewTracks,
+                                    trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil)
                 }
             }
         }
@@ -186,12 +273,19 @@ struct ExploreView: View {
 
     @ViewBuilder
     private var resultSections: some View {
-        if !hasResults {
+        // Bind each result list once per render — the computed properties
+        // re-filter on every access, which multiplies per-keystroke work.
+        let artists = matchingArtists
+        let playlists = matchingPlaylists
+        let projects = matchingProjects
+        let tracks = matchingTracks
+        let savedViews = matchingSavedViews
+        if artists.isEmpty && playlists.isEmpty && projects.isEmpty && tracks.isEmpty && savedViews.isEmpty {
             noResults
         } else {
-            if !matchingArtists.isEmpty {
+            if !artists.isEmpty {
                 section("Artists") {
-                    ForEach(matchingArtists) { artist in
+                    ForEach(artists) { artist in
                         NavigationLink {
                             ArtistDetailView(artist: artist, player: player, store: store, openQueue: openQueue)
                         } label: {
@@ -202,9 +296,9 @@ struct ExploreView: View {
                 }
             }
 
-            if !matchingPlaylists.isEmpty {
+            if !playlists.isEmpty {
                 section("Playlists") {
-                    ForEach(matchingPlaylists) { playlist in
+                    ForEach(playlists) { playlist in
                         NavigationLink(value: playlist) {
                             exploreRow(icon: "text.badge.plus", title: playlist.title, detail: "\(playlist.trackIDs.count) tracks")
                         }
@@ -214,9 +308,9 @@ struct ExploreView: View {
                 }
             }
 
-            if !matchingProjects.isEmpty {
+            if !projects.isEmpty {
                 section("Projects") {
-                    ForEach(matchingProjects) { room in
+                    ForEach(projects) { room in
                         NavigationLink(value: room) {
                             exploreRow(icon: "folder", title: room.title, detail: "\(room.artist) · \(room.trackIDs.count) songs")
                         }
@@ -226,21 +320,17 @@ struct ExploreView: View {
                 }
             }
 
-            if !matchingTracks.isEmpty {
+            if !tracks.isEmpty {
                 section("Songs") {
-                    ForEach(matchingTracks) { track in
-                        Button { openQueue(track.id, matchingTracks) } label: {
-                            songResultRow(track)
-                        }
-                        .buttonStyle(.plain)
-                        .songActionsMenu(store, track)
+                    ForEach(tracks) { track in
+                        exploreSongItem(track, queue: tracks)
                     }
                 }
             }
 
-            if !matchingSavedViews.isEmpty {
+            if !savedViews.isEmpty {
                 section("Smart views") {
-                    ForEach(matchingSavedViews) { view in
+                    ForEach(savedViews) { view in
                         NavigationLink {
                             SavedViewDetailView(summary: view, player: player, store: store, openQueue: openQueue)
                         } label: {
@@ -265,10 +355,98 @@ struct ExploreView: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(PB.cream.opacity(0.07), lineWidth: 1))
     }
 
-    private func matches(_ value: String) -> Bool {
-        let key = value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        let queryKey = trimmedQuery.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        return key.contains(queryKey)
+    private func matches(_ value: String, _ key: String) -> Bool {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(key)
+    }
+
+    private func exploreSongItem(_ track: Track, queue: [Track], trailing: String? = nil) -> some View {
+        InteractiveSongItem(
+            track: track,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            onOpen: { openQueue(track.id, queue) },
+            onSpringboardDrop: handleSpringboardDrop
+        ) {
+            songResultRow(track, trailing: trailing)
+        } idleAccessory: {
+            EmptyView()
+        }
+    }
+
+    private func handleSpringboardDrop(_ ids: [String]) {
+        guard ids.count >= 2 else { return }
+        let tracks = ids.compactMap { store.track($0) }
+        let title = tracks.count == 2
+            ? "\(tracks[0].title) + \(tracks[1].title)"
+            : "\(tracks[0].title) + \(tracks.count - 1) more"
+        let playlist = store.createKeptPlaylist(title: title, trackIDs: ids)
+        clearSelection()
+        withAnimation(.easeInOut(duration: 0.18)) { springboardPlaylist = playlist }
+    }
+
+    private func selectDuringDrag(_ id: String) {
+        if bulkMode == nil { bulkMode = .selecting }
+        selectedTrackIDs.insert(id)
+    }
+
+    private func clearSelection() {
+        selectedTrackIDs.removeAll()
+        bulkMode = nil
+    }
+
+    private func createPlaylistFromSelection() {
+        guard !selectedTracks.isEmpty else { return }
+        _ = store.createKeptPlaylist(title: "Search Selection", trackIDs: selectedTracks.map(\.id))
+        showNotice("Playlist created")
+        clearSelection()
+    }
+
+    private func addSelection(to playlist: Playlist) {
+        selectedTracks.forEach { store.addTrack($0.id, toPlaylist: playlist.id) }
+        showNotice("Added to \(playlist.title)")
+        clearSelection()
+    }
+
+    private func addSelection(to room: Room) {
+        selectedTracks.forEach { store.addTrack($0.id, toProject: room.id) }
+        showNotice("Added to \(room.title)")
+        clearSelection()
+    }
+
+    private func shareSelection() {
+        guard copyShareLinks(selectedTracks, store: store) else { return }
+        showNotice(Config.useRemoteAPI ? "Titles copied" : "Share links copied")
+        clearSelection()
+    }
+
+    private func deleteSelectedSongs() {
+        let ids = selectedTrackIDs
+        let deleted = ids.reduce(0) { count, id in
+            count + (store.deleteTrack(id) ? 1 : 0)
+        }
+        if !store.tracks.isEmpty { player.replaceQueue(store.tracks) }
+        showNotice(deleted == 0 ? "Nothing deleted" : "Deleted \(deleted)")
+        clearSelection()
+    }
+
+    private func showNotice(_ message: String) {
+        let notice = PlaylistEditNotice(message: message)
+        withAnimation(.easeInOut(duration: 0.18)) { exploreNotice = notice }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            if exploreNotice?.id == notice.id {
+                withAnimation(.easeInOut(duration: 0.18)) { exploreNotice = nil }
+            }
+        }
+    }
+
+    private func editNotice(_ notice: PlaylistEditNotice) -> some View {
+        MonoLabel(notice.message, color: PB.green, size: 10, tracking: 1.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PB.green.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(PB.green.opacity(0.32), lineWidth: 1))
     }
 
     private func syncStripLabel(_ count: Int, singular: String, plural: String) -> String {
@@ -375,7 +553,9 @@ struct ExploreView: View {
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             MonoLabel(title, color: PB.pencil, size: 10, tracking: 2)
-            VStack(spacing: 0) { content() }
+            // Lazy: broad queries match hundreds of songs — only build the
+            // rows that scroll into view instead of the whole list per keystroke.
+            LazyVStack(spacing: 0) { content() }
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PB.panel.opacity(0.72)))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(PB.cream.opacity(0.07), lineWidth: 1))
         }
@@ -409,6 +589,12 @@ struct SavedViewDetailView: View {
     var player: Player
     var store: WorkspaceStore
     var openQueue: (String, [Track]) -> Void
+    @State private var bulkMode: BulkSelectionMode?
+    @State private var selectedTrackIDs: Set<String> = []
+    @State private var confirmBulkDelete = false
+    @State private var savedViewNotice: PlaylistEditNotice?
+    @State private var springboardPlaylist: Playlist?
+    @State private var selectionDragTargets: [SelectionDragTarget] = []
 
     private var tracks: [Track] {
         let descriptor = "\(summary.name) \(summary.detail)".lowercased()
@@ -418,28 +604,43 @@ struct SavedViewDetailView: View {
         }
         return store.tracks
     }
+    private var selectedTracks: [Track] { tracks.filter { selectedTrackIDs.contains($0.id) } }
 
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
                 scrollToTopMarker()
                 VStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        MonoLabel("Smart view", color: PB.pencil, size: 10, tracking: 2)
-                        Text(summary.name).font(PB.display(32)).foregroundStyle(PB.cream)
-                        MonoLabel("\(tracks.count) songs · \(summary.detail)", color: PB.pencil, size: 10, tracking: 1.1)
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            MonoLabel("Smart view", color: PB.pencil, size: 10, tracking: 2)
+                            Text(summary.name).font(PB.display(32)).foregroundStyle(PB.cream)
+                            MonoLabel("\(tracks.count) songs · \(summary.detail)", color: PB.pencil, size: 10, tracking: 1.1)
+                        }
+                        Spacer(minLength: 10)
+                        if !tracks.isEmpty {
+                            Button {
+                                if bulkMode == nil {
+                                    bulkMode = .selecting
+                                } else {
+                                    clearSelection()
+                                }
+                            } label: {
+                                HeaderCircleIcon(systemName: bulkMode == nil ? "checkmark.circle" : "xmark.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(bulkMode == nil ? "Select songs" : "Done selecting")
+                        }
                     }
                     .padding(.top, 40)
 
+                    if let savedViewNotice {
+                        editNotice(savedViewNotice)
+                    }
+
                     VStack(spacing: 0) {
                         ForEach(tracks) { track in
-                            Button { openQueue(track.id, tracks) } label: {
-                                SongRow(track: track, store: store,
-                                        trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil,
-                                        trailingColor: PB.redline)
-                            }
-                            .buttonStyle(.plain)
-                            .songActionsMenu(store, track)
+                            savedViewSongItem(track)
                         }
                     }
                 }
@@ -459,6 +660,146 @@ struct SavedViewDetailView: View {
                 TopTapScrollHotspot { scrollToTop(scrollProxy) }
             }
             .overlay(alignment: .topLeading) { BackButton().padding(.leading, 16).padding(.top, 6) }
+            .onPreferenceChange(SelectionDragTargetKey.self) { targets in
+                selectionDragTargets = targets
+            }
+            .twoFingerSelection(
+                enabled: !tracks.isEmpty,
+                targets: selectionDragTargets,
+                onSelect: selectDuringDrag
+            )
+            .overlay(alignment: .bottom) {
+                if let bulkMode, !selectedTrackIDs.isEmpty {
+                    BulkSongActionBar(
+                        count: selectedTrackIDs.count,
+                        mode: bulkMode,
+                        playlists: store.playlists,
+                        rooms: store.rooms,
+                        projectLabel: "Project",
+                        canDelete: true,
+                        removeLabel: nil,
+                        onNewPlaylist: createPlaylistFromSelection,
+                        onAddToPlaylist: addSelection(to:),
+                        onMoveToProject: addSelection(to:),
+                        onShare: shareSelection,
+                        onDelete: { confirmBulkDelete = true },
+                        onRemove: nil,
+                        onClear: clearSelection
+                    )
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 94)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: selectedTrackIDs)
+            .confirmationDialog(
+                "Delete selected songs?",
+                isPresented: $confirmBulkDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete \(selectedTrackIDs.count) \(selectedTrackIDs.count == 1 ? "song" : "songs")", role: .destructive) {
+                    deleteSelectedSongs()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the selected songs from your Playback library. Imported audio and artwork files on this device will be deleted.")
+            }
+            .sheet(item: $springboardPlaylist) { playlist in
+                PlaylistDetailView(playlist: playlist, player: player, store: store,
+                                   openSong: { id in openQueue(id, store.tracks) }, openQueue: openQueue)
+            }
         }
+    }
+
+    private func savedViewSongItem(_ track: Track) -> some View {
+        InteractiveSongItem(
+            track: track,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            onOpen: { openQueue(track.id, tracks) },
+            onSpringboardDrop: handleSpringboardDrop
+        ) {
+            SongRow(track: track, store: store,
+                    trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil,
+                    trailingColor: PB.redline)
+        } idleAccessory: {
+            EmptyView()
+        }
+    }
+
+    private func handleSpringboardDrop(_ ids: [String]) {
+        guard ids.count >= 2 else { return }
+        let tracks = ids.compactMap { store.track($0) }
+        let title = tracks.count == 2
+            ? "\(tracks[0].title) + \(tracks[1].title)"
+            : "\(tracks[0].title) + \(tracks.count - 1) more"
+        let playlist = store.createKeptPlaylist(title: title, trackIDs: ids)
+        clearSelection()
+        withAnimation(.easeInOut(duration: 0.18)) { springboardPlaylist = playlist }
+    }
+
+    private func selectDuringDrag(_ id: String) {
+        if bulkMode == nil { bulkMode = .selecting }
+        selectedTrackIDs.insert(id)
+    }
+
+    private func clearSelection() {
+        selectedTrackIDs.removeAll()
+        bulkMode = nil
+    }
+
+    private func createPlaylistFromSelection() {
+        guard !selectedTracks.isEmpty else { return }
+        _ = store.createKeptPlaylist(title: "\(summary.name) Selection", trackIDs: selectedTracks.map(\.id))
+        showNotice("Playlist created")
+        clearSelection()
+    }
+
+    private func addSelection(to playlist: Playlist) {
+        selectedTracks.forEach { store.addTrack($0.id, toPlaylist: playlist.id) }
+        showNotice("Added to \(playlist.title)")
+        clearSelection()
+    }
+
+    private func addSelection(to room: Room) {
+        selectedTracks.forEach { store.addTrack($0.id, toProject: room.id) }
+        showNotice("Added to \(room.title)")
+        clearSelection()
+    }
+
+    private func shareSelection() {
+        guard copyShareLinks(selectedTracks, store: store) else { return }
+        showNotice(Config.useRemoteAPI ? "Titles copied" : "Share links copied")
+        clearSelection()
+    }
+
+    private func deleteSelectedSongs() {
+        let ids = selectedTrackIDs
+        let deleted = ids.reduce(0) { count, id in
+            count + (store.deleteTrack(id) ? 1 : 0)
+        }
+        if !store.tracks.isEmpty { player.replaceQueue(store.tracks) }
+        showNotice(deleted == 0 ? "Nothing deleted" : "Deleted \(deleted)")
+        clearSelection()
+    }
+
+    private func showNotice(_ message: String) {
+        let notice = PlaylistEditNotice(message: message)
+        withAnimation(.easeInOut(duration: 0.18)) { savedViewNotice = notice }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            if savedViewNotice?.id == notice.id {
+                withAnimation(.easeInOut(duration: 0.18)) { savedViewNotice = nil }
+            }
+        }
+    }
+
+    private func editNotice(_ notice: PlaylistEditNotice) -> some View {
+        MonoLabel(notice.message, color: PB.green, size: 10, tracking: 1.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PB.green.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(PB.green.opacity(0.32), lineWidth: 1))
     }
 }

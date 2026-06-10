@@ -19,6 +19,11 @@ struct AppShell: View {
     @State private var showPlayer = false
     @State private var libPath = NavigationPath()
     @State private var incomingAudio: IncomingAudioImport?
+    @State private var showLaunch = false
+
+    // Persisted across launches
+    @AppStorage("wl.hasLaunched") private var hasLaunched = false
+    @AppStorage("wl.lastBackgroundedAt") private var lastBackgroundedAt: Double = 0
 
     private let importableAudioExtensions: Set<String> = [
         "aac", "aif", "aiff", "caf", "flac", "m4a", "mp3", "wav"
@@ -118,6 +123,15 @@ struct AppShell: View {
                     .transition(.opacity)
                     .zIndex(5)
             }
+
+            if showLaunch {
+                LaunchAnimationView {
+                    withAnimation(.easeInOut(duration: 0.2)) { showLaunch = false }
+                    hasLaunched = true
+                }
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
@@ -151,20 +165,33 @@ struct AppShell: View {
                i + 1 < CommandLine.arguments.count,
                let t = AppTab(rawValue: CommandLine.arguments[i + 1]) { tab = t }
             checkSharedImportInbox()
+            // Show launch animation on first install, or at sign-in
+            let isAtSignIn = Config.useRealAuth && !auth.isSignedIn
+            if !hasLaunched || isAtSignIn {
+                showLaunch = true
+            }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            checkSharedImportInbox()
-            guard Config.useRemoteAPI else { return }
-            Task {
-                let previousWorkspaceID = auth.activeWorkspaceID
-                await auth.refreshProfile()
-                // Only do a full library refresh if the workspace changed —
-                // e.g. a new membership was just granted on the server.
-                if auth.activeWorkspaceID != previousWorkspaceID {
-                    await workspace.refreshFromService()
-                    player.replaceQueue(workspace.tracks)
+            switch phase {
+            case .background:
+                lastBackgroundedAt = Date().timeIntervalSince1970
+            case .active:
+                checkSharedImportInbox()
+                let hoursAway = Date().timeIntervalSince1970 - lastBackgroundedAt
+                if hasLaunched && hoursAway > 8 * 3600 {
+                    showLaunch = true
                 }
+                guard Config.useRemoteAPI else { return }
+                Task {
+                    let previousWorkspaceID = auth.activeWorkspaceID
+                    await auth.refreshProfile()
+                    if auth.activeWorkspaceID != previousWorkspaceID {
+                        await workspace.refreshFromService()
+                        player.replaceQueue(workspace.tracks)
+                    }
+                }
+            default:
+                break
             }
         }
         .task {
@@ -342,7 +369,14 @@ struct TabBar: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon).font(.system(size: 18))
                     if badge > 0 {
-                        Circle().fill(PB.redline).frame(width: 7, height: 7).offset(x: 6, y: -2)
+                        // Same semantic as the Inbox header's "N new" count.
+                        Text("\(min(badge, 99))")
+                            .font(PB.mono(8))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(PB.redline))
+                            .offset(x: 11, y: -5)
                     }
                 }
                 .frame(height: 20)

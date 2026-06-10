@@ -436,6 +436,99 @@ private struct SongActionsMenuModifier: ViewModifier {
     }
 }
 
+struct SongRowMenuAction: Identifiable {
+    let id = UUID()
+    var title: String
+    var systemImage: String
+    var role: ButtonRole? = nil
+    var action: () -> Void
+}
+
+struct SongActionsButton: View {
+    var store: WorkspaceStore
+    var track: Track
+    var extraActions: [SongRowMenuAction] = []
+    @State private var showEdit = false
+
+    var body: some View {
+        Menu {
+            let pin = PinRef(kind: .song, targetID: track.id)
+            Button {
+                store.togglePin(pin.id)
+            } label: {
+                Label(store.isPinned(pin.id) ? "Unpin from Home" : "Pin to Home",
+                      systemImage: store.isPinned(pin.id) ? "pin.slash" : "pin")
+            }
+
+            Menu {
+                Button {
+                    _ = store.createKeptPlaylist(title: "\(track.title) List", trackIDs: [track.id])
+                } label: {
+                    Label("New playlist from song", systemImage: "text.badge.plus")
+                }
+                ForEach(store.playlists) { playlist in
+                    Button(playlist.title) {
+                        store.addTrack(track.id, toPlaylist: playlist.id)
+                    }
+                }
+            } label: {
+                Label("Add to playlist", systemImage: "plus.square.on.square")
+            }
+
+            Menu {
+                if store.rooms.isEmpty {
+                    Button("No projects yet") {}
+                        .disabled(true)
+                } else {
+                    ForEach(store.rooms) { room in
+                        Button(room.title) {
+                            store.addTrack(track.id, toProject: room.id)
+                        }
+                    }
+                }
+            } label: {
+                Label("Add to project", systemImage: "folder.badge.plus")
+            }
+
+            if store.isEditableTrack(track.id) {
+                Divider()
+                Button {
+                    showEdit = true
+                } label: {
+                    Label("Edit song info", systemImage: "slider.horizontal.3")
+                }
+            }
+
+            if !extraActions.isEmpty {
+                Divider()
+                ForEach(extraActions) { item in
+                    Button(role: item.role, action: item.action) {
+                        Label(item.title, systemImage: item.systemImage)
+                    }
+                }
+            }
+
+            Divider()
+            Button(role: .destructive) {
+                store.deleteTrack(track.id)
+            } label: {
+                Label("Delete song", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(PB.pencil)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Actions for \(store.displayTitle(track.id, track.title))")
+        .sheet(isPresented: $showEdit) {
+            EditSongSheet(trackID: track.id, store: store)
+        }
+    }
+}
+
 struct SongRow: View {
     var track: Track
     var store: WorkspaceStore
@@ -463,6 +556,95 @@ struct SongRow: View {
         .padding(.vertical, 10)
         .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
         .contentShape(Rectangle())
+    }
+}
+
+struct InteractiveSongItem<RowContent: View, IdleAccessory: View>: View {
+    var track: Track
+    var store: WorkspaceStore
+    @Binding var bulkMode: BulkSelectionMode?
+    @Binding var selectedTrackIDs: Set<String>
+    var selectedTracks: [Track]
+    var extraActions: [SongRowMenuAction] = []
+    var onOpen: () -> Void
+    var onSpringboardDrop: ([String]) -> Void
+    @ViewBuilder var rowContent: () -> RowContent
+    @ViewBuilder var idleAccessory: () -> IdleAccessory
+
+    var body: some View {
+        let inHolding = bulkMode == .holding && !selectedTrackIDs.isEmpty
+        let isSelected = selectedTrackIDs.contains(track.id)
+        let dropEnabled = bulkMode == nil || (inHolding && !isSelected)
+
+        HStack(spacing: 8) {
+            if bulkMode != nil {
+                Button { toggleSelection() } label: {
+                    SelectionMark(isSelected: isSelected)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isSelected
+                    ? "Deselect \(store.displayTitle(track.id, track.title))"
+                    : "Select \(store.displayTitle(track.id, track.title))")
+            }
+
+            Button {
+                handleTap()
+            } label: {
+                rowContent()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // The .draggable lift recognizer plus a simultaneous long-press kept
+            // winning touch arbitration, so the Button's own tap never fired.
+            // Arbitrate explicitly instead: a 0.35s hold enters holding mode,
+            // anything shorter is a tap and always reaches onOpen.
+            .highPriorityGesture(
+                LongPressGesture(minimumDuration: 0.35)
+                    .onEnded { _ in beginHolding() }
+                    .exclusively(before: TapGesture().onEnded { handleTap() })
+            )
+
+            if inHolding && isSelected {
+                PileBadge(count: selectedTrackIDs.count)
+                    .padding(.trailing, 4)
+            } else if bulkMode == nil {
+                idleAccessory()
+                SongActionsButton(store: store, track: track, extraActions: extraActions)
+            }
+        }
+        .springboardDraggable(trackID: track.id, track: track, store: store,
+                              enabled: bulkMode == nil)
+        .springboardPileDraggable(pileIDs: Array(selectedTrackIDs),
+                                  pileTracks: selectedTracks,
+                                  store: store,
+                                  enabled: inHolding && isSelected)
+        .springboardDropTarget(targetID: track.id, enabled: dropEnabled,
+                               onDrop: onSpringboardDrop)
+        .selectionDragTarget(id: track.id)
+    }
+
+    private func handleTap() {
+        if bulkMode != nil {
+            toggleSelection()
+        } else {
+            onOpen()
+        }
+    }
+
+    private func beginHolding() {
+        bulkMode = .holding
+        selectedTrackIDs.insert(track.id)
+    }
+
+    private func toggleSelection() {
+        if bulkMode == nil { bulkMode = .selecting }
+        if selectedTrackIDs.contains(track.id) {
+            selectedTrackIDs.remove(track.id)
+            if selectedTrackIDs.isEmpty { bulkMode = .selecting }
+        } else {
+            selectedTrackIDs.insert(track.id)
+        }
     }
 }
 
@@ -885,62 +1067,26 @@ struct LibraryView: View {
     }
 
     private func librarySongItem(_ t: Track) -> some View {
-        let inHolding = bulkMode == .holding && !selectedTrackIDs.isEmpty
-        let isSelected = selectedTrackIDs.contains(t.id)
-        let dropEnabled = bulkMode == nil || (inHolding && !isSelected)
-
-        return HStack(spacing: 8) {
-            if bulkMode != nil {
-                Button { toggleSelection(t.id) } label: {
-                    SelectionMark(isSelected: isSelected)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isSelected
-                    ? "Deselect \(store.displayTitle(t.id, t.title))"
-                    : "Select \(store.displayTitle(t.id, t.title))")
-            }
-
-            Button {
-                if bulkMode != nil {
-                    toggleSelection(t.id)
-                } else {
-                    openSong(t.id)
-                }
-            } label: {
-                SongRow(track: t, store: store,
-                        trailing: store.openCount(t.id) > 0 ? "\(store.openCount(t.id)) open" : nil,
-                        trailingColor: PB.redline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                beginSelection(with: t.id, mode: .holding)
-            })
-
-            // Pile badge in holding mode; drag handle otherwise
-            if inHolding && isSelected {
-                PileBadge(count: selectedTrackIDs.count)
-                    .padding(.trailing, 4)
-            } else if bulkMode == nil {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(PB.pencil)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel("Drag \(store.displayTitle(t.id, t.title)) onto another song to create a playlist")
-            }
+        InteractiveSongItem(
+            track: t,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            onOpen: { openSong(t.id) },
+            onSpringboardDrop: onDropOnSong
+        ) {
+            SongRow(track: t, store: store,
+                    trailing: store.openCount(t.id) > 0 ? "\(store.openCount(t.id)) open" : nil,
+                    trailingColor: PB.redline)
+        } idleAccessory: {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(PB.pencil)
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Drag \(store.displayTitle(t.id, t.title)) onto another song to create a playlist")
         }
-        .springboardDraggable(trackID: t.id, track: t, store: store,
-                              enabled: bulkMode == nil)
-        .springboardPileDraggable(pileIDs: Array(selectedTrackIDs),
-                                  pileTracks: selectedTracks,
-                                  store: store,
-                                  enabled: inHolding && isSelected)
-        .springboardDropTarget(targetID: t.id, enabled: dropEnabled) { ids in
-            onDropOnSong(ids)
-        }
-        .songActionsMenu(store, t)
-        .selectionDragTarget(id: t.id)
     }
 
     private func beginSelection(with id: String, mode: BulkSelectionMode) {
@@ -1068,21 +1214,48 @@ struct ArtistDetailView: View {
     var player: Player
     var store: WorkspaceStore
     var openQueue: (String, [Track]) -> Void
+    @State private var bulkMode: BulkSelectionMode?
+    @State private var selectedTrackIDs: Set<String> = []
+    @State private var confirmBulkDelete = false
+    @State private var artistNotice: PlaylistEditNotice?
+    @State private var springboardPlaylist: Playlist?
+    @State private var selectionDragTargets: [SelectionDragTarget] = []
 
     private var tracks: [Track] { store.artistTracks(artist) }
     private var projects: [Room] { store.artistProjects(artist) }
+    private var selectedTracks: [Track] { tracks.filter { selectedTrackIDs.contains($0.id) } }
 
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
                 scrollToTopMarker()
                 VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        MonoLabel("Artist", color: PB.pencil, size: 10, tracking: 2)
-                        Text(artist.name).font(PB.display(34)).foregroundStyle(PB.cream)
-                        MonoLabel("\(tracks.count) songs · \(projects.count) projects", color: PB.pencil, size: 10, tracking: 1.1)
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            MonoLabel("Artist", color: PB.pencil, size: 10, tracking: 2)
+                            Text(artist.name).font(PB.display(34)).foregroundStyle(PB.cream)
+                            MonoLabel("\(tracks.count) songs · \(projects.count) projects", color: PB.pencil, size: 10, tracking: 1.1)
+                        }
+                        Spacer(minLength: 10)
+                        if !tracks.isEmpty {
+                            Button {
+                                if bulkMode == nil {
+                                    bulkMode = .selecting
+                                } else {
+                                    clearSelection()
+                                }
+                            } label: {
+                                HeaderCircleIcon(systemName: bulkMode == nil ? "checkmark.circle" : "xmark.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(bulkMode == nil ? "Select songs" : "Done selecting")
+                        }
                     }
                     .padding(.top, 40)
+
+                    if let artistNotice {
+                        editNotice(artistNotice)
+                    }
 
                     if !projects.isEmpty {
                         artistSection("Projects") {
@@ -1105,11 +1278,7 @@ struct ArtistDetailView: View {
                             .padding(.vertical, 12)
                         } else {
                             ForEach(tracks) { track in
-                                Button { openQueue(track.id, tracks) } label: {
-                                    SongRow(track: track, store: store)
-                                }
-                                .buttonStyle(.plain)
-                                .songActionsMenu(store, track)
+                                artistSongItem(track)
                             }
                         }
                     }
@@ -1130,7 +1299,147 @@ struct ArtistDetailView: View {
                 TopTapScrollHotspot { scrollToTop(scrollProxy) }
             }
             .overlay(alignment: .topLeading) { BackButton().padding(.leading, 16).padding(.top, 6) }
+            .onPreferenceChange(SelectionDragTargetKey.self) { targets in
+                selectionDragTargets = targets
+            }
+            .twoFingerSelection(
+                enabled: !tracks.isEmpty,
+                targets: selectionDragTargets,
+                onSelect: selectDuringDrag
+            )
+            .overlay(alignment: .bottom) {
+                if let bulkMode, !selectedTrackIDs.isEmpty {
+                    BulkSongActionBar(
+                        count: selectedTrackIDs.count,
+                        mode: bulkMode,
+                        playlists: store.playlists,
+                        rooms: store.rooms,
+                        projectLabel: "Project",
+                        canDelete: true,
+                        removeLabel: nil,
+                        onNewPlaylist: createPlaylistFromSelection,
+                        onAddToPlaylist: addSelection(to:),
+                        onMoveToProject: addSelection(to:),
+                        onShare: shareSelection,
+                        onDelete: { confirmBulkDelete = true },
+                        onRemove: nil,
+                        onClear: clearSelection
+                    )
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 94)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: selectedTrackIDs)
+            .confirmationDialog(
+                "Delete selected songs?",
+                isPresented: $confirmBulkDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete \(selectedTrackIDs.count) \(selectedTrackIDs.count == 1 ? "song" : "songs")", role: .destructive) {
+                    deleteSelectedSongs()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the selected songs from your Playback library. Imported audio and artwork files on this device will be deleted.")
+            }
+            .sheet(item: $springboardPlaylist) { pl in
+                PlaylistDetailView(playlist: pl, player: player, store: store,
+                                   openSong: { id in openQueue(id, store.tracks) }, openQueue: openQueue)
+            }
         }
+    }
+
+    private func artistSongItem(_ track: Track) -> some View {
+        InteractiveSongItem(
+            track: track,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            onOpen: { openQueue(track.id, tracks) },
+            onSpringboardDrop: handleSpringboardDrop
+        ) {
+            SongRow(track: track, store: store,
+                    trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil,
+                    trailingColor: PB.redline)
+        } idleAccessory: {
+            EmptyView()
+        }
+    }
+
+    private func handleSpringboardDrop(_ ids: [String]) {
+        guard ids.count >= 2 else { return }
+        let tracks = ids.compactMap { store.track($0) }
+        let title = tracks.count == 2
+            ? "\(tracks[0].title) + \(tracks[1].title)"
+            : "\(tracks[0].title) + \(tracks.count - 1) more"
+        let playlist = store.createKeptPlaylist(title: title, trackIDs: ids)
+        clearSelection()
+        withAnimation(.easeInOut(duration: 0.18)) { springboardPlaylist = playlist }
+    }
+
+    private func selectDuringDrag(_ id: String) {
+        if bulkMode == nil { bulkMode = .selecting }
+        selectedTrackIDs.insert(id)
+    }
+
+    private func clearSelection() {
+        selectedTrackIDs.removeAll()
+        bulkMode = nil
+    }
+
+    private func createPlaylistFromSelection() {
+        guard !selectedTracks.isEmpty else { return }
+        _ = store.createKeptPlaylist(title: "\(artist.name) Selection", trackIDs: selectedTracks.map(\.id))
+        showNotice("Playlist created")
+        clearSelection()
+    }
+
+    private func addSelection(to playlist: Playlist) {
+        selectedTracks.forEach { store.addTrack($0.id, toPlaylist: playlist.id) }
+        showNotice("Added to \(playlist.title)")
+        clearSelection()
+    }
+
+    private func addSelection(to room: Room) {
+        selectedTracks.forEach { store.addTrack($0.id, toProject: room.id) }
+        showNotice("Added to \(room.title)")
+        clearSelection()
+    }
+
+    private func shareSelection() {
+        guard copyShareLinks(selectedTracks, store: store) else { return }
+        showNotice(Config.useRemoteAPI ? "Titles copied" : "Share links copied")
+        clearSelection()
+    }
+
+    private func deleteSelectedSongs() {
+        let ids = selectedTrackIDs
+        let deleted = ids.reduce(0) { count, id in
+            count + (store.deleteTrack(id) ? 1 : 0)
+        }
+        if !store.tracks.isEmpty { player.replaceQueue(store.tracks) }
+        showNotice(deleted == 0 ? "Nothing deleted" : "Deleted \(deleted)")
+        clearSelection()
+    }
+
+    private func showNotice(_ message: String) {
+        let notice = PlaylistEditNotice(message: message)
+        withAnimation(.easeInOut(duration: 0.18)) { artistNotice = notice }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            if artistNotice?.id == notice.id {
+                withAnimation(.easeInOut(duration: 0.18)) { artistNotice = nil }
+            }
+        }
+    }
+
+    private func editNotice(_ notice: PlaylistEditNotice) -> some View {
+        MonoLabel(notice.message, color: PB.green, size: 10, tracking: 1.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PB.green.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(PB.green.opacity(0.32), lineWidth: 1))
     }
 
     private func artistSection<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
@@ -2279,8 +2588,17 @@ struct InboxView: View {
     var player: Player
     var store: WorkspaceStore
     var openSong: (String) -> Void
+    @State private var bulkMode: BulkSelectionMode?
+    @State private var selectedTrackIDs: Set<String> = []
+    @State private var confirmBulkDelete = false
+    @State private var inboxNotice: PlaylistEditNotice?
+    @State private var springboardPlaylist: Playlist?
+    @State private var selectionDragTargets: [SelectionDragTarget] = []
 
     private var items: [InboxItem] { store.inbox }
+    private var selectedTracks: [Track] {
+        store.tracks.filter { selectedTrackIDs.contains($0.id) }
+    }
 
     var body: some View {
         ScrollViewReader { scrollProxy in
@@ -2288,18 +2606,40 @@ struct InboxView: View {
                 scrollToTopMarker()
                 VStack(alignment: .leading, spacing: 22) {
                     AppScreenHeader(title: "Inbox", isPlaying: player.isPlaying) {
+                        // Count never wraps; the bulkier actions live in one
+                        // ⋯ menu so the trailing cluster always fits the row.
                         HStack(alignment: .center, spacing: 10) {
                             MonoLabel("\(store.inboxNewCount) new", color: PB.redline, size: 11, tracking: 1.4)
-                            if store.inboxNewCount > 0 {
-                                Button { store.markAllInboxHeard() } label: {
-                                    MonoLabel("Mark all heard", color: PB.cobalt, size: 9, tracking: 1)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 8)
-                                        .background(Capsule().stroke(PB.cobalt.opacity(0.4), lineWidth: 1))
+                                .lineLimit(1)
+                                .fixedSize()
+                                .layoutPriority(1)
+                            if !items.isEmpty {
+                                Menu {
+                                    Button {
+                                        if bulkMode == nil {
+                                            bulkMode = .selecting
+                                        } else {
+                                            clearSelection()
+                                        }
+                                    } label: {
+                                        Label(bulkMode == nil ? "Select songs" : "Done selecting",
+                                              systemImage: bulkMode == nil ? "checkmark.circle" : "xmark.circle")
+                                    }
+                                    if store.inboxNewCount > 0 {
+                                        Button { store.markAllInboxHeard() } label: {
+                                            Label("Mark all heard", systemImage: "tray.full")
+                                        }
+                                    }
+                                } label: {
+                                    HeaderCircleIcon(systemName: "ellipsis")
                                 }
-                                .buttonStyle(.plain)
+                                .accessibilityLabel("Inbox actions")
                             }
                         }
+                    }
+
+                    if let inboxNotice {
+                        editNotice(inboxNotice)
                     }
 
                     VStack(spacing: 0) {
@@ -2315,67 +2655,165 @@ struct InboxView: View {
             .scrollIndicators(.hidden)
             .background {
                 PB.black.ignoresSafeArea()
-                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                // Observes position ticks in its own body — keeps the inbox
+                // from re-laying-out 20×/sec while audio plays.
+                AmbientPlayerBackdrop(player: player)
                     .allowsHitTesting(false).ignoresSafeArea()
             }
             .overlay(alignment: .top) {
                 TopTapScrollHotspot { scrollToTop(scrollProxy) }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .onPreferenceChange(SelectionDragTargetKey.self) { targets in
+                selectionDragTargets = targets
+            }
+            .twoFingerSelection(
+                enabled: !items.isEmpty,
+                targets: selectionDragTargets,
+                onSelect: selectDuringDrag
+            )
+            .overlay(alignment: .bottom) {
+                if let bulkMode, !selectedTrackIDs.isEmpty {
+                    BulkSongActionBar(
+                        count: selectedTrackIDs.count,
+                        mode: bulkMode,
+                        playlists: store.playlists,
+                        rooms: store.rooms,
+                        projectLabel: "Project",
+                        canDelete: true,
+                        removeLabel: nil,
+                        onNewPlaylist: createPlaylistFromSelection,
+                        onAddToPlaylist: addSelection(to:),
+                        onMoveToProject: addSelection(to:),
+                        onShare: shareSelection,
+                        onDelete: { confirmBulkDelete = true },
+                        onRemove: nil,
+                        onClear: clearSelection
+                    )
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 94)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: selectedTrackIDs)
+            .confirmationDialog(
+                "Delete selected songs?",
+                isPresented: $confirmBulkDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete \(selectedTrackIDs.count) \(selectedTrackIDs.count == 1 ? "song" : "songs")", role: .destructive) {
+                    deleteSelectedSongs()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the selected songs from your Playback library. Imported audio and artwork files on this device will be deleted.")
+            }
+            .sheet(item: $springboardPlaylist) { playlist in
+                PlaylistDetailView(playlist: playlist, player: player, store: store, openSong: openSong)
+            }
         }
     }
 
     private func inboxItem(_ item: InboxItem, _ t: Track) -> some View {
-        HStack(spacing: 10) {
-            Button {
+        InteractiveSongItem(
+            track: t,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            extraActions: [
+                SongRowMenuAction(title: item.isNew ? "Mark heard" : "Mark new",
+                                  systemImage: item.isNew ? "checkmark.circle" : "circle") {
+                    store.toggleInboxNew(item.id)
+                }
+            ],
+            onOpen: {
                 store.markInboxHeard(item.id)
                 openSong(t.id)
-            } label: {
-                inboxRow(item, t)
-            }
-            .buttonStyle(.plain)
-
-            if item.isNew {
-                Button { store.markInboxHeard(item.id) } label: {
-                    MonoLabel("Heard", color: PB.cobalt, size: 9, tracking: 1.1)
-                        .frame(minWidth: 54, minHeight: 36)
-                        .background(Capsule().stroke(PB.cobalt.opacity(0.45), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
+            },
+            onSpringboardDrop: handleSpringboardDrop
+        ) {
+            inboxRow(item, t)
+        } idleAccessory: {
+            // NEW is the only idle state pill — mark-heard happens on open,
+            // via the row's context menu, or "Mark all heard" in the header.
+            EmptyView()
         }
         .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
-        .contextMenu {
-            Button(item.isNew ? "Mark heard" : "Mark new") { store.toggleInboxNew(item.id) }
-            let pin = PinRef(kind: .song, targetID: t.id)
-            Button { store.togglePin(pin.id) } label: {
-                Label(store.isPinned(pin.id) ? "Unpin from Home" : "Pin to Home",
-                      systemImage: store.isPinned(pin.id) ? "pin.slash" : "pin")
-            }
-            Menu {
-                Button {
-                    _ = store.createKeptPlaylist(title: "\(t.title) List", trackIDs: [t.id])
-                } label: {
-                    Label("New playlist from song", systemImage: "text.badge.plus")
-                }
-                ForEach(store.playlists) { playlist in
-                    Button(playlist.title) { store.addTrack(t.id, toPlaylist: playlist.id) }
-                }
-            } label: {
-                Label("Add to playlist", systemImage: "plus.square.on.square")
-            }
-            Menu {
-                ForEach(store.rooms) { room in
-                    Button(room.title) { store.addTrack(t.id, toProject: room.id) }
-                }
-            } label: {
-                Label("Add to project", systemImage: "folder.badge.plus")
-            }
-            Divider()
-            Button(role: .destructive) { store.deleteTrack(t.id) } label: {
-                Label("Delete song", systemImage: "trash")
+    }
+
+    private func handleSpringboardDrop(_ ids: [String]) {
+        guard ids.count >= 2 else { return }
+        let tracks = ids.compactMap { store.track($0) }
+        let title = tracks.count == 2
+            ? "\(tracks[0].title) + \(tracks[1].title)"
+            : "\(tracks[0].title) + \(tracks.count - 1) more"
+        let playlist = store.createKeptPlaylist(title: title, trackIDs: ids)
+        clearSelection()
+        withAnimation(.easeInOut(duration: 0.18)) { springboardPlaylist = playlist }
+    }
+
+    private func selectDuringDrag(_ id: String) {
+        if bulkMode == nil { bulkMode = .selecting }
+        selectedTrackIDs.insert(id)
+    }
+
+    private func clearSelection() {
+        selectedTrackIDs.removeAll()
+        bulkMode = nil
+    }
+
+    private func createPlaylistFromSelection() {
+        guard !selectedTracks.isEmpty else { return }
+        _ = store.createKeptPlaylist(title: "Inbox Selection", trackIDs: selectedTracks.map(\.id))
+        showNotice("Playlist created")
+        clearSelection()
+    }
+
+    private func addSelection(to playlist: Playlist) {
+        selectedTracks.forEach { store.addTrack($0.id, toPlaylist: playlist.id) }
+        showNotice("Added to \(playlist.title)")
+        clearSelection()
+    }
+
+    private func addSelection(to room: Room) {
+        selectedTracks.forEach { store.addTrack($0.id, toProject: room.id) }
+        showNotice("Added to \(room.title)")
+        clearSelection()
+    }
+
+    private func shareSelection() {
+        guard copyShareLinks(selectedTracks, store: store) else { return }
+        showNotice(Config.useRemoteAPI ? "Titles copied" : "Share links copied")
+        clearSelection()
+    }
+
+    private func deleteSelectedSongs() {
+        let ids = selectedTrackIDs
+        let deleted = ids.reduce(0) { count, id in
+            count + (store.deleteTrack(id) ? 1 : 0)
+        }
+        if !store.tracks.isEmpty { player.replaceQueue(store.tracks) }
+        showNotice(deleted == 0 ? "Nothing deleted" : "Deleted \(deleted)")
+        clearSelection()
+    }
+
+    private func showNotice(_ message: String) {
+        let notice = PlaylistEditNotice(message: message)
+        withAnimation(.easeInOut(duration: 0.18)) { inboxNotice = notice }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            if inboxNotice?.id == notice.id {
+                withAnimation(.easeInOut(duration: 0.18)) { inboxNotice = nil }
             }
         }
+    }
+
+    private func editNotice(_ notice: PlaylistEditNotice) -> some View {
+        MonoLabel(notice.message, color: PB.green, size: 10, tracking: 1.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PB.green.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(PB.green.opacity(0.32), lineWidth: 1))
     }
 
     private func inboxRow(_ item: InboxItem, _ t: Track) -> some View {
@@ -2383,7 +2821,9 @@ struct InboxView: View {
             trackSwatch(t, 46)
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.displayTitle(t.id, t.title)).font(PB.display(17)).foregroundStyle(PB.cream)
+                    .lineLimit(1).truncationMode(.tail)
                 MonoLabel("Shared by \(item.sharedBy) · \(item.context)", color: PB.pencil, size: 9, tracking: 1)
+                    .lineLimit(1).truncationMode(.tail)
             }
             Spacer()
             if item.isNew {
@@ -2399,7 +2839,7 @@ struct InboxView: View {
 
 // MARK: - Playlist detail
 
-private struct PlaylistEditNotice: Identifiable {
+struct PlaylistEditNotice: Identifiable {
     let id = UUID()
     let message: String
 }
@@ -2634,7 +3074,6 @@ struct PlaylistDetailView: View {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in
                 let inHolding = bulkMode == .holding && !selectedTrackIDs.isEmpty
                 let isSelected = selectedTrackIDs.contains(t.id)
-                let dropEnabled = bulkMode == nil || (inHolding && !isSelected)
 
                 HStack(spacing: 8) {
                     if bulkMode != nil {
@@ -2676,19 +3115,31 @@ struct PlaylistDetailView: View {
                         PileBadge(count: selectedTrackIDs.count)
                             .padding(.trailing, 4)
                     } else if bulkMode == nil {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(PB.cream.opacity(0.7))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                            .draggable(playlistDragPayload(live.id, t.id)) {
-                                HStack(spacing: 10) {
-                                    MonoLabel(String(format: "%02d", i + 1), color: PB.cobalt, size: 10, tracking: 1)
-                                    Text(store.displayTitle(t.id, t.title)).font(PB.display(16)).foregroundStyle(PB.cream)
+                        HStack(spacing: 0) {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(PB.cream.opacity(0.7))
+                                .frame(width: 40, height: 44)
+                                .contentShape(Rectangle())
+                                .draggable(playlistDragPayload(live.id, t.id)) {
+                                    HStack(spacing: 10) {
+                                        MonoLabel(String(format: "%02d", i + 1), color: PB.cobalt, size: 10, tracking: 1)
+                                        Text(store.displayTitle(t.id, t.title)).font(PB.display(16)).foregroundStyle(PB.cream)
+                                    }
+                                    .padding(10).background(PB.panel)
                                 }
-                                .padding(10).background(PB.panel)
-                            }
-                            .accessibilityLabel("Drag to reorder \(store.displayTitle(t.id, t.title))")
+                                .accessibilityLabel("Drag to reorder \(store.displayTitle(t.id, t.title))")
+
+                            SongActionsButton(
+                                store: store,
+                                track: t,
+                                extraActions: [
+                                    SongRowMenuAction(title: "Remove from playlist", systemImage: "minus.circle", role: .destructive) {
+                                        removeFromPlaylist(t.id)
+                                    }
+                                ]
+                            )
+                        }
                     }
                 }
                 .padding(.vertical, 13)
@@ -2703,9 +3154,10 @@ struct PlaylistDetailView: View {
                 // Drop handler: reorder (playlist payload) takes priority; springboard
                 // pile payload creates a new playlist and opens it as a sheet.
                 .dropDestination(for: String.self) { ids, _ in
-                    guard bulkMode == nil else { return false }
                     // Reorder within this playlist
-                    if let dragged = playlistTrackID(from: ids.first, playlistID: live.id), dragged != t.id {
+                    if bulkMode == nil,
+                       let dragged = playlistTrackID(from: ids.first, playlistID: live.id),
+                       dragged != t.id {
                         reorder(dragged, before: t.id)
                         return true
                     }
@@ -2719,18 +3171,11 @@ struct PlaylistDetailView: View {
                     dropTargetID = isTargeted ? t.id : (dropTargetID == t.id ? nil : dropTargetID)
                 }
                 .springboardDraggable(trackID: t.id, track: t, store: store,
-                                      enabled: bulkMode == nil)
+                                      enabled: false)
                 .springboardPileDraggable(pileIDs: Array(selectedTrackIDs),
                                           pileTracks: selectedTracks,
                                           store: store,
                                           enabled: inHolding && isSelected)
-                .springboardDropTarget(targetID: t.id, enabled: dropEnabled,
-                                       onDrop: handleSpringboardDrop)
-                .contextMenu {
-                    Button(role: .destructive) { removeFromPlaylist(t.id) } label: {
-                        Label("Remove from playlist", systemImage: "minus.circle")
-                    }
-                }
                 .selectionDragTarget(id: t.id)
             }
         }
@@ -2869,6 +3314,7 @@ struct RoomDetailView: View {
     @State private var confirmBulkDelete = false
     @State private var projectNotice: PlaylistEditNotice?
     @State private var showAddSongs = false
+    @State private var springboardPlaylist: Playlist?
     @State private var selectionDragTargets: [SelectionDragTarget] = []
 
     private var live: Room { store.rooms.first { $0.id == room.id } ?? room }
@@ -2895,40 +3341,7 @@ struct RoomDetailView: View {
 
                 VStack(spacing: 0) {
                     ForEach(tracks) { t in
-                        HStack(spacing: 8) {
-                            if bulkMode != nil {
-                                Button { toggleSelection(t.id) } label: {
-                                    SelectionMark(isSelected: selectedTrackIDs.contains(t.id))
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(selectedTrackIDs.contains(t.id) ? "Deselect \(store.displayTitle(t.id, t.title))" : "Select \(store.displayTitle(t.id, t.title))")
-                            }
-
-                            Button {
-                                if bulkMode != nil {
-                                    toggleSelection(t.id)
-                                } else {
-                                    openQueue(t.id, tracks)
-                                }
-                            } label: {
-                                SongRow(track: t, store: store,
-                                        trailing: store.openCount(t.id) > 0 ? "\(store.openCount(t.id)) open" : nil,
-                                        trailingColor: PB.redline)
-                            }
-                            .buttonStyle(.plain)
-                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                                beginSelection(with: t.id, mode: .holding)
-                            })
-                        }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                removeSelectionFromProject(ids: Set([t.id]))
-                            } label: {
-                                Label("Remove from project", systemImage: "minus.circle")
-                            }
-                        }
-                        .songActionsMenu(store, t)
-                        .selectionDragTarget(id: t.id)
+                        projectSongItem(t)
                     }
                 }
             }
@@ -2998,7 +3411,45 @@ struct RoomDetailView: View {
                 showNotice("Added \(ids.count)")
             }
         }
+        .sheet(item: $springboardPlaylist) { pl in
+            PlaylistDetailView(playlist: pl, player: player, store: store,
+                               openSong: openSong, openQueue: openQueue)
+        }
         .onAppear { store.touch(PinRef(kind: .room, targetID: live.id).id) }
+    }
+
+    private func projectSongItem(_ track: Track) -> some View {
+        InteractiveSongItem(
+            track: track,
+            store: store,
+            bulkMode: $bulkMode,
+            selectedTrackIDs: $selectedTrackIDs,
+            selectedTracks: selectedTracks,
+            extraActions: [
+                SongRowMenuAction(title: "Remove from project", systemImage: "minus.circle", role: .destructive) {
+                    removeSelectionFromProject(ids: Set([track.id]))
+                }
+            ],
+            onOpen: { openQueue(track.id, tracks) },
+            onSpringboardDrop: handleSpringboardDrop
+        ) {
+            SongRow(track: track, store: store,
+                    trailing: store.openCount(track.id) > 0 ? "\(store.openCount(track.id)) open" : nil,
+                    trailingColor: PB.redline)
+        } idleAccessory: {
+            EmptyView()
+        }
+    }
+
+    private func handleSpringboardDrop(_ ids: [String]) {
+        guard ids.count >= 2 else { return }
+        let tracks = ids.compactMap { store.track($0) }
+        let title = tracks.count == 2
+            ? "\(tracks[0].title) + \(tracks[1].title)"
+            : "\(tracks[0].title) + \(tracks.count - 1) more"
+        let playlist = store.createKeptPlaylist(title: title, trackIDs: ids)
+        clearSelection()
+        withAnimation(.easeInOut(duration: 0.18)) { springboardPlaylist = playlist }
     }
 
     private var projectTopControls: some View {

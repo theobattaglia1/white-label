@@ -159,7 +159,7 @@ struct HomeView: View {
                     }
 
                     if !needsEar.isEmpty {
-                        section("Needs your ear") {
+                        section("Needs your attention") {
                             VStack(spacing: 0) {
                                 ForEach(needsEar) { t in
                                     homeTrackItem(t, showOpen: true)
@@ -169,7 +169,7 @@ struct HomeView: View {
                     }
 
                     if !deskItems.isEmpty {
-                        section("On your desk") {
+                        section("Recent") {
                             VStack(spacing: 0) {
                                 ForEach(deskItems) { entry in
                                     deskRow(entry)
@@ -187,7 +187,7 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
             .background {
                 PB.black.ignoresSafeArea()
-                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                AmbientPlayerBackdrop(player: player)
                     .allowsHitTesting(false).ignoresSafeArea()
             }
             .overlay(alignment: .top) {

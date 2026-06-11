@@ -980,12 +980,14 @@ a:hover { color: var(--redline); }
   cursor: pointer;
   transition: background var(--motion-fast) var(--easing), border-color var(--motion-fast) var(--easing);
 }
-.shared-page .chrome-button, .shared-page .scope-chip {
+.shared-page .chrome-button, .shared-page .scope-chip,
+.signin-page .chrome-button {
   border-color: var(--sleeve-hairline);
   color: var(--ink);
 }
 .chrome-button:hover { border-color: var(--pencil-warm); }
-.shared-page .chrome-button:hover { border-color: var(--ink); }
+.shared-page .chrome-button:hover,
+.signin-page .chrome-button:hover { border-color: var(--ink); }
 /* song-card-hero is a sleeve-mode (cream) block inside the studio shell —
    chrome-buttons there need ink-on-cream styling, not tape-oxide-on-dark. */
 .song-card-hero .chrome-button {
@@ -3801,12 +3803,15 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .accent-button:disabled,
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* Sleeve-mode (recipient page, cream) keeps the flat hairline treatment —
-   the dark-mode neumorphic shadows don't read on light surfaces. */
+/* Sleeve-mode (recipient + sign-in pages, cream) keeps the flat hairline
+   treatment — the dark-mode neumorphic shadows don't read on light surfaces.
+   Without this, the sign-in "Email me a link instead" secondary button
+   rendered as the dark raised pill on cream: a disabled-looking gray blob. */
 .shared-page .chrome-button,
 .shared-page .btn,
 .shared-page .icon-button,
-.shared-page .avatar-button {
+.shared-page .avatar-button,
+.signin-page .chrome-button {
   background: rgba(0, 0, 0, 0.02);
   box-shadow:
     inset 0 1px 0 rgba(0, 0, 0, 0.04),
@@ -3816,7 +3821,8 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .shared-page .chrome-button:active,
 .shared-page .btn:active,
 .shared-page .icon-button:active,
-.shared-page .avatar-button:active {
+.shared-page .avatar-button:active,
+.signin-page .chrome-button:active {
   background: rgba(0, 0, 0, 0.06);
   box-shadow:
     inset 0 2px 3px rgba(0, 0, 0, 0.18),

@@ -1058,7 +1058,7 @@ function HomeView({
         <div className="cw-featured">
           <LivingCover hue={coverHue(continueItem.song.artist_display_name)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
           <div className="cw-feat-scrim" />
-          <div className="cw-feat-corner"><span className="cw-micro">{isResume ? "Resume" : "Latest mix"} · Generative cover</span></div>
+          <div className="cw-feat-corner"><span className="cw-micro">{isResume ? "Resume" : "Latest mix"}</span></div>
           <div className="cw-feat-body">
             <span className="cw-feat-eyebrow">{isResume ? "Resume" : "Latest mix"}{continueItem.current_version ? ` · ${continueItem.current_version.version_label}` : ""}</span>
             <h1 className="cw-feat-title">{continueItem.song.title}</h1>
@@ -1128,7 +1128,7 @@ function HomeView({
           </div>
         </div>
         <div>
-          <div className="cw-shead"><h2>{needsAttention.length > 0 ? "Needs Your Ear" : "Smart Views"}</h2><span className="cw-ln" /><span className="cw-ct">{String(needsAttention.length > 0 ? needsAttention.length : savedViews.length).padStart(2, "0")}</span></div>
+          <div className="cw-shead"><h2>{needsAttention.length > 0 ? "Needs your attention" : "Smart Views"}</h2><span className="cw-ln" /><span className="cw-ct">{String(needsAttention.length > 0 ? needsAttention.length : savedViews.length).padStart(2, "0")}</span></div>
           <div className="cw-clist">
             {needsAttention.length > 0
               ? needsAttention.map((it) => (

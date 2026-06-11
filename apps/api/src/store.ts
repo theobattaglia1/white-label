@@ -1511,6 +1511,11 @@ export class WorkspaceStore {
     return reaction;
   }
 
+  private formatDecisionSummary(counts: Record<string, number>): string {
+    const parts = Object.entries(counts).map(([value, count]) => `${count} ${value.replace(/_/g, " ")}`);
+    return parts.length > 0 ? parts.join(", ") : "none";
+  }
+
   private decisionCounts(responses: DecisionResponse[]) {
     return responses.reduce<Record<string, number>>((acc, response) => {
       acc[response.response_value] = (acc[response.response_value] ?? 0) + 1;
@@ -1615,7 +1620,7 @@ export class WorkspaceStore {
     this.createNote({ userID: session.sender_user_id }, {
       song_id: session.song_id,
       anchor_version_id: context.version.version_id,
-      body: `First Listen Report: ${summary.completed_count}/${summary.total_recipients} completed · decisions ${JSON.stringify(summary.decision_counts)}`,
+      body: `First Listen Report: ${summary.completed_count}/${summary.total_recipients} completed · decisions ${this.formatDecisionSummary(summary.decision_counts)}`,
       scope: "song",
       visibility: "internal",
     });
@@ -1791,7 +1796,7 @@ export class WorkspaceStore {
     this.createNote({ userID: room.host_user_id }, {
       song_id: track.song_id,
       anchor_version_id: context.version.version_id,
-      body: `Listening Room Report: ${summary.attended_count} attended · decisions ${JSON.stringify(summary.decision_counts)} · top moments ${summary.top_pulse_moments.length}`,
+      body: `Listening Room Report: ${summary.attended_count} attended · decisions ${this.formatDecisionSummary(summary.decision_counts)}${summary.top_pulse_moments.length > 0 ? ` · top moments ${summary.top_pulse_moments.length}` : ""}`,
       scope: "song",
       visibility: room.retention_policy === "save_to_project" ? "internal" : "private",
     });

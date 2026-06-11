@@ -6200,3 +6200,121 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   .request-access-form { flex-direction: column; align-items: stretch; }
   .request-access-form button[type="submit"] { width: 100%; }
 }
+
+
+/* =====================================================================
+   Drop-anywhere upload — ambient dot-field overlay + progress strip
+   (DropZone.tsx; dot-field math ported from iOS AmbientDotField.swift)
+   ===================================================================== */
+.dropzone-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  background: rgba(12, 9, 7, 0.92); /* #0c0907 @ .92 over the current view */
+  display: grid;
+  place-items: center;
+  /* Never intercept events — drag/drop is handled at the window level so
+     the overlay can't swallow its own dragleave/drop. */
+  pointer-events: none;
+  animation: dz-fade-in 220ms var(--easing, ease-out);
+}
+.dropzone-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.dropzone-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  padding: 0 24px;
+}
+.dropzone-headline {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: clamp(20px, 3.4vw, 34px);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--tape-oxide);
+  margin: 0;
+}
+.dropzone-subline {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  margin: 0;
+}
+@keyframes dz-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Quiet bottom-edge progress strip — never a modal, never blocks the app. */
+.dropzone-strip {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 410;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 20px 12px;
+  background: rgba(12, 9, 7, 0.9);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--studio-hairline);
+  pointer-events: none;
+}
+.dropzone-strip-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tape-oxide);
+}
+.dropzone-strip-bar {
+  height: 2px;
+  background: rgba(243, 236, 222, 0.14);
+}
+.dropzone-strip-bar > div {
+  height: 100%;
+  background: var(--tape-oxide);
+  transition: width 220ms linear;
+}
+
+/* Closing notice — "7 SONGS ADDED · PLAYLIST 'DEMOS JUNE' CREATED" */
+.dropzone-notice {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 20px;
+  z-index: 410;
+  max-width: min(90vw, 720px);
+  padding: 10px 18px;
+  background: var(--studio-panel);
+  border: 1px solid var(--studio-hairline);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tape-oxide);
+  pointer-events: none;
+  animation: dz-notice 4.2s var(--easing, ease-out) forwards;
+}
+@keyframes dz-notice {
+  0% { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  6%, 82% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone-overlay { animation: none; }
+  .dropzone-notice { animation: none; }
+  .dropzone-strip-bar > div { transition: none; }
+}

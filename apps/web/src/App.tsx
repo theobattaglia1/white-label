@@ -37,6 +37,7 @@ import { LivingCover, coverHue, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_M
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import { PlaybackWordmark, PlaybackMark } from "./PlaybackWordmark";
+import { DropZone } from "./DropOverlay";
 import { FirstListenPage, ListeningRoomPage } from "./ListeningFlows";
 import type { Session } from "@supabase/supabase-js";
 
@@ -109,6 +110,9 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [savedViews, setSavedViews] = useState<Awaited<ReturnType<typeof api.savedViews>>>([]);
   const [activeSmartViewID, setActiveSmartViewID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after a drag-and-drop batch lands so Home/Library re-fetch their
+  // own data (they load on mount with local state) without a manual reload.
+  const [libraryEpoch, setLibraryEpoch] = useState(0);
 
   // === Pin state — global so all surfaces stay in sync =================
   const [pinnedSongIDs, setPinnedSongIDs] = useState<Set<string>>(new Set());
@@ -310,6 +314,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         <section className="workspace-main">
           {mode === "home" && (
             <HomeView
+              refreshKey={libraryEpoch}
               onOpenSong={openSong}
               onOpenRoom={openRoom}
               onOpenProject={(id) => openSong(id)}
@@ -325,6 +330,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           )}
           {mode === "library" && (
             <LibraryView
+              refreshKey={libraryEpoch}
               onOpenSong={openSong}
               playlists={playlists}
               onRefreshPlaylists={() => api.playlists().then(setPlaylists)}
@@ -382,6 +388,12 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         onOpenRoom={openRoom}
         onOpenPlaylist={openPlaylist}
         onSetMode={setMode}
+      />
+      <DropZone
+        onBatchComplete={() => {
+          void refresh(selectedSongID, activeRoomID);
+          setLibraryEpoch((epoch) => epoch + 1);
+        }}
       />
     </div>
   );
@@ -931,6 +943,7 @@ function LibEmptyState({ label, hint }: { label: string; hint: string }) {
 }
 
 function HomeView({
+  refreshKey = 0,
   onOpenSong,
   onOpenRoom,
   onOpenPlaylist,
@@ -941,6 +954,7 @@ function HomeView({
   pinnedPlaylistIDs,
   pinnedProjectIDs,
 }: {
+  refreshKey?: number;
   onOpenSong: (id: string) => void;
   onOpenRoom: (id: string) => void;
   onOpenProject: (id: string) => void;
@@ -978,7 +992,7 @@ function HomeView({
       setPlaylists(pls);
       setSavedViews(svs);
     }).finally(() => setIsLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const totalPinned = pins ? pins.songs.length + pins.playlists.length : 0;
 
@@ -1309,6 +1323,7 @@ function HomeView({
 }
 
 function LibraryView({
+  refreshKey = 0,
   onOpenSong,
   playlists,
   onRefreshPlaylists,
@@ -1317,6 +1332,7 @@ function LibraryView({
   pinnedSongIDs = new Set(),
   onToggleSongPin,
 }: {
+  refreshKey?: number;
   onOpenSong: (songID: string) => void;
   playlists: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists: () => void;
@@ -1346,7 +1362,7 @@ function LibraryView({
     }
   }
 
-  useEffect(() => { void loadLibrary(); }, []);
+  useEffect(() => { void loadLibrary(); }, [refreshKey]);
 
   const lowerSearch = search.trim().toLowerCase();
   const filtered = library

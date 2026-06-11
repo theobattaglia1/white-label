@@ -432,22 +432,55 @@ export const api = {
       "/storage/finalize-upload",
       { method: "POST", body: JSON.stringify(body) }
     ),
+
+  /** Finalize an uploaded object into a brand-new song + v1 (drop-anywhere path). */
+  finalizeNewSong: (body: {
+    storagePath: string;
+    publicUrl: string;
+    filename: string;
+    title: string;
+    contentType?: string;
+    fileSizeBytes: number;
+    durationMs?: number;
+    sampleRate?: number;
+    artist?: string;
+    projectName?: string;
+    roomExternalId?: string;
+    versionLabel?: string;
+    versionType?: string;
+  }) =>
+    request<{
+      assetExternalId: string;
+      versionExternalId: string;
+      versionNumber: number;
+      songExternalId: string;
+    }>("/storage/finalize-new-song", { method: "POST", body: JSON.stringify(body) }),
 };
 
 // =====================================================================
 // Audio upload helper — picks duration via Web Audio API, uploads to
 // Supabase Storage via signed URL, finalizes the version row.
 // =====================================================================
-export async function uploadAudio(
+/**
+ * Shared steps 1–3 of every audio upload: mint a signed URL, best-effort
+ * probe duration/sample-rate via Web Audio, then PUT straight to storage.
+ * `uploadAudio` (new version of an existing song) and `uploadNewSong`
+ * (drop-anywhere library add) differ only in which finalize they call.
+ */
+async function pushAudioToStorage(
   file: File,
-  opts: { songExternalId: string; versionLabel?: string; versionType?: string },
+  songExternalId: string | undefined,
   onProgress?: (pct: number) => void
-): Promise<{ assetExternalId: string; versionExternalId: string; versionNumber: number }> {
+): Promise<{
+  sig: Awaited<ReturnType<typeof api.signUpload>>;
+  durationMs?: number;
+  sampleRate?: number;
+}> {
   // 1) Ask API for a signed upload URL
   const sig = await api.signUpload({
     filename: file.name,
     contentType: file.type || "audio/mpeg",
-    songExternalId: opts.songExternalId,
+    songExternalId,
   });
   onProgress?.(5);
 
@@ -479,6 +512,16 @@ export async function uploadAudio(
   }
   onProgress?.(90);
 
+  return { sig, durationMs, sampleRate };
+}
+
+export async function uploadAudio(
+  file: File,
+  opts: { songExternalId: string; versionLabel?: string; versionType?: string },
+  onProgress?: (pct: number) => void
+): Promise<{ assetExternalId: string; versionExternalId: string; versionNumber: number }> {
+  const { sig, durationMs, sampleRate } = await pushAudioToStorage(file, opts.songExternalId, onProgress);
+
   // 4) Tell the API the upload finished — creates file_asset + version rows
   const result = await api.finalizeUpload({
     storagePath: sig.storagePath,
@@ -491,6 +534,34 @@ export async function uploadAudio(
     songExternalId: opts.songExternalId,
     versionLabel: opts.versionLabel,
     versionType: opts.versionType,
+  });
+  onProgress?.(100);
+  return result;
+}
+
+/**
+ * Upload a file as a BRAND-NEW song (the drop-anywhere path): same sign →
+ * probe → PUT mechanics as uploadAudio, finalized via /storage/finalize-new-song
+ * which creates the song row + v1 in one shot.
+ */
+export async function uploadNewSong(
+  file: File,
+  opts: { title: string; artist?: string; projectName?: string },
+  onProgress?: (pct: number) => void
+): Promise<{ songExternalId: string; versionExternalId: string; versionNumber: number }> {
+  const { sig, durationMs, sampleRate } = await pushAudioToStorage(file, undefined, onProgress);
+
+  const result = await api.finalizeNewSong({
+    storagePath: sig.storagePath,
+    publicUrl: sig.publicUrl,
+    filename: file.name,
+    title: opts.title,
+    contentType: file.type || "audio/mpeg",
+    fileSizeBytes: file.size,
+    durationMs,
+    sampleRate,
+    artist: opts.artist,
+    projectName: opts.projectName,
   });
   onProgress?.(100);
   return result;

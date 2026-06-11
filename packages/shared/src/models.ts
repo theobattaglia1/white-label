@@ -603,6 +603,18 @@ export interface AccessRequest {
   created_at: string;
 }
 
+/**
+ * Server-side pin list per (user, workspace). Entries are "type:id" strings
+ * matching the iOS PinRef encoding — e.g. "song:song-1", "playlist:pl-2",
+ * "room:room-3". Last-write-wins replacement semantics.
+ */
+export interface UserPins {
+  user_id: string;
+  workspace_id: string;
+  pins: string[];
+  updated_at: string;
+}
+
 export interface WorkspaceSnapshot {
   workspaces: Workspace[];
   users: User[];
@@ -633,4 +645,5 @@ export interface WorkspaceSnapshot {
   listeningRoomStates: ListeningRoomState[];
   listeningReports: ListeningReport[];
   accessRequests: AccessRequest[];
+  userPins: UserPins[];
 }

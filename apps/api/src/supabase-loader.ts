@@ -569,6 +569,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
     // Not yet persisted in Supabase — in-memory only. store.hydrate() carries
     // the live arrays across re-hydrations so they survive snapshot reloads.
     accessRequests: [],
+    userPins: [],
   };
 
   console.log(`[supabase-loader] hydrated: ${snapshot.songs.length} songs, ${snapshot.versions.length} versions, ${snapshot.notes.length} notes, ${snapshot.shareLinks.length} links`);

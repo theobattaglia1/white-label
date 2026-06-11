@@ -40,6 +40,7 @@ import {
   type TimestampedReaction,
   type TimestampedReactionType,
   type User,
+  type UserPins,
   type VersionPolicy,
   type VersionType,
   type WorkspaceSnapshot,
@@ -100,12 +101,13 @@ export class WorkspaceStore {
     if (!isSupabaseEnabled()) return;
     const fromDb = await loadSnapshotFromSupabase();
     if (fromDb) {
-      // accessRequests aren't persisted in Supabase yet — carry the live
-      // in-memory array across re-hydrations so a mid-session hydrate
+      // accessRequests + userPins aren't persisted in Supabase yet — carry the
+      // live in-memory arrays across re-hydrations so a mid-session hydrate
       // (after invites/uploads) doesn't silently drop them.
       this.snapshot = {
         ...fromDb,
         accessRequests: this.snapshot.accessRequests,
+        userPins: this.snapshot.userPins,
       };
     }
   }
@@ -1461,6 +1463,44 @@ export class WorkspaceStore {
       request.request_id === requestID ? updated : request,
     );
     return updated;
+  }
+
+  // ===== Server-side pins (per user, per workspace) =======================
+
+  getPins(auth: AuthContext, workspaceID: string): string[] {
+    return (
+      this.snapshot.userPins.find(
+        (entry) => entry.user_id === auth.userID && entry.workspace_id === workspaceID,
+      )?.pins ?? []
+    );
+  }
+
+  /**
+   * Replace the caller's pin list (last-write-wins). Entries are "type:id"
+   * strings matching the iOS PinRef encoding; capped at 50 and deduped
+   * preserving order.
+   */
+  setPins(auth: AuthContext, workspaceID: string, pins: unknown): string[] {
+    if (!Array.isArray(pins) || !pins.every((pin): pin is string => typeof pin === "string")) {
+      throw new Error("pins must be an array of strings");
+    }
+    if (pins.length > 50) throw new Error("A maximum of 50 pins is supported");
+    const invalid = pins.find((pin) => !/^(song|playlist|room):/.test(pin));
+    if (invalid !== undefined) {
+      throw new Error(`Invalid pin "${invalid}" — entries must look like "song:<id>", "playlist:<id>", or "room:<id>"`);
+    }
+    const deduped = [...new Set(pins)];
+    const now = new Date().toISOString();
+    const next: UserPins = { user_id: auth.userID, workspace_id: workspaceID, pins: deduped, updated_at: now };
+    const exists = this.snapshot.userPins.some(
+      (entry) => entry.user_id === auth.userID && entry.workspace_id === workspaceID,
+    );
+    this.snapshot.userPins = exists
+      ? this.snapshot.userPins.map((entry) =>
+          entry.user_id === auth.userID && entry.workspace_id === workspaceID ? next : entry,
+        )
+      : [...this.snapshot.userPins, next];
+    return deduped;
   }
 
   private songContext(songID: string, versionID?: string) {

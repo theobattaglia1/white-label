@@ -483,6 +483,29 @@ server.get("/workspaces/:id/activity", async (request) => {
   return ok(store.data.activityEvents.filter((event) => event.workspace_id === id));
 });
 
+// ===== Server-side pins (per user, per workspace) =======================
+
+/** The caller's pin list — "type:id" strings matching the iOS PinRef
+ *  encoding (e.g. "song:song-1"). Identity-scoped, so reads use the same
+ *  auth resolution as /inbox. */
+server.get("/workspaces/:id/pins", async (request) => {
+  const auth = await authedFromRequest(request);
+  const { id } = request.params as { id: string };
+  return ok(store.getPins(auth, id));
+});
+
+/** Replace the caller's pin list (last-write-wins). Entries must match
+ *  ^(song|playlist|room): and are capped at 50. */
+server.put("/workspaces/:id/pins", async (request, reply) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  const body = request.body as { pins?: unknown } | undefined;
+  if (!body || body.pins === undefined) {
+    return reply.code(400).send({ error: "pins is required" });
+  }
+  return ok(store.setPins(auth, id, body.pins));
+});
+
 
 server.get("/rooms/:id", async (request) => {
   const { id } = request.params as { id: string };

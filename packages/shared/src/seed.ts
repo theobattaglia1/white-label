@@ -26,6 +26,7 @@ import type {
   Task,
   TimestampedReaction,
   User,
+  UserPins,
   Version,
   Workspace,
   WorkspaceSnapshot,
@@ -770,6 +771,7 @@ const listeningRoomParticipants: ListeningRoomParticipant[] = [];
 const listeningRoomStates: ListeningRoomState[] = [];
 const listeningReports: ListeningReport[] = [];
 const accessRequests: AccessRequest[] = [];
+const userPins: UserPins[] = [];
 
 export function createSeedSnapshot(): WorkspaceSnapshot {
   return structuredClone({
@@ -802,5 +804,6 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     listeningRoomStates,
     listeningReports,
     accessRequests,
+    userPins,
   });
 }

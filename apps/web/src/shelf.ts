@@ -199,6 +199,21 @@ export function fallbackRecents(sources: ShelfSources): ShelfItem[] {
 }
 
 /**
+ * Normalized "what the listener sees" identity for recents de-duping. The
+ * library can hold several rows that render identically — e.g. song+version
+ * entries with distinct ids but the same title and artist — and adjacent
+ * twins on the shelf read as a bug. Songs normalize on title + subtitle (the
+ * subtitle carries the artist: "SONG · ADAM MELCHOR"); playlists and rooms
+ * normalize on type + title.
+ */
+export function recentIdentity(item: ShelfItem): string {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  return item.type === "song"
+    ? `song|${norm(item.title)}|${norm(item.subtitle)}`
+    : `${item.type}|${norm(item.title)}`;
+}
+
+/**
  * Build the shelf's slot list:
  *  - 15 slots max
  *  - up to 10 pins first, in pin order (extra pins are truncated)
@@ -207,21 +222,31 @@ export function fallbackRecents(sources: ShelfSources): ShelfItem[] {
  *    even at the 10-pin cap
  *  - de-duped by key: a pinned item never appears twice, recents skip
  *    anything already pinned
+ *  - recents are additionally de-duped by normalized title + artist
+ *    (recentIdentity) so duplicate library rows with distinct ids don't
+ *    render twin sleeves; newest-first input means the newest twin wins.
+ *    Pins are exempt — the user chose them — but recents do skip anything
+ *    that *reads* identical to a pin.
  *  - fewer than 15 available → return what exists
  */
 export function buildShelfSlots(pins: ShelfItem[], recents: ShelfItem[]): ShelfItem[] {
   const slots: ShelfItem[] = [];
   const seen = new Set<string>();
+  const seenIdentity = new Set<string>();
   for (const pin of pins) {
     if (slots.length >= SHELF_MAX_PINS) break;
     if (seen.has(pin.key)) continue;
     seen.add(pin.key);
+    seenIdentity.add(recentIdentity(pin));
     slots.push(pin.pinned ? pin : { ...pin, pinned: true });
   }
   for (const recent of recents) {
     if (slots.length >= SHELF_MAX_SLOTS) break;
     if (seen.has(recent.key)) continue;
+    const identity = recentIdentity(recent);
+    if (seenIdentity.has(identity)) continue;
     seen.add(recent.key);
+    seenIdentity.add(identity);
     slots.push(recent.pinned ? { ...recent, pinned: false } : recent);
   }
   return slots;

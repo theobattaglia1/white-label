@@ -7,6 +7,12 @@ import { SHELF_MAX_SLOTS, type ShelfItem } from "./shelf";
    focused card faces the viewer most, far cards sit nearly edge-on. Pure
    CSS 3D — transforms + opacity only, transitions do the travel, no rAF.
 
+   Hit model: each card <button> is a FLAT 2D-positioned strip (translateX +
+   zIndex in painter's order); the 3D pose is applied to an inner, inert
+   .shelf-card-face via a per-card conjugated perspective() — visually
+   identical to a shared stage perspective, but clicks resolve through
+   ordinary 2D stacking, never the browser's 3D depth hit-testing.
+
    Three-click state machine (focus → pull → open):
      1. click an unfocused card  → it eases into focus
      2. click the focused card   → PULL-OUT (slides up + toward viewer)
@@ -123,7 +129,34 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
   // clickable, so all 15 remain reachable by flipping through).
   const spacing = narrow ? 44 : 64;
   const focusGap = narrow ? 92 : 136;
-  const maxVisible = narrow ? 2 : 4;
+  const maxVisible = narrow ? 2 : 6;
+  const cardHalf = narrow ? 64 : 86;
+  const persp = narrow ? 900 : 1400;
+  // Vertical offset from a card's center up to the stage vanishing point
+  // (38% of stage height) — keeps the projection identical to the old
+  // stage-level `perspective` (see poseTransform3D below).
+  const vanishY = narrow ? -66 : -74;
+
+  // Compose the band around the *visible* group so there's never a dead
+  // half-band: shift the whole crate by half the difference between the
+  // occupied extents left and right of focus. With focus on card 0 this
+  // lands the focused sleeve ~31% from the left edge, crate receding right.
+  const sideExtent = (n: number) => (n === 0 ? cardHalf : focusGap + (n - 1) * spacing + cardHalf);
+  const crateShift = Math.round(
+    (sideExtent(Math.min(focus, maxVisible)) -
+      sideExtent(Math.min(Math.max(slots.length - 1 - focus, 0), maxVisible))) / 2,
+  );
+
+  /** The 3D face transform for a card whose flat hit-rect sits at `x`.
+   *  `perspective()` is conjugated by the offset from this card's center to
+   *  the shared vanishing point (stage center, 38% up) — matrix-identical to
+   *  the old stage-level `perspective: 1400px`, but each card now flattens
+   *  into its own 2D layer, so sibling stacking AND hit-testing are plain
+   *  z-index instead of browser 3D depth-sorting (which is what broke
+   *  click-to-focus: pointer hits never followed the 3D-transformed quads). */
+  function poseTransform3D(x: number, z: number, ry: number): string {
+    return `translate(${-x}px, ${vanishY}px) perspective(${persp}px) translate(${x}px, ${-vanishY}px) translateZ(${z}px) rotateY(${ry}deg)`;
+  }
 
   return (
     <section
@@ -142,14 +175,20 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
           {slots.map((item, i) => {
             const d = i - focus;
             const pose = cardPose(d, spacing, focusGap, maxVisible);
-            // Labels live above the focused card and its 1–2 neighbors only;
-            // hover whispers the label in for any other visible card.
-            const visible = !pose.hidden && (Math.abs(d) <= 1 || hovered === i) && !(pulled && d !== 0);
+            // Each label anchors to ITS card: the card's composed x plus a
+            // small outward nudge for neighbors so the focused label never
+            // collides. Focused + 1 neighbor each side only (neighbors
+            // dimmed); hover whispers the label in for other visible cards;
+            // everything hides during pull-out (the pulled sleeve rises into
+            // the label band — no ghost stubs over the artwork).
+            const dir = d < 0 ? -1 : d > 0 ? 1 : 0;
+            const labelX = pose.x + crateShift + dir * (narrow ? 34 : 44);
+            const visible = !pose.hidden && !pulled && (Math.abs(d) <= 1 || hovered === i);
             return (
               <div
                 key={item.key}
                 className={`shelf-label${d === 0 ? " is-focused" : ""}`}
-                style={{ transform: `translateX(${pose.x}px)`, opacity: visible ? 1 : 0 }}
+                style={{ transform: `translateX(${labelX}px)`, opacity: visible ? (d === 0 ? 1 : 0.55) : 0 }}
                 aria-hidden="true"
               >
                 <span className="shelf-label-title">{item.title}</span>
@@ -165,14 +204,27 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
           {slots.map((item, i) => {
             const d = i - focus;
             const pose = cardPose(d, spacing, focusGap, maxVisible);
+            const x = pose.x + crateShift;
             const isFocused = d === 0;
             const isPulled = isFocused && pulled;
             const dimmed = pulled && !isFocused;
-            const transform = reduced
-              ? `translateX(${pose.x}px)`
+            // The BUTTON only ever gets a flat 2D transform — its hit-rect is
+            // an ordinary 172px-wide strip at the card's composed position,
+            // stacked by explicit zIndex in painter's order (closer to focus
+            // = on top), exactly like records in a bin: each sleeve is
+            // clickable on its visible outer sliver, the overlap belongs to
+            // the sleeve in front. The 3D pose lives on the inner
+            // .shelf-card-face (pointer-events: none), so hit-testing never
+            // depends on browser 3D quad mapping.
+            const hitTransform =
+              isPulled && !reduced
+                ? `translateX(${x}px) translateY(-46px) scale(1.12)`
+                : `translateX(${x}px)`;
+            const faceTransform = reduced
+              ? "none"
               : isPulled
-                ? "translateX(0px) translateY(-46px) translateZ(230px) rotateY(0deg) scale(1.12)"
-                : `translateX(${pose.x}px) translateZ(${pose.z - (dimmed ? 40 : 0)}px) rotateY(${pose.ry}deg)`;
+                ? poseTransform3D(x, 230, 0)
+                : poseTransform3D(x, pose.z - (dimmed ? 40 : 0), pose.ry);
             return (
               <button
                 key={item.key}
@@ -180,7 +232,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
                 type="button"
                 className={`shelf-card${isFocused ? " is-focused" : ""}${isPulled ? " is-pulled" : ""}${dimmed ? " is-dimmed" : ""}`}
                 style={{
-                  transform,
+                  transform: hitTransform,
                   zIndex: isPulled ? 60 : 40 - Math.abs(d),
                   opacity: pose.hidden ? 0 : dimmed ? 0.45 : 1,
                   pointerEvents: pose.hidden ? "none" : undefined,
@@ -191,10 +243,12 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
               >
-                <span className="shelf-card-lift">
-                  <span className="shelf-cover" style={{ backgroundImage: coverGradient(item.seed) }}>
-                    <span className="shelf-cover-initials">{sleeveInitials(item.title)}</span>
-                    <span className="shelf-cover-type">{item.type}</span>
+                <span className="shelf-card-face" style={{ transform: faceTransform }}>
+                  <span className="shelf-card-lift">
+                    <span className="shelf-cover" style={{ backgroundImage: coverGradient(item.seed) }}>
+                      <span className="shelf-cover-initials">{sleeveInitials(item.title)}</span>
+                      <span className="shelf-cover-type">{item.type}</span>
+                    </span>
                   </span>
                 </span>
               </button>

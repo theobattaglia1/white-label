@@ -4,6 +4,7 @@ import {
   SHELF_MAX_SLOTS,
   buildShelfSlots,
   parsePinRef,
+  recentIdentity,
   recentToShelfItem,
   resolvePinRefs,
   shelfKey,
@@ -130,6 +131,76 @@ describe("buildShelfSlots", () => {
   it("a song and a playlist with the same raw id do not collide (key is type-scoped)", () => {
     const slots = buildShelfSlots([makeItem("song", "x", true)], [makeItem("playlist", "x")]);
     expect(slots).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recents de-dupe by normalized title + artist — duplicate library rows
+// (e.g. song + version entries with distinct ids) must not render twins
+// ---------------------------------------------------------------------------
+
+describe("recents de-dupe by normalized identity", () => {
+  const song = (id: string, title: string, artist?: string, pinned = false): ShelfItem => ({
+    key: shelfKey("song", id),
+    type: "song",
+    id,
+    title,
+    subtitle: shelfSubtitle("song", { artist }),
+    seed: id,
+    pinned,
+  });
+
+  it("recentIdentity normalizes case and whitespace, scoped by type", () => {
+    expect(recentIdentity(song("a", "Seeing You  In Everything Final", "Adam Melchor"))).toBe(
+      recentIdentity(song("b", "  seeing you in everything final ", "ADAM MELCHOR")),
+    );
+    const asPlaylist: ShelfItem = { ...makeItem("playlist", "p"), title: "Midnight" };
+    const asSong = song("s", "Midnight", "Hudson Ingram");
+    expect(recentIdentity(asPlaylist)).not.toBe(recentIdentity(asSong));
+  });
+
+  it("collapses recents twins with distinct ids — newest (first) wins", () => {
+    const slots = buildShelfSlots([], [
+      song("v2", "seeing you in everything final", "Adam Melchor"),
+      song("v1", "Seeing You In Everything Final", "Adam Melchor"),
+      song("other", "Daylight", "Adam Melchor"),
+    ]);
+    expect(slots.map((s) => s.id)).toEqual(["v2", "other"]);
+  });
+
+  it("keeps same-title songs by DIFFERENT artists apart", () => {
+    const slots = buildShelfSlots([], [
+      song("a", "Midnight", "Hudson Ingram"),
+      song("b", "Midnight", "Adam Melchor"),
+    ]);
+    expect(slots).toHaveLength(2);
+  });
+
+  it("pinned twins are exempt (the user chose them)", () => {
+    const slots = buildShelfSlots(
+      [song("v1", "Seeing You In Everything Final", "Adam Melchor", true),
+       song("v2", "seeing you in everything final", "Adam Melchor", true)],
+      [],
+    );
+    expect(slots.map((s) => s.id)).toEqual(["v1", "v2"]);
+  });
+
+  it("recents skip items that read identical to a pin", () => {
+    const slots = buildShelfSlots(
+      [song("pinned-v", "Seeing You In Everything Final", "Adam Melchor", true)],
+      [song("recent-v", "seeing you in everything final", "Adam Melchor"), song("ok", "Daylight")],
+    );
+    expect(slots.map((s) => s.id)).toEqual(["pinned-v", "ok"]);
+  });
+
+  it("playlists de-dupe on type + title", () => {
+    const pl = (id: string, title: string): ShelfItem => ({
+      ...makeItem("playlist", id),
+      title,
+      subtitle: shelfSubtitle("playlist", { songCount: 3 }),
+    });
+    const slots = buildShelfSlots([], [pl("p1", "Rough Cuts"), pl("p2", "rough cuts")]);
+    expect(slots.map((s) => s.id)).toEqual(["p1"]);
   });
 });
 

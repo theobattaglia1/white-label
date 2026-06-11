@@ -43,7 +43,7 @@ struct NowPlayingView: View {
 
                 Spacer(minLength: 20)
 
-                scrubber
+                ScrubberRow(player: player)
                     .padding(.horizontal, horizontalMargin)
 
                 TransportBar(
@@ -168,34 +168,40 @@ struct NowPlayingView: View {
 
     // MARK: - Scrubber
 
-    private var scrubber: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            if player.audioUnavailable {
-                MonoLabel("AUDIO UNAVAILABLE", color: PB.redline, size: 9, tracking: 1.6)
-            }
-            scrubberRow
-        }
-    }
+    /// Observes position ticks in its own body (same pattern as
+    /// AmbientPlayerBackdrop): the player's 50ms position ticks invalidate
+    /// only this row. When `positionMs`/`progress` were read directly in
+    /// NowPlayingView's body, the entire view — status row included — was
+    /// rebuilt 20×/sec, which starved tap recognition for the header buttons
+    /// (the dismiss chevron never fired even though its action was correct).
+    private struct ScrubberRow: View {
+        var player: Player
 
-    private var scrubberRow: some View {
-        HStack(spacing: 12) {
-            Text(player.positionMs.clock)
-                .font(PB.mono(10)).foregroundStyle(PB.cream.opacity(0.5)).monospacedDigit()
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Rectangle().fill(PB.cream.opacity(0.14)).frame(height: 0.75)
-                    Rectangle().fill(PB.cream)
-                        .frame(width: g.size.width * player.progress, height: 0.75)
+        var body: some View {
+            VStack(alignment: .leading, spacing: 7) {
+                if player.audioUnavailable {
+                    MonoLabel("AUDIO UNAVAILABLE", color: PB.redline, size: 9, tracking: 1.6)
                 }
-                .frame(maxHeight: .infinity, alignment: .center)
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                    player.seek(to: v.location.x / g.size.width)
-                })
+                HStack(spacing: 12) {
+                    Text(player.positionMs.clock)
+                        .font(PB.mono(10)).foregroundStyle(PB.cream.opacity(0.5)).monospacedDigit()
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Rectangle().fill(PB.cream.opacity(0.14)).frame(height: 0.75)
+                            Rectangle().fill(PB.cream)
+                                .frame(width: g.size.width * player.progress, height: 0.75)
+                        }
+                        .frame(maxHeight: .infinity, alignment: .center)
+                        .contentShape(Rectangle())
+                        .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                            player.seek(to: v.location.x / g.size.width)
+                        })
+                    }
+                    .frame(height: 16)
+                    Text(player.durationMs.clock)
+                        .font(PB.mono(10)).foregroundStyle(PB.cream.opacity(0.5)).monospacedDigit()
+                }
             }
-            .frame(height: 16)
-            Text(player.durationMs.clock)
-                .font(PB.mono(10)).foregroundStyle(PB.cream.opacity(0.5)).monospacedDigit()
         }
     }
 

@@ -208,6 +208,16 @@ struct InboxItem: Identifiable, Hashable, Codable {
     var isNew: Bool
 }
 
+/// A pending "Like Playback? Request access" submission from a recipient
+/// share page, surfaced to the workspace owner in the Inbox.
+struct AccessRequest: Identifiable, Hashable {
+    let id: String              // request_id
+    let name: String
+    let email: String
+    let sourceSongTitle: String?  // what they were listening to, when known
+    let createdAt: Date?
+}
+
 struct SavedViewSummary: Identifiable, Hashable {
     let id: String
     let name: String

@@ -38,6 +38,7 @@ final class WorkspaceStore {
     var servicePlaylistItemIDs: [String: [String: String]] = [:]
     var savedViews: [SavedViewSummary] = []
     var inbox: [InboxItem] = SampleData.inbox
+    var accessRequests: [AccessRequest] = []          // pending only, newest first
     var activity: [String: Date] = [:]                // ref id → last opened
     var deletedTrackIDs: Set<String> = []
     var syncState: WorkspaceSyncState = .ready
@@ -47,6 +48,8 @@ final class WorkspaceStore {
     @ObservationIgnored private var draftIDs: Set<String> = []
     @ObservationIgnored private var pendingRemoteDeletedIDs: Set<String> = []
     @ObservationIgnored private var persistTask: Task<Void, Never>?
+    @ObservationIgnored private var pinsPushTask: Task<Void, Never>?
+    @ObservationIgnored private var pinsNeedPush = false
 
     func touch(_ ref: String) { activity[Self.canonicalPinID(ref)] = Date(); persist() }
 
@@ -57,6 +60,7 @@ final class WorkspaceStore {
     private let currentKey = "wl.current.v1"
     private let titlesKey = "wl.titles.v1"
     private let pinsKey = "wl.pins.v1"
+    private let pinsMigratedKey = "wl.pins.migrated.v1"
     private let playlistsKey = "wl.playlists.v1"
     private let customRoomsKey = "wl.customRooms.v1"
     private let customTracksKey = "wl.customTracks.v1"
@@ -106,12 +110,14 @@ final class WorkspaceStore {
             async let views = ServiceClient.shared.savedViews()
             async let inboxItems = ServiceClient.shared.inbox()
             async let membersList = ServiceClient.shared.members()
+            async let requests = ServiceClient.shared.accessRequests()
 
             let libraryItems = try await library
             let playlistSummaries = try await playlists
             let savedViewItems = (try? await views) ?? []
             let fetchedInbox = (try? await inboxItems) ?? []
             let fetchedMembers = (try? await membersList) ?? []
+            let fetchedRequests = (try? await requests) ?? []
 
             var details: [ServiceClient.APIPlaylistDetail] = []
             for playlist in playlistSummaries {
@@ -122,7 +128,9 @@ final class WorkspaceStore {
 
             adoptService(library: libraryItems, playlistDetails: details, savedViews: savedViewItems)
             adoptInbox(fetchedInbox)
+            adoptAccessRequests(fetchedRequests)
             members = fetchedMembers.map(\.display_name).filter { !$0.isEmpty }
+            await syncPinsWithServer()
             lastSavedAt = Date()
             syncState = .synced
             syncMessage = "Synced with cloud"
@@ -164,6 +172,32 @@ final class WorkspaceStore {
                 sharedBy: item.shared_by,
                 context: item.room?.title ?? "Workspace",
                 isNew: heardIDs.contains(item.song.song_id) ? false : item.new_since_last_listen
+            )
+        }
+    }
+
+    private static let accessRequestDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let accessRequestPlainDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private func adoptAccessRequests(_ items: [ServiceClient.APIAccessRequest]) {
+        // Server returns pending-only, newest first — filter defensively anyway.
+        accessRequests = items.filter { $0.status == "pending" }.map { item in
+            AccessRequest(
+                id: item.request_id,
+                name: item.name,
+                email: item.email,
+                sourceSongTitle: item.source_song_title,
+                createdAt: Self.accessRequestDateFormatter.date(from: item.created_at)
+                    ?? Self.accessRequestPlainDateFormatter.date(from: item.created_at)
             )
         }
     }
@@ -587,12 +621,70 @@ final class WorkspaceStore {
         }
         pins = Self.normalizedPins(pins)
         persist()
+        schedulePinsPush()
     }
 
     func movePin(from: IndexSet, to: Int) {
         pins = Self.normalizedPins(pins)
         pins.move(fromOffsets: from, toOffset: to)
         persist()
+        schedulePinsPush()
+    }
+
+    /// Server pins sync — server wins on refresh; UserDefaults stays as the
+    /// offline cache. Local edits debounce-push ~1s after the last change;
+    /// a failed push is retried on the next refreshFromService.
+    @MainActor
+    private func syncPinsWithServer() async {
+        guard Config.useRemoteAPI else { return }
+        if pinsNeedPush {
+            // A debounced push failed (or hasn't fired yet) — replay it
+            // before adopting server state so the local edit isn't lost.
+            pinsPushTask?.cancel()
+            await pushPinsNow()
+        }
+        guard let serverPins = try? await ServiceClient.shared.getPins() else { return }
+        let normalized = Self.normalizedPins(serverPins)
+        if normalized.isEmpty, !pins.isEmpty, !UserDefaults.standard.bool(forKey: pinsMigratedKey) {
+            // Migration: this device has pins the server has never seen.
+            if await pushPinsNow(force: true) {
+                UserDefaults.standard.set(true, forKey: pinsMigratedKey)
+            }
+            return
+        }
+        UserDefaults.standard.set(true, forKey: pinsMigratedKey)
+        // Local edits queued mid-flight win until their push lands.
+        guard !pinsNeedPush else { return }
+        if pins != normalized {
+            pins = normalized
+            persist()
+        }
+    }
+
+    private func schedulePinsPush() {
+        guard Config.useRemoteAPI else { return }
+        pinsNeedPush = true
+        pinsPushTask?.cancel()
+        pinsPushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.pushPinsNow()
+        }
+    }
+
+    @MainActor
+    @discardableResult
+    private func pushPinsNow(force: Bool = false) async -> Bool {
+        guard Config.useRemoteAPI, pinsNeedPush || force else { return false }
+        let snapshot = Self.normalizedPins(pins)
+        do {
+            _ = try await ServiceClient.shared.putPins(snapshot)
+            if Self.normalizedPins(pins) == snapshot { pinsNeedPush = false }
+            return true
+        } catch {
+            pinsNeedPush = true  // retried on the next refreshFromService
+            return false
+        }
     }
 
     // MARK: playlists (mutable; drafts aren't persisted until kept)
@@ -882,7 +974,7 @@ final class WorkspaceStore {
 
     // MARK: inbox
 
-    var inboxNewCount: Int { inbox.filter(\.isNew).count }
+    var inboxNewCount: Int { inbox.filter(\.isNew).count + accessRequests.count }
 
     func markInboxHeard(_ id: String) {
         guard let i = inbox.firstIndex(where: { $0.id == id }) else { return }
@@ -899,6 +991,26 @@ final class WorkspaceStore {
         guard let i = inbox.firstIndex(where: { $0.id == id }) else { return }
         inbox[i].isNew.toggle()
         persist()
+    }
+
+    // MARK: access requests
+
+    /// Approves a pending access request and returns the invite whose URL
+    /// the caller copies to the pasteboard. On failure (e.g. 503 when
+    /// invites need Supabase) the request stays pending server-side and in
+    /// `accessRequests`, so the row can retry.
+    @MainActor
+    func approveAccessRequest(_ id: String) async throws -> ServiceClient.APIAccessInvite {
+        let resolved = try await ServiceClient.shared.resolveAccessRequest(requestID: id, action: "approve")
+        guard let invite = resolved.invite else { throw ServiceError.emptyResponse }
+        accessRequests.removeAll { $0.id == id }
+        return invite
+    }
+
+    @MainActor
+    func dismissAccessRequest(_ id: String) async throws {
+        _ = try await ServiceClient.shared.resolveAccessRequest(requestID: id, action: "dismiss")
+        accessRequests.removeAll { $0.id == id }
     }
 
     // MARK: attention ("On your desk")

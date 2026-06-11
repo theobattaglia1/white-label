@@ -323,6 +323,10 @@ struct ServiceClient {
         let removed: Int?
     }
 
+    struct APIDeleteSongResult: Decodable {
+        let deleted: Bool
+    }
+
     struct APIReorderResult: Decodable {
         let reordered: Int
     }
@@ -446,6 +450,31 @@ struct ServiceClient {
         let display_name: String
     }
 
+    struct APIAccessRequest: Decodable, Identifiable, Hashable {
+        var id: String { request_id }
+        let request_id: String
+        let workspace_id: String
+        let name: String
+        let email: String
+        let source_token: String?
+        let source_song_title: String?
+        let status: String
+        let created_at: String
+    }
+
+    struct APIAccessInvite: Decodable, Hashable {
+        let token: String
+        let url: String
+        let workspace_name: String?
+        let email: String
+        let role: String
+    }
+
+    struct APIResolvedAccessRequest: Decodable {
+        let request: APIAccessRequest
+        let invite: APIAccessInvite?
+    }
+
     func me() async throws -> MePayload {
         try await get("/me", as: MePayload.self)
     }
@@ -487,6 +516,10 @@ struct ServiceClient {
 
     func removeFromPlaylist(playlistID: String, itemID: String) async throws {
         _ = try await delete("/playlists/\(playlistID)/items/\(itemID)", as: APIRemoveResult.self)
+    }
+
+    func deleteSong(_ id: String) async throws {
+        _ = try await delete("/songs/\(id)", as: APIDeleteSongResult.self)
     }
 
     func reorderPlaylist(playlistID: String, itemIDs: [String]) async throws {
@@ -722,6 +755,26 @@ struct ServiceClient {
         try await get("/inbox", as: [APIInboxItem].self)
     }
 
+    func accessRequests(workspaceID: String? = nil) async throws -> [APIAccessRequest] {
+        let id = await resolvedWorkspaceID(workspaceID)
+        return try await get("/workspaces/\(id)/access-requests", as: [APIAccessRequest].self)
+    }
+
+    func resolveAccessRequest(requestID: String, action: String) async throws -> APIResolvedAccessRequest {
+        try await post("/access-requests/\(requestID)/resolve", body: ["action": action], as: APIResolvedAccessRequest.self)
+    }
+
+    func getPins(workspaceID: String? = nil) async throws -> [String] {
+        let id = await resolvedWorkspaceID(workspaceID)
+        return try await get("/workspaces/\(id)/pins", as: [String].self)
+    }
+
+    @discardableResult
+    func putPins(_ pins: [String], workspaceID: String? = nil) async throws -> [String] {
+        let id = await resolvedWorkspaceID(workspaceID)
+        return try await put("/workspaces/\(id)/pins", body: ["pins": pins], as: [String].self)
+    }
+
     @discardableResult
     func patchMe(displayName: String) async throws -> APIUserPatch {
         try await patch("/me", body: ["display_name": displayName], as: APIUserPatch.self)
@@ -796,6 +849,10 @@ struct ServiceClient {
 
     private func patch<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type) async throws -> T {
         try await send(method: "PATCH", path: path, body: body, as: type)
+    }
+
+    private func put<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type) async throws -> T {
+        try await send(method: "PUT", path: path, body: body, as: type)
     }
 
     private func delete<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {

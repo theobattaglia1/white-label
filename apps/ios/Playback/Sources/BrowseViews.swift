@@ -2595,6 +2595,8 @@ struct InboxView: View {
     @State private var inboxNotice: PlaylistEditNotice?
     @State private var springboardPlaylist: Playlist?
     @State private var selectionDragTargets: [SelectionDragTarget] = []
+    @State private var resolvingRequestIDs: Set<String> = []
+    @State private var accessRequestError: String?
 
     private var items: [InboxItem] { store.inbox }
     private var selectedTracks: [Track] {
@@ -2663,6 +2665,10 @@ struct InboxView: View {
 
                     if let inboxNotice {
                         editNotice(inboxNotice)
+                    }
+
+                    if !store.accessRequests.isEmpty || accessRequestError != nil {
+                        accessRequestsSection
                     }
 
                     VStack(spacing: 0) {
@@ -2854,6 +2860,108 @@ struct InboxView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PB.green.opacity(0.12)))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(PB.green.opacity(0.32), lineWidth: 1))
+    }
+
+    // MARK: access requests
+
+    private var accessRequestsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            MonoLabel("Access requests", color: PB.pencil, size: 10, tracking: 2)
+                .padding(.bottom, 4)
+            if let accessRequestError {
+                MonoLabel(accessRequestError, color: PB.redline, size: 9, tracking: 1.2)
+                    .padding(.top, 6)
+            }
+            ForEach(store.accessRequests) { request in
+                accessRequestRow(request)
+                    .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.05)).frame(height: 1) }
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: store.accessRequests)
+    }
+
+    private func accessRequestRow(_ request: AccessRequest) -> some View {
+        let resolving = resolvingRequestIDs.contains(request.id)
+        return HStack(spacing: 13) {
+            InitialsCover(id: request.id, name: request.name, size: 46, cornerRadius: 8)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(request.name).font(PB.display(17)).foregroundStyle(PB.cream)
+                    .lineLimit(1).truncationMode(.tail)
+                MonoLabel(accessRequestSubtitle(request), color: PB.pencil, size: 9, tracking: 1)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 10)
+            Button { approveAccessRequest(request) } label: {
+                MonoLabel("Approve", color: PB.cream, size: 9, tracking: 1.4)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Capsule().fill(PB.cobalt))
+            }
+            .buttonStyle(.plain)
+            .disabled(resolving)
+            Button { dismissAccessRequest(request) } label: {
+                MonoLabel("Dismiss", color: PB.pencil, size: 9, tracking: 1.4)
+                    .padding(.vertical, 7)
+            }
+            .buttonStyle(.plain)
+            .disabled(resolving)
+        }
+        .opacity(resolving ? 0.5 : 1)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    private func accessRequestSubtitle(_ request: AccessRequest) -> String {
+        var parts = ["Requested access"]
+        if let source = request.sourceSongTitle, !source.isEmpty {
+            parts.append("Via \(source)")
+        }
+        parts.append(relativeAge(request.createdAt))
+        return parts.joined(separator: " · ")
+    }
+
+    private func relativeAge(_ date: Date?) -> String {
+        guard let date else { return "Just now" }
+        let seconds = max(0, Date().timeIntervalSince(date))
+        if seconds < 60 { return "Just now" }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        return "\(hours / 24)d ago"
+    }
+
+    private func approveAccessRequest(_ request: AccessRequest) {
+        guard resolvingRequestIDs.insert(request.id).inserted else { return }
+        accessRequestError = nil
+        Task { @MainActor in
+            defer { resolvingRequestIDs.remove(request.id) }
+            do {
+                let invite = try await store.approveAccessRequest(request.id)
+                UIPasteboard.general.string = invite.url
+                showNotice("Invite link copied — send it to \(request.name)")
+            } catch {
+                // Request stays pending server-side (e.g. invites need
+                // Supabase) — quiet inline error; the row stays for retry.
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    accessRequestError = "Couldn't create invite — try again"
+                }
+            }
+        }
+    }
+
+    private func dismissAccessRequest(_ request: AccessRequest) {
+        guard resolvingRequestIDs.insert(request.id).inserted else { return }
+        accessRequestError = nil
+        Task { @MainActor in
+            defer { resolvingRequestIDs.remove(request.id) }
+            do {
+                try await store.dismissAccessRequest(request.id)
+            } catch {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    accessRequestError = "Couldn't dismiss request — try again"
+                }
+            }
+        }
     }
 
     private func inboxRow(_ item: InboxItem, _ t: Track) -> some View {

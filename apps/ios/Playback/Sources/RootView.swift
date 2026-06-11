@@ -52,6 +52,7 @@ struct AppShell: View {
                 case .home:
                     NavigationStack {
                         HomeView(player: player, store: workspace, openSong: openSong,
+                                 openQueue: { id, queue in openSong(id, in: queue) },
                                  openLibrary: { tab = .library })
                             .navDestinations(player: player, store: workspace, openSong: openSong) { id, queue in
                                 openSong(id, in: queue)

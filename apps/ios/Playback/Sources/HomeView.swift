@@ -20,77 +20,47 @@ struct HomeView: View {
     var player: Player
     var store: WorkspaceStore
     var openSong: (String) -> Void
+    var openQueue: (String, [Track]) -> Void = { _, _ in }
     var openLibrary: () -> Void = {}
     @State private var creationSheet: HomeCreationSheet?
-    @State private var heroIndex = 0
     @State private var bulkMode: BulkSelectionMode?
     @State private var selectedTrackIDs: Set<String> = []
     @State private var confirmBulkDelete = false
     @State private var homeNotice: String?
     @State private var selectionDragTargets: [SelectionDragTarget] = []
-    @State private var pinnedPageID: Int? = 0
     @State private var springboardPlaylist: Playlist?
-    private let heroAdvance = Timer.publish(every: 12, on: .main, in: .common).autoconnect()
+    @State private var shelfPlaylist: Playlist?
+    @State private var shelfRoom: Room?
 
     private let maxDeskCount = 6
-    private let pinsPerPage = 3
-    private let heroAspectRatio: CGFloat = 3.0 / 4.0
-    private var heroFrameWidth: CGFloat {
-        #if canImport(UIKit)
-        return max(0, UIScreen.main.bounds.width - 48)
-        #else
-        return 345
-        #endif
-    }
-    private var heroFrameHeight: CGFloat { heroFrameWidth / heroAspectRatio }
     private var featured: Track { store.tracks.first ?? player.track }
     private var isLibraryEmpty: Bool {
         store.tracks.isEmpty && store.playlists.isEmpty && store.rooms.isEmpty
     }
     private var needsEar: [Track] { store.tracks.filter { store.openCount($0.id) > 0 } }
-    private let pinCardSize: CGFloat = 104
-    private let pinCardSpacing: CGFloat = 14
-    private var pinnedCarouselHeight: CGFloat { pinCardSize + 48 }
-    private var pinnedRefs: [PinRef] {
-        var seen: Set<String> = []
-        return store.pins.compactMap { PinRef($0) }.filter { ref in
-            guard seen.insert(ref.id).inserted else { return false }
-            switch ref.kind {
-            case .song:
-                return store.track(ref.targetID) != nil
-            case .playlist:
-                return store.playlist(ref.targetID) != nil
-            case .room:
-                return store.rooms.contains { $0.id == ref.targetID }
-            }
-        }
+    /// THE SHELF's slot list — up to 10 pins (user order), then recents
+    /// newest-first, capped at 15. Pure logic lives in ShelfSlots.swift.
+    private var shelfSlots: [ShelfItem] {
+        ShelfSlots.build(
+            pins: ShelfSlots.resolvePins(
+                refs: store.pins,
+                tracks: store.tracks,
+                playlists: store.playlists,
+                rooms: store.rooms,
+                titleOverrides: store.titleOverrides
+            ),
+            recents: ShelfSlots.recents(
+                tracks: store.tracks,
+                playlists: store.playlists,
+                activity: store.activity,
+                titleOverrides: store.titleOverrides
+            )
+        )
     }
-    private var heroTracks: [Track] {
-        let pinned = pinnedRefs
-            .compactMap { pinnedCover($0, store) }
-        return uniqueTracks(pinned + recentTracks).prefix(5).map { $0 }
-    }
-    private var currentHero: Track {
-        let tracks = heroTracks
-        guard !tracks.isEmpty else { return featured }
-        return tracks[min(heroIndex, tracks.count - 1)]
-    }
-    private var heroTrackIDs: [String] { heroTracks.map(\.id) }
-    private var hasPins: Bool { !pinnedRefs.isEmpty }
-    private var recentTracks: [Track] {
-        store.tracks.enumerated().sorted { lhs, rhs in
-            let lhsRef = PinRef(kind: .song, targetID: lhs.element.id).id
-            let rhsRef = PinRef(kind: .song, targetID: rhs.element.id).id
-            let lhsActivity = store.activity[lhsRef] ?? Date(timeIntervalSince1970: TimeInterval(1000 - lhs.offset))
-            let rhsActivity = store.activity[rhsRef] ?? Date(timeIntervalSince1970: TimeInterval(1000 - rhs.offset))
-            return lhsActivity > rhsActivity
-        }
-        .map(\.element)
-    }
-    /// Scored attention list, deduped against the hero carousel and topped up
+    /// Scored attention list, deduped against the shelf and topped up
     /// with plain recency so Home is never empty. Capped at `maxDeskCount`.
     private var deskItems: [DeskEntry] {
-        let excluded = Set(heroTrackIDs.map { PinRef(kind: .song, targetID: $0).id })
+        let excluded = Set(shelfSlots.map(\.id))
         var items = store.deskEntries(limit: maxDeskCount, excluding: excluded)
         if items.count < maxDeskCount {
             let seen = Set(items.map(\.id))
@@ -104,15 +74,6 @@ struct HomeView: View {
     private var selectedTracks: [Track] {
         store.tracks.filter { selectedTrackIDs.contains($0.id) }
     }
-    private func uniqueTracks(_ tracks: [Track]) -> [Track] {
-        var seen: Set<String> = []
-        return tracks.filter { track in
-            guard !seen.contains(track.id) else { return false }
-            seen.insert(track.id)
-            return true
-        }
-    }
-
     private func beginSelection(with id: String, mode: BulkSelectionMode) {
         bulkMode = mode
         selectedTrackIDs.insert(id)
@@ -154,8 +115,10 @@ struct HomeView: View {
                         loadingPanel
                     } else if isLibraryEmpty {
                         startPanel
-                    } else {
-                        heroCluster
+                    } else if !shelfSlots.isEmpty {
+                        // THE SHELF — full-bleed band where the hero was.
+                        ShelfView(items: shelfSlots, store: store, onOpen: openShelfItem)
+                            .padding(.horizontal, -24)
                     }
 
                     if !needsEar.isEmpty {
@@ -203,15 +166,6 @@ struct HomeView: View {
                 targets: selectionDragTargets,
                 onSelect: selectDuringDrag
             )
-            .onReceive(heroAdvance) { _ in
-                advanceHero(1)
-            }
-            .onChange(of: heroTrackIDs) { _, ids in
-                if heroIndex >= ids.count { heroIndex = max(0, ids.count - 1) }
-            }
-            .onChange(of: pinnedRefs.map(\.id)) { _, _ in
-                pinnedPageID = 0
-            }
             .overlay(alignment: .bottom) {
                 if let bulkMode, !selectedTrackIDs.isEmpty {
                     BulkSongActionBar(
@@ -262,6 +216,30 @@ struct HomeView: View {
                 PlaylistDetailView(playlist: pl, player: player, store: store,
                                    openSong: openSong)
             }
+            // Shelf step-3 destinations — the same detail screens the
+            // NavigationLink rows push (see navDestinations in RootView).
+            .navigationDestination(item: $shelfPlaylist) { pl in
+                PlaylistDetailView(playlist: pl, player: player, store: store,
+                                   openSong: openSong, openQueue: openQueue)
+            }
+            .navigationDestination(item: $shelfRoom) { rm in
+                RoomDetailView(room: rm, player: player, store: store,
+                               openSong: openSong, openQueue: openQueue)
+            }
+        }
+    }
+
+    /// Step 3 of the shelf's tap progression — open via the EXISTING Home
+    /// behaviors: songs play and present Now Playing (RootView's openSong),
+    /// playlists and projects push their detail screens.
+    private func openShelfItem(_ item: ShelfItem) {
+        switch item.ref.kind {
+        case .song:
+            openSong(item.ref.targetID)
+        case .playlist:
+            if let pl = store.playlist(item.ref.targetID) { shelfPlaylist = pl }
+        case .room:
+            if let rm = store.rooms.first(where: { $0.id == item.ref.targetID }) { shelfRoom = rm }
         }
     }
 
@@ -317,174 +295,6 @@ struct HomeView: View {
             addMenu
         }
         .frame(height: 44, alignment: .center)
-    }
-
-    private var heroCluster: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            hero
-            if hasPins {
-                pinnedOverlap(pinnedRefs)
-                    .padding(.top, -116)
-            }
-        }
-    }
-
-    private var hero: some View {
-        let active = currentHero
-        let width = heroFrameWidth
-        let height = heroFrameHeight
-        return Button {
-            if bulkMode != nil {
-                toggleSelection(active.id)
-            } else {
-                openSong(active.id)
-            }
-        } label: {
-            ZStack {
-                Color.clear
-                ForEach(Array(heroTracks.enumerated()), id: \.element.id) { index, track in
-                    heroArtworkSurface(track)
-                        .frame(width: width, height: height)
-                        .opacity(index == heroIndex ? 1 : 0)
-                }
-                LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
-            }
-            .frame(width: width, height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PB.cream.opacity(0.14), lineWidth: 0.75))
-            .animation(.easeInOut(duration: 0.7), value: heroIndex)
-                .overlay(alignment: .bottomLeading) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        MonoLabel("Latest · \(active.versionLabel)", color: .white.opacity(0.8), size: 9, tracking: 1.8)
-                        Text(store.displayTitle(active.id, active.title))
-                            .font(PB.display(30)).foregroundStyle(.white)
-                        HStack(spacing: 8) {
-                            Image(systemName: "play.fill").font(.system(size: 11))
-                            MonoLabel("Play", color: .white, size: 11, tracking: 1.5)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Capsule().fill(.white.opacity(0.18)))
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 1))
-                        .padding(.top, 2)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, hasPins ? 142 : 20)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    heroPageDots
-                        .padding(18)
-                }
-                .overlay(alignment: .topLeading) {
-                    if bulkMode != nil {
-                        SelectionMark(isSelected: selectedTrackIDs.contains(active.id))
-                            .padding(14)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-            beginSelection(with: active.id, mode: .holding)
-        })
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 28)
-                .onEnded { value in
-                    guard bulkMode == nil, abs(value.translation.width) > 40 else { return }
-                    advanceHero(value.translation.width < 0 ? 1 : -1)
-                }
-        )
-    }
-
-    private var heroPageDots: some View {
-        HStack(spacing: 5) {
-            ForEach(heroTracks.indices, id: \.self) { index in
-                Circle()
-                    .fill(.white.opacity(index == heroIndex ? 0.86 : 0.28))
-                    .frame(width: index == heroIndex ? 5.5 : 4, height: index == heroIndex ? 5.5 : 4)
-            }
-        }
-        .opacity(heroTracks.count > 1 ? 1 : 0)
-    }
-
-    private func advanceHero(_ delta: Int) {
-        let count = heroTracks.count
-        guard count > 1 else { return }
-        withAnimation(.easeInOut(duration: 0.7)) {
-            heroIndex = (heroIndex + delta + count) % count
-        }
-    }
-
-    private func heroArtworkSurface(_ track: Track) -> some View {
-        HeroArtwork(track: track, width: heroFrameWidth, height: heroFrameHeight)
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private func pinnedOverlap(_ refs: [PinRef]) -> some View {
-        let pages = pinnedPages(refs)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                MonoLabel("Pinned", color: PB.pencil, size: 11, tracking: 2)
-                Spacer()
-                Rectangle().fill(.white.opacity(0.1)).frame(height: 1)
-                if pages.count > 1 {
-                    pinnedPageDots(count: pages.count)
-                }
-            }
-            GeometryReader { proxy in
-                let cardSize = pinCardSize(for: proxy.size.width)
-                let spacing = pinSpacing(for: proxy.size.width, cardSize: cardSize)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(Array(pages.enumerated()), id: \.offset) { pageIndex, page in
-                            HStack(spacing: spacing) {
-                                ForEach(page) { ref in
-                                    pinCard(ref, size: cardSize)
-                                }
-                                if page.count < pinsPerPage {
-                                    Spacer(minLength: 0)
-                                }
-                            }
-                            .frame(width: proxy.size.width, alignment: .leading)
-                            .id(pageIndex)
-                        }
-                    }
-                    .scrollTargetLayout()
-                }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $pinnedPageID)
-            }
-            .frame(height: pinnedCarouselHeight)
-        }
-    }
-
-    private func pinnedPages(_ refs: [PinRef]) -> [[PinRef]] {
-        stride(from: 0, to: refs.count, by: pinsPerPage).map { start in
-            Array(refs[start..<Swift.min(start + pinsPerPage, refs.count)])
-        }
-    }
-
-    private func pinCardSize(for availableWidth: CGFloat) -> CGFloat {
-        let compactSpacing: CGFloat = 12
-        let fitted = (availableWidth - compactSpacing * CGFloat(pinsPerPage - 1)) / CGFloat(pinsPerPage)
-        return min(pinCardSize, floor(fitted))
-    }
-
-    private func pinSpacing(for availableWidth: CGFloat, cardSize: CGFloat) -> CGFloat {
-        let fitted = (availableWidth - cardSize * CGFloat(pinsPerPage)) / CGFloat(pinsPerPage - 1)
-        return min(pinCardSpacing, max(10, fitted))
-    }
-
-    private func pinnedPageDots(count: Int) -> some View {
-        HStack(spacing: 4) {
-            ForEach(0..<count, id: \.self) { index in
-                Circle()
-                    .fill(PB.pencil.opacity((pinnedPageID ?? 0) == index ? 0.95 : 0.36))
-                    .frame(width: (pinnedPageID ?? 0) == index ? 5 : 4, height: (pinnedPageID ?? 0) == index ? 5 : 4)
-            }
-        }
-        .frame(width: CGFloat(count) * 7, alignment: .trailing)
     }
 
     private var loadingPanel: some View {
@@ -705,94 +515,6 @@ struct HomeView: View {
         .pinMenu(store, ref)
     }
 
-    @ViewBuilder private func pinCard(_ ref: PinRef, size: CGFloat? = nil) -> some View {
-        let size = size ?? pinCardSize
-        let cover = pinnedCover(ref, store) ?? featured
-        let pinnedTrack = ref.kind == .song ? store.track(ref.targetID) : nil
-        let inHolding = bulkMode == .holding && !selectedTrackIDs.isEmpty
-        let isSelected = selectedTrackIDs.contains(ref.targetID)
-        let dropEnabled = ref.kind == .song && (bulkMode == nil || (inHolding && !isSelected))
-        let card = VStack(alignment: .leading, spacing: 7) {
-            ZStack(alignment: .topTrailing) {
-                TrackArtwork(track: cover, cornerRadius: 12)
-                    .frame(width: size, height: size)
-                Image(systemName: "pin.fill").font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .padding(8)
-            }
-            .overlay(alignment: .topLeading) {
-                if bulkMode != nil, ref.kind == .song {
-                    SelectionMark(isSelected: selectedTrackIDs.contains(ref.targetID))
-                        .padding(6)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(pinnedTitle(ref, store))
-                    .font(PB.display(13))
-                    .foregroundStyle(PB.cream)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(width: size, alignment: .leading)
-                MonoLabel(pinnedSubtitle(ref), color: PB.pencil, size: 8, tracking: 1)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(width: size, alignment: .leading)
-            }
-        }
-        .frame(width: size)
-
-        Group {
-            switch ref.kind {
-            case .song:
-                if let pinnedTrack {
-                    Button {
-                        if bulkMode != nil {
-                            toggleSelection(ref.targetID)
-                        } else {
-                            openSong(ref.targetID)
-                        }
-                    } label: {
-                        card
-                    }
-                    .buttonStyle(.plain)
-                    .overlay(alignment: .topTrailing) {
-                        if bulkMode == nil {
-                            SongActionsButton(store: store, track: pinnedTrack)
-                                .scaleEffect(0.72)
-                                .frame(width: 34, height: 34)
-                                .padding(2)
-                        }
-                    }
-                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                        beginSelection(with: ref.targetID, mode: .holding)
-                    })
-                    .springboardDraggable(trackID: ref.targetID, track: pinnedTrack, store: store,
-                                          enabled: bulkMode == nil)
-                    .springboardPileDraggable(pileIDs: Array(selectedTrackIDs),
-                                              pileTracks: selectedTracks,
-                                              store: store,
-                                              enabled: inHolding && isSelected)
-                    .springboardDropTarget(targetID: ref.targetID, enabled: dropEnabled,
-                                           onDrop: handleSpringboardDrop)
-                    .selectionDragTarget(id: ref.targetID)
-                }
-            case .playlist:
-                if let pl = store.playlist(ref.targetID) {
-                    NavigationLink(value: pl) { card }
-                        .buttonStyle(.plain)
-                        .pinMenu(store, ref)
-                } else { card }
-            case .room:
-                if let rm = store.rooms.first(where: { $0.id == ref.targetID }) {
-                    NavigationLink(value: rm) { card }
-                        .buttonStyle(.plain)
-                        .pinMenu(store, ref)
-                } else { card }
-            }
-        }
-    }
-
     private func pinnedSubtitle(_ ref: PinRef) -> String {
         switch ref.kind {
         case .song:
@@ -846,54 +568,4 @@ struct HomeView: View {
         TrackArtwork(track: t, cornerRadius: 8)
             .frame(width: s, height: s)
     }
-}
-
-/// Hero artwork that always fills the tall hero card.
-///
-/// `AsyncImage` collapses to its loaded image's aspect ratio inside the hero's
-/// layout — a wide cover in the 3:4 card fills only the top and leaves the rest
-/// black. Remote artwork is therefore loaded into a `UIImage` and drawn at an
-/// explicitly computed cover scale (see `fill`), so it crops to fill the card
-/// regardless of the image's aspect ratio.
-private struct HeroArtwork: View {
-    let track: Track
-    let width: CGFloat
-    let height: CGFloat
-    #if canImport(UIKit)
-    @State private var remoteImage: UIImage?
-    #endif
-
-    var body: some View {
-        Group {
-            #if canImport(UIKit)
-            if let local = TrackArtworkLoader.uiImage(for: track) {
-                Image(uiImage: local).resizable().scaledToFill()
-            } else if let remoteImage {
-                Image(uiImage: remoteImage).resizable().scaledToFill()
-            } else {
-                MeshCover(colors: track.mesh, animate: true, fillsSafeArea: false)
-            }
-            #else
-            MeshCover(colors: track.mesh, animate: true, fillsSafeArea: false)
-            #endif
-        }
-        .frame(width: width, height: height)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        #if canImport(UIKit)
-        .task(id: track.id) { await loadRemoteArtwork() }
-        #endif
-    }
-
-    #if canImport(UIKit)
-    private func loadRemoteArtwork() async {
-        remoteImage = nil
-        guard TrackArtworkLoader.uiImage(for: track) == nil,
-              let raw = track.remoteArtworkURL,
-              let url = URL(string: raw) else { return }
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
-              let image = UIImage(data: data) else { return }
-        remoteImage = image
-    }
-    #endif
 }

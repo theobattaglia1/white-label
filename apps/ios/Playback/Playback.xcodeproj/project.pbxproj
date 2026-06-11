@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0049FCB7B7A0B13A21BCD322 /* WorkspaceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E77B0286638E838E565A618 /* WorkspaceSheet.swift */; };
+		016440CB97413836BC47C9B9 /* ShelfSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CFA406755835FEF90F8577C /* ShelfSlots.swift */; };
 		0A1509ABEC6335F70F821D87 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D568600D69EB05C087C6260 /* ShareViewController.swift */; };
 		0D066AC78923AA6DB5E94414 /* duel-v5.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 271B2FA5D17D20FFE5C6F58D /* duel-v5.m4a */; };
 		121938F56C5BE8F209B56CE0 /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6944F8FE30EB6C0B9DBF2CC5 /* AuthSession.swift */; };
@@ -16,6 +17,7 @@
 		237FF25563D73AA06A989C32 /* TeamScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF8A9DF68C817192487CCCE5 /* TeamScreen.swift */; };
 		267CFE5B94895043C3A430F4 /* JogWheel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E579C6BE3B770D72C28C7712 /* JogWheel.swift */; };
 		2AE0D09D24426490AF199470 /* LetteraMonoLL-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 0EAFF4F00C1B60B13F826F52 /* LetteraMonoLL-Regular.otf */; };
+		2B3074C6615CBB1391EA96A9 /* ShelfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB28B34FC14448DF10D2B144 /* ShelfView.swift */; };
 		2BA6BCB1ED9DE160A25FA2D5 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B5106CD9BC51315E60AB436 /* ProfileView.swift */; };
 		40415247261F9ECA131345F6 /* PlaybackWordmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBEFE243B41358F08C059F7A /* PlaybackWordmark.swift */; };
 		40EA6BAFEF4D4A3CD320F20B /* LaunchAnimationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A6F29B113B5D9C566E50F1 /* LaunchAnimationView.swift */; };
@@ -98,6 +100,7 @@
 		2D0DCDF276002598A4B5DDD2 /* cover-the-first-night.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "cover-the-first-night.png"; sourceTree = "<group>"; };
 		314121DFCCA684CC9AEB0AF1 /* Waveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Waveform.swift; sourceTree = "<group>"; };
 		31C4882EB759AB079590BC05 /* PlaybackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackApp.swift; sourceTree = "<group>"; };
+		3CFA406755835FEF90F8577C /* ShelfSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfSlots.swift; sourceTree = "<group>"; };
 		3E3A57F66B470DE04DA48475 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 		403518CE0A6CCD31FBAB479B /* UniversTE40-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE40-Light.ttf"; sourceTree = "<group>"; };
 		4811E090A5644AD6FE5A8EC9 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -116,6 +119,7 @@
 		A7DC99BB341F26094D63120D /* the-first-night-v1-pitch.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "the-first-night-v1-pitch.mp3"; sourceTree = "<group>"; };
 		BF75674146E57BA3C0364479 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		C78EB7971777995A030426F5 /* UniversTE20-Thin.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Thin.ttf"; sourceTree = "<group>"; };
+		CB28B34FC14448DF10D2B144 /* ShelfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfView.swift; sourceTree = "<group>"; };
 		D311DE832F0EB7B62899D114 /* Playback.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Playback.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D3323F3A97E39141B9EF9E88 /* ExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreView.swift; sourceTree = "<group>"; };
 		D8315AFC8D38644A51CA8016 /* PlaybackShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PlaybackShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -154,6 +158,8 @@
 				95C3D524B0E01D5DED4C9308 /* RootView.swift */,
 				BF75674146E57BA3C0364479 /* SampleData.swift */,
 				97E95328550DF81F350E4A9B /* ServiceClient.swift */,
+				3CFA406755835FEF90F8577C /* ShelfSlots.swift */,
+				CB28B34FC14448DF10D2B144 /* ShelfView.swift */,
 				3E3A57F66B470DE04DA48475 /* SignInView.swift */,
 				F6E395AD981D081083CAACAC /* SpringboardDrag.swift */,
 				EF8A9DF68C817192487CCCE5 /* TeamScreen.swift */,
@@ -395,6 +401,8 @@
 				9E52A5046C5D14509D15843F /* RootView.swift in Sources */,
 				DCDE4CFF86BC2040AC9DECA1 /* SampleData.swift in Sources */,
 				4FC4AF792ADD131C4DE95786 /* ServiceClient.swift in Sources */,
+				016440CB97413836BC47C9B9 /* ShelfSlots.swift in Sources */,
+				2B3074C6615CBB1391EA96A9 /* ShelfView.swift in Sources */,
 				D38523B3EE605286479BCB47 /* SignInView.swift in Sources */,
 				71FF87AC75ACC3F944474877 /* SpringboardDrag.swift in Sources */,
 				237FF25563D73AA06A989C32 /* TeamScreen.swift in Sources */,

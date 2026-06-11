@@ -980,14 +980,12 @@ a:hover { color: var(--redline); }
   cursor: pointer;
   transition: background var(--motion-fast) var(--easing), border-color var(--motion-fast) var(--easing);
 }
-.shared-page .chrome-button, .shared-page .scope-chip,
-.signin-page .chrome-button {
+.shared-page .chrome-button, .shared-page .scope-chip {
   border-color: var(--sleeve-hairline);
   color: var(--ink);
 }
 .chrome-button:hover { border-color: var(--pencil-warm); }
-.shared-page .chrome-button:hover,
-.signin-page .chrome-button:hover { border-color: var(--ink); }
+.shared-page .chrome-button:hover { border-color: var(--ink); }
 /* song-card-hero is a sleeve-mode (cream) block inside the studio shell —
    chrome-buttons there need ink-on-cream styling, not tape-oxide-on-dark. */
 .song-card-hero .chrome-button {
@@ -2360,58 +2358,98 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 }
 
 /* =====================================================================
-   Sign-in page (the two-doors sign-up screen from wireframes v2 #s06)
+   Sign-in page — the door into the dark Playback universe.
+   Full-viewport studio black, the shared ambient dot field idling at low
+   amplitude behind two dark doors (workspace card language: hairline
+   borders, mono-caps eyebrows, display headings, hardware keys).
    ===================================================================== */
 .signin-page {
+  position: relative;
   min-height: 100vh;
-  background: var(--sleeve-cream);
-  color: var(--ink);
+  background: var(--studio-black);
+  color: var(--tape-oxide);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.signin-field-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
 }
 .signin-chrome {
-  padding: 24px 32px;
-  border-bottom: 1px solid var(--sleeve-hairline);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 32px 36px 24px;
+  border-bottom: 1px solid rgba(243, 236, 222, 0.08);
+  transition: opacity 700ms var(--easing);
 }
+.signin-tagline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, 0.38);
+  margin: 0;
+}
+/* The playhead knob on studio black: cream disc, black P (exactly iOS). */
+.signin-page .pb-cap-letter { fill: var(--studio-black); }
 .signin-doors {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 36px;
+  gap: 28px;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  box-sizing: border-box;
   padding: 56px clamp(24px, 6vw, 80px);
   align-items: stretch;
+  transition: opacity 700ms var(--easing), transform 700ms var(--easing);
 }
+/* Mobile (~390px): doors stack, recipients first (already first in DOM). */
 @media (max-width: 720px) {
-  .signin-doors { grid-template-columns: 1fr; padding: 32px 18px; gap: 18px; }
+  .signin-doors { grid-template-columns: 1fr; padding: 32px 18px 48px; gap: 18px; }
+  .signin-chrome { padding: 24px 20px 18px; }
 }
+/* Sign-in success — the door opens: panels fade while the pulse travels. */
+.signin-page.leaving .signin-chrome,
+.signin-page.leaving .signin-doors {
+  opacity: 0;
+  pointer-events: none;
+}
+.signin-page.leaving .signin-doors { transform: scale(0.992); }
 .signin-door {
-  background: var(--sleeve-card);
-  border: 1px solid var(--sleeve-hairline);
-  padding: 36px 32px;
+  /* near-black, slightly lifted from the canvas; dots whisper through */
+  background: rgba(22, 17, 12, 0.78);
+  border: 1px solid rgba(243, 236, 222, 0.12);
+  border-radius: 2px;
+  padding: 40px 36px;
   min-height: 380px;
   display: flex; flex-direction: column;
   cursor: pointer;
-  transition: background var(--motion-fast);
+  transition: border-color var(--motion-fast) var(--easing),
+              background var(--motion-fast) var(--easing);
 }
-.signin-door:hover { background: var(--sleeve-elevated); }
-.signin-door.listen.active {
-  background: var(--sleeve-elevated);
-  border-color: var(--ink);
-  border-width: 2px;
-  padding: 35px 31px;
-}
-.signin-door.producer.active {
-  background: var(--sleeve-elevated);
-  border-color: var(--ink);
-  border-width: 2px;
-  padding: 35px 31px;
+.signin-door:hover { border-color: rgba(243, 236, 222, 0.2); }
+.signin-door.active {
+  background: rgba(28, 22, 16, 0.85);
+  border-color: rgba(243, 236, 222, 0.28);
 }
 .signin-door .kicker {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--pencil-cool);
+  color: var(--pencil-warm);
   margin-bottom: 12px;
 }
 .signin-title {
@@ -2421,12 +2459,12 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   letter-spacing: -.02em;
   line-height: 1;
   text-transform: uppercase;
-  color: var(--ink);
+  color: var(--tape-oxide);
   margin: 0;
 }
 .signin-lede {
   font-size: 14px;
-  color: var(--pencil-cool);
+  color: var(--pencil-warm);
   margin-top: 10px;
   line-height: 1.5;
   max-width: 38ch;
@@ -2438,53 +2476,92 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
   gap: 10px;
 }
 .signin-form input {
-  padding: 12px;
-  background: #fff;
-  border: 1px solid var(--sleeve-hairline);
-  color: var(--ink);
+  padding: 12px 14px;
+  background: rgba(12, 9, 7, 0.65);
+  border: 1px solid rgba(243, 236, 222, 0.12);
+  color: var(--tape-oxide);
   font-family: var(--font-sans);
   font-size: 14px;
   border-radius: 2px;
+  transition: border-color var(--motion-fast) var(--easing);
 }
-.signin-form input:focus { border-color: var(--ink); outline: none; }
+.signin-form input::placeholder {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, 0.32);
+}
+/* Focus = border brightens to cream .4 — no default blue outline. */
+.signin-form input:focus { border-color: rgba(243, 236, 222, 0.4); outline: none; }
 .signin-actions {
-  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
+  display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; align-items: center;
 }
-.signin-actions .accent-button { background: var(--ink); border-color: var(--ink); color: #fff; }
-.signin-actions .accent-button:hover { background: #25221d; border-color: #25221d; }
-.signin-actions .chrome-button { color: var(--ink); border-color: var(--sleeve-hairline); }
-.signin-actions .chrome-button:hover { border-color: var(--ink); }
+/* Quiet flat-hairline secondary — deliberately NOT a hardware key. */
+.signin-page .quiet-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  background: transparent;
+  border: 1px solid rgba(243, 236, 222, 0.14);
+  border-radius: 999px;
+  color: rgba(243, 236, 222, 0.7);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--easing),
+              color var(--motion-fast) var(--easing);
+}
+.signin-page .quiet-button:hover {
+  border-color: rgba(243, 236, 222, 0.32);
+  color: var(--tape-oxide);
+}
+.signin-page .quiet-button:disabled { opacity: .45; cursor: not-allowed; }
+/* Quiet redline mono-caps under the fields — never a browser alert. */
+.signin-note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  margin: 6px 0 0;
+}
+.signin-note.error { color: var(--redline); }
+.signin-note.info { color: rgba(243, 236, 222, 0.6); }
+/* Wrong password — one restrained horizontal shake (4px, 250ms). */
+@keyframes signin-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  85% { transform: translateX(-2px); }
+}
+.signin-door.shake { animation: signin-shake 250ms var(--easing); }
 .signin-footer {
   margin-top: auto;
   padding-top: 14px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--pencil-cool);
-  letter-spacing: .04em;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: rgba(243, 236, 222, 0.38);
 }
 .linklike {
   background: transparent; border: 0; padding: 0;
-  color: var(--ink);
+  color: rgba(243, 236, 222, 0.55);
   font-family: var(--font-mono); font-size: 11px;
-  letter-spacing: .04em;
+  text-transform: uppercase;
+  letter-spacing: .12em;
   text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
+  transition: color var(--motion-fast) var(--easing);
 }
-.signin-toast {
-  position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: 24px;
-  padding: 10px 16px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: .04em;
-  border-radius: 2px;
-  border: 1px solid var(--ink);
-  background: var(--sleeve-elevated);
-  color: var(--ink);
-}
-.signin-toast.error {
-  border-color: var(--redline);
-  color: var(--redline);
+.linklike:hover { color: var(--tape-oxide); }
+@media (prefers-reduced-motion: reduce) {
+  .signin-chrome, .signin-doors { transition: none; }
+  .signin-page.leaving .signin-doors { transform: none; }
+  .signin-door.shake { animation: none; }
 }
 
 /* Sign-out chip in top-bar */
@@ -3803,15 +3880,13 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .accent-button:disabled,
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* Sleeve-mode (recipient + sign-in pages, cream) keeps the flat hairline
-   treatment — the dark-mode neumorphic shadows don't read on light surfaces.
-   Without this, the sign-in "Email me a link instead" secondary button
-   rendered as the dark raised pill on cream: a disabled-looking gray blob. */
+/* Sleeve-mode (recipient pages, cream) keeps the flat hairline treatment —
+   the dark-mode neumorphic shadows don't read on light surfaces. The sign-in
+   page is now studio-dark and uses the hardware keys natively. */
 .shared-page .chrome-button,
 .shared-page .btn,
 .shared-page .icon-button,
-.shared-page .avatar-button,
-.signin-page .chrome-button {
+.shared-page .avatar-button {
   background: rgba(0, 0, 0, 0.02);
   box-shadow:
     inset 0 1px 0 rgba(0, 0, 0, 0.04),
@@ -3821,8 +3896,7 @@ input::placeholder, textarea::placeholder { color: var(--pencil-warm); }
 .shared-page .chrome-button:active,
 .shared-page .btn:active,
 .shared-page .icon-button:active,
-.shared-page .avatar-button:active,
-.signin-page .chrome-button:active {
+.shared-page .avatar-button:active {
   background: rgba(0, 0, 0, 0.06);
   box-shadow:
     inset 0 2px 3px rgba(0, 0, 0, 0.18),

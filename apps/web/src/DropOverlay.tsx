@@ -17,6 +17,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { api, uploadNewSong } from "./api";
+import { AmbientField, prefersReducedMotion } from "./ambientField";
 import {
   cleanSongTitle,
   collectAudioEntries,
@@ -31,16 +32,6 @@ import {
   type IngestionPlan,
 } from "./dropzone";
 
-// --- Dot-field constants (ported from apps/ios .../AmbientDotField.swift) ---
-const SPACING = 22;        // px between dot centres
-const BASE_RADIUS = 1.4;
-const PEAK_RADIUS = 3.2;
-const PEAK_OPACITY = 0.34; // hotter than the iOS backdrop (0.16) — this is the hero
-const DOT_RGB = "243, 236, 222"; // cream (#F3ECDE-ish, matches iOS 0.953/0.925/0.871)
-const PULSE_SPEED = 850;   // px/s radial wavefront
-const PULSE_SECONDS = 1.4;
-const PULSE_SIGMA = 64;    // wavefront thickness
-
 type Phase = "idle" | "hover" | "pulse" | "uploading";
 
 type StripState = {
@@ -49,11 +40,6 @@ type StripState = {
   current: string;
   pct: number; // 0-100 overall
 };
-
-function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === "function"
-    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 export function DropZone({ onBatchComplete }: { onBatchComplete?: () => void }) {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -66,12 +52,11 @@ export function DropZone({ onBatchComplete }: { onBatchComplete?: () => void }) 
   const phaseRef = useRef<Phase>("idle");
   phaseRef.current = phase;
 
-  // Animation state lives in refs so the rAF loop survives re-renders and
-  // phase transitions without losing wave continuity.
-  const wave1Ref = useRef(Math.random() * 20);
-  const wave2Ref = useRef(Math.random() * 20);
-  const excitementRef = useRef(0);
-  const pulseRef = useRef<{ x: number; y: number; start: number } | null>(null);
+  // Dot-field state lives in one AmbientField instance (shared module with
+  // SignIn) so the wave survives re-renders and phase transitions without
+  // losing continuity. Created lazily once per component lifetime.
+  const fieldRef = useRef<AmbientField | null>(null);
+  if (fieldRef.current === null) fieldRef.current = new AmbientField({ excitementTarget: 1 });
   const pctByFileRef = useRef<Map<string, number>>(new Map());
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(false);
@@ -98,7 +83,7 @@ export function DropZone({ onBatchComplete }: { onBatchComplete?: () => void }) 
     }
 
     // Radial pulse from the actual drop coordinates, then collapse to strip.
-    pulseRef.current = { x: point.x, y: point.y, start: performance.now() };
+    fieldRef.current?.pulse(point.x, point.y);
     setPhase("pulse");
     const collapseMs = reduce ? 120 : 1300;
     const collapse = setTimeout(() => {
@@ -111,7 +96,7 @@ export function DropZone({ onBatchComplete }: { onBatchComplete?: () => void }) 
     clearTimeout(collapse);
     setPhase("idle");
     setStrip(null);
-    pulseRef.current = null;
+    fieldRef.current?.clearPulses();
 
     setNotice(summarizeBatch(outcome));
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
@@ -291,107 +276,23 @@ export function DropZone({ onBatchComplete }: { onBatchComplete?: () => void }) 
   }, []);
 
   // ---------------------------------------------------------------------
-  // Ambient dot field — canvas port of the iOS Swift implementation
+  // Ambient dot field — shared AmbientField module (see ambientField.ts)
   // ---------------------------------------------------------------------
   useEffect(() => {
     if (!overlayVisible) return;
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-
-    const reduce = prefersReducedMotion();
-    let raf = 0;
-    let last = performance.now();
-
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(window.innerWidth * dpr);
-      canvas.height = Math.round(window.innerHeight * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    const render = (now: number) => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      ctx.clearRect(0, 0, w, h);
-
-      const cols = Math.ceil(w / SPACING) + 2;
-      const rows = Math.ceil(h / SPACING) + 2;
-      const e = excitementRef.current;
-      // While files hover the field breathes faster and harder.
-      const amp = 1.0 + e * 0.85;
-      const rRange = PEAK_RADIUS - BASE_RADIUS;
-      const p1 = wave1Ref.current;
-      const p2 = wave2Ref.current;
-
-      const pulse = pulseRef.current;
-      let pulseR = -1;
-      let pulseDecay = 0;
-      if (pulse) {
-        const elapsed = (now - pulse.start) / 1000;
-        if (elapsed <= PULSE_SECONDS) {
-          pulseR = elapsed * PULSE_SPEED;
-          pulseDecay = 1 - elapsed / PULSE_SECONDS;
-        }
-      }
-
-      ctx.fillStyle = `rgb(${DOT_RGB})`;
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          const cx = col * SPACING;
-          const cy = row * SPACING;
-          // Product of two slow sine planes = a localized crest that travels
-          // without repeating; square it so valleys stay invisible.
-          const w1 = Math.sin(col * 0.28 + row * 0.19 + p1);
-          const w2 = Math.cos(col * 0.15 + row * 0.32 + p2);
-          const clamped = Math.max(0, w1 * w2);
-          let norm = Math.min(1, clamped * clamped * amp);
-
-          if (pulseR >= 0) {
-            const d = Math.hypot(cx - pulse!.x, cy - pulse!.y) - pulseR;
-            norm = Math.min(1, norm + Math.exp(-(d * d) / (2 * PULSE_SIGMA * PULSE_SIGMA)) * pulseDecay);
-          }
-
-          if (norm < 0.02) continue; // valleys: skip the fill entirely
-          const r = BASE_RADIUS + norm * rRange;
-          ctx.globalAlpha = norm * PEAK_OPACITY;
-          ctx.beginPath();
-          ctx.arc(cx, cy, r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      ctx.globalAlpha = 1;
-    };
-
-    const tick = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
-      // Ease the excitement toward its target so amplitude/speed ramp subtly.
-      const target = phaseRef.current === "hover" ? 1 : 0.3;
-      excitementRef.current += (target - excitementRef.current) * Math.min(1, dt * 2.5);
-      // Integrate phase (not t × speed) so speed changes never jump the wave.
-      const speedBoost = 1 + excitementRef.current * 1.3;
-      wave1Ref.current += dt * 0.31 * speedBoost;
-      wave2Ref.current += dt * 0.24 * speedBoost;
-      render(now);
-      raf = requestAnimationFrame(tick);
-    };
-
-    if (reduce) {
-      // Static dots — a single calm frame, no wave, no pulse.
-      pulseRef.current = null;
-      render(performance.now());
-    } else {
-      raf = requestAnimationFrame(tick);
-    }
-
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-    };
+    const field = fieldRef.current;
+    if (!canvas || !field) return;
+    field.setExcitementTarget(phaseRef.current === "hover" ? 1 : 0.3);
+    field.attach(canvas);
+    return () => field.detach();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlayVisible]);
+
+  // While files hover the field breathes faster and harder.
+  useEffect(() => {
+    fieldRef.current?.setExcitementTarget(phase === "hover" ? 1 : 0.3);
+  }, [phase]);
 
   // ---------------------------------------------------------------------
   // Render — overlay never intercepts pointer events; window handles drops

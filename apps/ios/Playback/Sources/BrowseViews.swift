@@ -931,7 +931,7 @@ struct LibraryView: View {
             .scrollIndicators(.hidden)
             .background {
                 PB.black.ignoresSafeArea()
-                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                AmbientPlayerBackdrop(player: player)
                     .allowsHitTesting(false).ignoresSafeArea()
             }
             .overlay(alignment: .top) {
@@ -1296,7 +1296,7 @@ struct ArtistDetailView: View {
             .scrollIndicators(.hidden)
             .background {
                 PB.black.ignoresSafeArea()
-                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                AmbientPlayerBackdrop(player: player)
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
             }
@@ -3498,7 +3498,7 @@ struct RoomDetailView: View {
         .scrollIndicators(.hidden)
         .background {
             PB.black.ignoresSafeArea()
-            AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+            AmbientPlayerBackdrop(player: player)
                 .allowsHitTesting(false).ignoresSafeArea()
         }
         .toolbar(.hidden, for: .navigationBar)

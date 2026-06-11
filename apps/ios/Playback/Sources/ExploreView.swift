@@ -620,7 +620,7 @@ struct SavedViewDetailView: View {
             .scrollIndicators(.hidden)
             .background {
                 PB.black.ignoresSafeArea()
-                AmbientDotField(isPlaying: player.isPlaying, positionMs: player.positionMs)
+                AmbientPlayerBackdrop(player: player)
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
             }

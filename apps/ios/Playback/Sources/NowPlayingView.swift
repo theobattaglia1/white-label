@@ -147,7 +147,7 @@ struct NowPlayingView: View {
     private var statusRow: some View {
         HStack(alignment: .bottom, spacing: 10) {
             Button { onMenu() } label: {
-                TimelineView(.animation) { ctx in
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
                     let angle = (ctx.date.timeIntervalSinceReferenceDate
                         .truncatingRemainder(dividingBy: 9) / 9) * 360
                     ZStack {

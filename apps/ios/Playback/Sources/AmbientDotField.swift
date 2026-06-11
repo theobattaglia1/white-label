@@ -24,7 +24,7 @@ struct AmbientDotField: View {
     private let peakOpacity: Double = 0.16
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: reduceMotion)) { ctx in
             let t = reduceMotion ? 0 : ctx.date.timeIntervalSinceReferenceDate
             // Playback phase — loosely ties wave to position without being
             // mechanical. Scale very small so it shifts, not drives.
@@ -56,6 +56,9 @@ struct AmbientDotField: View {
                         let clamped: Double = Swift.max(0.0, raw)    // kill valleys
                         let norm: Double = Swift.min(1.0, clamped * clamped * amp)
 
+                        // Valleys are invisible — skip their path fills entirely
+                        // (cuts the per-frame fill count by ~3-4x).
+                        if norm < 0.02 { continue }
                         let r = CGFloat(baseRadius + norm * rRange)
                         let opacity = baseOpacity + norm * oRange
 

@@ -2,8 +2,8 @@ import SwiftUI
 
 /// THE SHELF — pins + recents as a record crate on Home.
 ///
-/// SwiftUI port of the web reference (apps/web/src/Shelf.tsx): a row of tall
-/// sleeves standing on a floor, receding in 3D; the focused card faces the
+/// SwiftUI port of the web reference (apps/web/src/Shelf.tsx): a row of square
+/// 12" sleeves standing on a floor, receding in 3D; the focused card faces the
 /// viewer most, far cards sit nearly edge-on, cards left of focus mirror and
 /// lean the other way. Transforms + opacity only — no timers, no TimelineView,
 /// no auto-advance, and no reads of any high-frequency player state.
@@ -36,14 +36,14 @@ struct ShelfView: View {
     private var reduced: Bool { systemReduceMotion || appReduceMotion }
 
     // Crate geometry — spacing keeps every exposed sleeve sliver ≥ 44pt.
-    private let cardW: CGFloat = 128
-    private let cardH: CGFloat = 179        // ~3:4.2 sleeve
+    private let cardW: CGFloat = 196
+    private let cardH: CGFloat = 196        // 1:1 square sleeve — artwork fills the face
     private let spacing: CGFloat = 44       // adjacent receding cards
-    private let focusGap: CGFloat = 92      // focused card → first neighbor
+    private let focusGap: CGFloat = 104     // focused card → first neighbor
     private let maxVisible = 3              // cards drawn each side of focus
     private let depth: CGFloat = 1100       // perspective distance for z → scale
     private let labelBandH: CGFloat = 56
-    private let stageH: CGFloat = 264
+    private let stageH: CGFloat = 282
 
     private var crateAnimation: Animation {
         reduced ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85)
@@ -161,8 +161,8 @@ struct ShelfView: View {
                         }
                     }
                 }
-                .frame(width: 168)
-                .offset(x: p.x + crateShift + dir * 44)
+                .frame(width: 184)
+                .offset(x: p.x + crateShift + dir * 52)
                 .opacity(visible ? (d == 0 ? 1 : 0.55) : 0)
             }
         }
@@ -243,7 +243,7 @@ struct ShelfView: View {
         } else {
             ZStack {
                 MeshCover(colors: MeshPalette.colors(for: item.id), animate: false, fillsSafeArea: false)
-                MonoLabel(initials(item.title), color: PB.cream, size: 22, tracking: 2)
+                MonoLabel(initials(item.title), color: PB.cream, size: 28, tracking: 2)
                     .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
             }
         }

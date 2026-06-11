@@ -3,7 +3,7 @@ import { coverGradient } from "./utils";
 import { SHELF_MAX_SLOTS, type ShelfItem } from "./shelf";
 
 /* THE SHELF — pins + recents as a record crate on Home.
-   A row of tall covers standing on a floor, receding in 3D perspective; the
+   A row of square 12" covers standing on a floor, receding in 3D perspective; the
    focused card faces the viewer most, far cards sit nearly edge-on. Pure
    CSS 3D — transforms + opacity only, transitions do the travel, no rAF.
 
@@ -127,15 +127,15 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
 
   // Narrow screens: shallower travel, fewer visible cards (edges still
   // clickable, so all 15 remain reachable by flipping through).
-  const spacing = narrow ? 44 : 64;
-  const focusGap = narrow ? 92 : 136;
+  const spacing = narrow ? 40 : 56;
+  const focusGap = narrow ? 100 : 148;
   const maxVisible = narrow ? 2 : 6;
-  const cardHalf = narrow ? 64 : 86;
+  const cardHalf = narrow ? 80 : 132;
   const persp = narrow ? 900 : 1400;
   // Vertical offset from a card's center up to the stage vanishing point
   // (38% of stage height) — keeps the projection identical to the old
   // stage-level `perspective` (see poseTransform3D below).
-  const vanishY = narrow ? -66 : -74;
+  const vanishY = narrow ? -66 : -78;
 
   // Compose the band around the *visible* group so there's never a dead
   // half-band: shift the whole crate by half the difference between the
@@ -182,7 +182,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
             // everything hides during pull-out (the pulled sleeve rises into
             // the label band — no ghost stubs over the artwork).
             const dir = d < 0 ? -1 : d > 0 ? 1 : 0;
-            const labelX = pose.x + crateShift + dir * (narrow ? 34 : 44);
+            const labelX = pose.x + crateShift + dir * (narrow ? 38 : 52);
             const visible = !pose.hidden && !pulled && (Math.abs(d) <= 1 || hovered === i);
             return (
               <div
@@ -209,7 +209,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
             const isPulled = isFocused && pulled;
             const dimmed = pulled && !isFocused;
             // The BUTTON only ever gets a flat 2D transform — its hit-rect is
-            // an ordinary 172px-wide strip at the card's composed position,
+            // an ordinary 264px-wide strip at the card's composed position,
             // stacked by explicit zIndex in painter's order (closer to focus
             // = on top), exactly like records in a bin: each sleeve is
             // clickable on its visible outer sliver, the overlap belongs to

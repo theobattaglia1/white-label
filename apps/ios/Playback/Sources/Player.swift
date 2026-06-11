@@ -189,6 +189,12 @@ final class Player {
     }
 
     private func remoteAudioURL(_ value: String) -> URL? {
+        if value.hasPrefix("/seed-audio/") {
+            // Seed/demo audio is published by the web app's static site, not
+            // the API — resolving it against the API base 404s and stalls
+            // every demo track.
+            return URL(string: Config.appURL + value)
+        }
         if value.hasPrefix("/") {
             return URL(string: value, relativeTo: Config.apiBaseURL)?.absoluteURL
         }

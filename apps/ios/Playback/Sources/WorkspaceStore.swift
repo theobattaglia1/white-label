@@ -486,6 +486,12 @@ final class WorkspaceStore {
 
     private func serviceURL(_ raw: String?) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
+        if raw.hasPrefix("/seed-audio/") {
+            // Seed/demo audio is published by the web app's static site, not
+            // the API — resolving against the API base 404s and stalls
+            // every demo track.
+            return Config.appURL + raw
+        }
         if raw.hasPrefix("/") {
             return URL(string: raw, relativeTo: Config.apiBaseURL)?.absoluteString
         }

@@ -201,6 +201,7 @@ export interface Song {
   artwork_key?: string;
   artwork_url?: string;
   release_readiness_status: "ready" | "not_ready";
+  deleted_at?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -584,6 +585,24 @@ export interface PlaylistItem {
   note?: string;
 }
 
+/**
+ * A share-link recipient (no account) asking the workspace owner for full
+ * Playback access. Created from the public recipient player; surfaced in the
+ * owner's Inbox where approving generates an invite link.
+ */
+export interface AccessRequest {
+  request_id: string;
+  workspace_id: string;
+  name: string;
+  email: string;
+  /** The share-link token the request came through (demo/raw token). */
+  source_token?: string;
+  /** Title of the song/playlist/room the link exposed — gives the owner context. */
+  source_song_title?: string;
+  status: "pending" | "approved" | "dismissed";
+  created_at: string;
+}
+
 export interface WorkspaceSnapshot {
   workspaces: Workspace[];
   users: User[];
@@ -613,4 +632,5 @@ export interface WorkspaceSnapshot {
   listeningRoomParticipants: ListeningRoomParticipant[];
   listeningRoomStates: ListeningRoomState[];
   listeningReports: ListeningReport[];
+  accessRequests: AccessRequest[];
 }

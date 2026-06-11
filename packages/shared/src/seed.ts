@@ -1,4 +1,5 @@
 import type {
+  AccessRequest,
   ActivityEvent,
   Approval,
   DecisionResponse,
@@ -768,6 +769,7 @@ const listeningRoomTracks: ListeningRoomTrack[] = [];
 const listeningRoomParticipants: ListeningRoomParticipant[] = [];
 const listeningRoomStates: ListeningRoomState[] = [];
 const listeningReports: ListeningReport[] = [];
+const accessRequests: AccessRequest[] = [];
 
 export function createSeedSnapshot(): WorkspaceSnapshot {
   return structuredClone({
@@ -799,5 +801,6 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     listeningRoomParticipants,
     listeningRoomStates,
     listeningReports,
+    accessRequests,
   });
 }

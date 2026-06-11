@@ -4249,6 +4249,8 @@ function SharedListeningView({
         </aside>
       </div>
 
+      <RequestAccessFooter token={token} />
+
       {/* STICKY COMPOSER */}
       <form
         className="sticky-composer"
@@ -4274,6 +4276,78 @@ function SharedListeningView({
 
       <MiniPlayer />
     </div>
+  );
+}
+
+/**
+ * Discreet footer-level affordance on the shared recipient player:
+ * "LIKE PLAYBACK? REQUEST ACCESS" → inline mini-form (name + email) → quiet
+ * sent/error states. No navigation, no modal chrome.
+ */
+function RequestAccessFooter({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (sending || !name.trim() || !email.trim()) return;
+    setSending(true);
+    setError(null);
+    try {
+      await api.sharedRequestAccess(token, { name: name.trim(), email: email.trim() });
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't send the request — try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <footer className="request-access">
+      {sent ? (
+        <p className="request-access-sent" role="status" aria-live="polite">
+          Request sent — we'll be in touch
+        </p>
+      ) : !open ? (
+        <button type="button" className="request-access-link" onClick={() => setOpen(true)}>
+          Like Playback? Request access
+        </button>
+      ) : (
+        <form
+          className="request-access-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name"
+            aria-label="Name"
+            autoComplete="name"
+            disabled={sending}
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            aria-label="Email"
+            autoComplete="email"
+            disabled={sending}
+          />
+          <button type="submit" disabled={sending || !name.trim() || !email.trim()}>
+            {sending ? "Sending…" : "Send"}
+          </button>
+          {error && <p className="request-access-error" role="alert">{error}</p>}
+        </form>
+      )}
+    </footer>
   );
 }
 

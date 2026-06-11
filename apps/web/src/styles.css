@@ -6115,3 +6115,88 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   -webkit-text-stroke: .75px currentColor;
   paint-order: stroke fill;
 }
+
+/* =====================================================================
+   Request access — discreet footer on the shared recipient player.
+   Small mono caps, low opacity; reveals an inline mini-form (no modal).
+   ===================================================================== */
+.request-access {
+  margin: 36px 24px 8px;
+  text-align: center;
+}
+.request-access-link {
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  opacity: .55;
+  cursor: pointer;
+  padding: 8px 10px;
+  transition: opacity var(--motion-fast) var(--easing);
+}
+.request-access-link:hover,
+.request-access-link:focus-visible { opacity: 1; }
+.request-access-sent {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-cool);
+  margin: 0;
+  padding: 8px 10px;
+}
+.request-access-form {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.request-access-form input {
+  flex: 1 1 140px;
+  min-width: 0;
+  border: 1px solid var(--sleeve-hairline);
+  background: transparent;
+  padding: 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  border-radius: 2px;
+  outline: none;
+}
+.request-access-form input::placeholder { color: var(--pencil-cool); }
+.request-access-form input:focus { border-color: var(--ink); }
+.request-access-form button[type="submit"] {
+  border: 1px solid var(--sleeve-hairline);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 9px 14px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.request-access-form button[type="submit"]:hover:not(:disabled) { border-color: var(--ink); }
+.request-access-form button[type="submit"]:disabled { color: var(--pencil-cool); cursor: not-allowed; }
+.request-access-error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--redline);
+}
+/* Mobile-first: opened from texts/DMs at ~390px — stack the mini-form. */
+@media (max-width: 480px) {
+  .request-access { margin-left: 16px; margin-right: 16px; }
+  .request-access-form { flex-direction: column; align-items: stretch; }
+  .request-access-form button[type="submit"] { width: 100%; }
+}

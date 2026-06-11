@@ -8,6 +8,7 @@ import {
   promoteVersion,
   proposeUploadGroupings,
   resolveShareLink,
+  type AccessRequest,
   type ActivityEvent,
   type Approval,
   type DecisionRequestType,
@@ -98,7 +99,15 @@ export class WorkspaceStore {
   async hydrate(): Promise<void> {
     if (!isSupabaseEnabled()) return;
     const fromDb = await loadSnapshotFromSupabase();
-    if (fromDb) this.snapshot = fromDb;
+    if (fromDb) {
+      // accessRequests aren't persisted in Supabase yet — carry the live
+      // in-memory array across re-hydrations so a mid-session hydrate
+      // (after invites/uploads) doesn't silently drop them.
+      this.snapshot = {
+        ...fromDb,
+        accessRequests: this.snapshot.accessRequests,
+      };
+    }
   }
 
   reset(): WorkspaceSnapshot {
@@ -1387,6 +1396,71 @@ export class WorkspaceStore {
     } catch {
       /* downloading must not depend on logging */
     }
+  }
+
+  // ===== Access requests ("Like Playback? Request access") ================
+
+  /**
+   * PUBLIC entry point — a share-link recipient (no account) asks the
+   * workspace owner for access. Resolves the token to its link/workspace and
+   * captures source context (what they were listening to). Light abuse guard:
+   * one pending request per email per workspace.
+   */
+  createAccessRequest(token: string, params: { name?: string; email?: string }): AccessRequest {
+    const name = params.name?.trim();
+    const email = params.email?.trim().toLowerCase();
+    if (!name) throw new Error("Name is required");
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("A valid email is required");
+    const link = this.snapshot.shareLinks.find(
+      (candidate) => candidate.demo_token === token || candidate.token_hash === hashToken(token),
+    );
+    if (!link) throw new Error("Share link not found");
+    if (link.revoked_at) throw new Error("This link has been revoked");
+    const duplicate = this.snapshot.accessRequests.find(
+      (request) =>
+        request.workspace_id === link.workspace_id
+        && request.status === "pending"
+        && request.email === email,
+    );
+    if (duplicate) throw new Error("A request for this email is already pending.");
+    const sourceTitle =
+      link.target_type === "song"
+        ? this.snapshot.songs.find((song) => song.song_id === link.target_id)?.title
+        : link.target_type === "playlist"
+          ? this.snapshot.playlists.find((playlist) => playlist.playlist_id === link.target_id)?.title
+          : this.snapshot.rooms.find((room) => room.room_id === link.target_id)?.title;
+    const request: AccessRequest = {
+      request_id: `areq-${randomUUID()}`,
+      workspace_id: link.workspace_id,
+      name,
+      email,
+      source_token: token,
+      source_song_title: sourceTitle,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    };
+    this.snapshot.accessRequests = [...this.snapshot.accessRequests, request];
+    return request;
+  }
+
+  /** Pending requests for the owner's Inbox, newest first. */
+  listAccessRequests(workspaceID: string): AccessRequest[] {
+    return this.snapshot.accessRequests
+      .filter((request) => request.workspace_id === workspaceID && request.status === "pending")
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  resolveAccessRequest(requestID: string, action: "approve" | "dismiss"): AccessRequest {
+    const existing = this.snapshot.accessRequests.find((request) => request.request_id === requestID);
+    if (!existing) throw new Error("Access request not found");
+    const updated: AccessRequest = {
+      ...existing,
+      status: action === "approve" ? "approved" : "dismissed",
+    };
+    this.snapshot.accessRequests = this.snapshot.accessRequests.map((request) =>
+      request.request_id === requestID ? updated : request,
+    );
+    return updated;
   }
 
   private songContext(songID: string, versionID?: string) {

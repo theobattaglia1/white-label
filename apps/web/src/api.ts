@@ -317,6 +317,20 @@ export const api = {
     scope?: "song" | "version";
     visibility?: "everyone" | "internal" | "private";
   }) => request<VisibleNote>(`/shared/${token}/notes`, { method: "POST", body: JSON.stringify(body) }),
+  /** PUBLIC — recipient asks the workspace owner for Playback access. */
+  sharedRequestAccess: (token: string, body: { name: string; email: string }) =>
+    request<{
+      request: {
+        request_id: string;
+        workspace_id: string;
+        name: string;
+        email: string;
+        source_token?: string;
+        source_song_title?: string;
+        status: "pending" | "approved" | "dismissed";
+        created_at: string;
+      };
+    }>(`/shared/${token}/access-request`, { method: "POST", body: JSON.stringify(body) }),
 
   firstListen: async (token: string) => {
     const payload = await request<FirstListenPayload>(`/listen/${token}`);

@@ -247,6 +247,7 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       artwork_key: s.artwork_key ?? undefined,
       artwork_url: s.artwork_url ?? undefined,
       release_readiness_status: s.release_readiness_status ?? "not_ready",
+      deleted_at: s.deleted_at ?? undefined,
       created_by: ext(s.created_by),
       created_at: s.created_at,
       updated_at: s.updated_at,
@@ -565,6 +566,9 @@ export async function loadSnapshotFromSupabase(): Promise<WorkspaceSnapshot | nu
       created_at: r.created_at,
       updated_at: r.updated_at,
     })),
+    // Not yet persisted in Supabase — in-memory only. store.hydrate() carries
+    // the live arrays across re-hydrations so they survive snapshot reloads.
+    accessRequests: [],
   };
 
   console.log(`[supabase-loader] hydrated: ${snapshot.songs.length} songs, ${snapshot.versions.length} versions, ${snapshot.notes.length} notes, ${snapshot.shareLinks.length} links`);

@@ -80,6 +80,10 @@ function ok<T>(value: T): { data: T } {
   return { data: value };
 }
 
+function isVisibleSong(song: { status?: string; deleted_at?: string | null }): boolean {
+  return song.status !== "deleted" && !song.deleted_at;
+}
+
 server.get("/health", async () => ok({ status: "ok", product: "playback" }));
 
 server.post("/internal/hydrate", async (request, reply) => {
@@ -306,7 +310,7 @@ server.get("/workspaces/:id/rooms-summary", async (request) => {
   const { id } = request.params as { id: string };
   const rooms = store.listRooms(id);
   const summary = rooms.map((room) => {
-    const songs = store.data.songs.filter((s) => s.primary_room_id === room.room_id);
+    const songs = store.data.songs.filter((s) => s.primary_room_id === room.room_id && isVisibleSong(s));
     const songIDs = new Set(songs.map((s) => s.song_id));
     const openNotes = store.data.notes.filter(
       (n) => n.status === "open" && songIDs.has(n.song_id),
@@ -453,7 +457,7 @@ server.delete("/playlists/:id", async (request) => {
  *  current version + asset, suitable for an "All Songs" surface. */
 server.get("/workspaces/:id/library", async (request) => {
   const { id } = request.params as { id: string };
-  const songs = store.data.songs.filter((s) => s.workspace_id === id);
+  const songs = store.data.songs.filter((s) => s.workspace_id === id && isVisibleSong(s));
   const roomByID = new Map(store.data.rooms.map((r) => [r.room_id, r]));
   const items = songs.map((song) => {
     const current = store.data.versions.find((v) => v.version_id === song.current_version_id);
@@ -478,6 +482,7 @@ server.get("/workspaces/:id/activity", async (request) => {
   const { id } = request.params as { id: string };
   return ok(store.data.activityEvents.filter((event) => event.workspace_id === id));
 });
+
 
 server.get("/rooms/:id", async (request) => {
   const { id } = request.params as { id: string };
@@ -545,8 +550,17 @@ server.patch("/songs/:id", async (request) => {
 server.delete("/songs/:id", async (request) => {
   await requireAuthedFromRequest(request);
   const { id } = request.params as { id: string };
+  const deletedAt = new Date().toISOString();
+  const supabase = getSupabase();
+  if (supabase) {
+    const { error } = await supabase
+      .from("songs")
+      .update({ status: "deleted", deleted_at: deletedAt, updated_at: deletedAt })
+      .eq("external_id", id);
+    if (error) throw error;
+  }
   store.data.songs = store.data.songs.map((song) =>
-    song.song_id === id ? { ...song, status: "deleted", updated_at: new Date().toISOString() } : song
+    song.song_id === id ? { ...song, status: "deleted", deleted_at: deletedAt, updated_at: deletedAt } : song
   );
   return ok({ deleted: true });
 });
@@ -1154,6 +1168,85 @@ server.get("/shared/:token/download/:versionId", async (request, reply) => {
     server.log.warn({ err }, "signPlaybackUrl failed for shared download");
     return reply.code(404).send({ error: "audio_unavailable", message: "Audio isn't available for this version yet." });
   }
+});
+
+// ===== Access requests ("Like Playback? Request access") ================
+
+/** PUBLIC, no auth — a share-link recipient asks the workspace owner for
+ *  access from the recipient player. Light per-IP rate limit plus the
+ *  store-level duplicate-pending-email guard. */
+server.post("/shared/:token/access-request", async (request, reply) => {
+  const { token } = request.params as { token: string };
+  const limit = rateLimit(`access-request:${request.ip}`, 5, 60_000);
+  if (!limit.allowed) {
+    return reply
+      .header("retry-after", Math.ceil(limit.retryAfterMs / 1000))
+      .code(429)
+      .send({ error: "Too many requests — give it a moment." });
+  }
+  const body = request.body as { name?: string; email?: string } | undefined;
+  return ok({ request: store.createAccessRequest(token, { name: body?.name, email: body?.email }) });
+});
+
+/** Owner-facing: pending access requests for the Inbox. */
+server.get("/workspaces/:id/access-requests", async (request) => {
+  await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  return ok(store.listAccessRequests(id));
+});
+
+/** Approve or dismiss a request. Approving generates an invite link via the
+ *  same workspace_join_links mechanism as POST /workspaces/:id/join-links
+ *  (the Profile "Generate invite link" path) and returns it so the client
+ *  can hand the URL to the requester. */
+server.post("/access-requests/:id/resolve", async (request, reply) => {
+  const auth = await requireAuthedFromRequest(request);
+  const { id } = request.params as { id: string };
+  const body = request.body as { action?: "approve" | "dismiss" } | undefined;
+  if (body?.action !== "approve" && body?.action !== "dismiss") {
+    return reply.code(400).send({ error: 'action must be "approve" or "dismiss"' });
+  }
+
+  if (body.action === "dismiss") {
+    return ok({ request: store.resolveAccessRequest(id, "dismiss"), invite: null });
+  }
+
+  // Approve: create the invite link BEFORE flipping status, so a failure
+  // leaves the request pending and the owner can simply retry.
+  const pending = store.data.accessRequests.find((candidate) => candidate.request_id === id);
+  if (!pending) return reply.code(404).send({ error: "Access request not found" });
+
+  const supabase = getSupabase();
+  if (!supabase) return reply.code(503).send({ error: "Invites require Supabase to be configured" });
+
+  const wsRes = await supabase
+    .from("workspaces")
+    .select("workspace_id, name")
+    .eq("external_id", pending.workspace_id)
+    .maybeSingle();
+  if (!wsRes.data) return reply.code(404).send({ error: "Workspace not found" });
+  const { workspace_id: workspaceUuid, name: workspaceName } = wsRes.data as { workspace_id: string; name: string };
+
+  const { data, error } = await supabase
+    .from("workspace_join_links")
+    .insert({ workspace_id: workspaceUuid, role: "viewer", created_by: auth.userID })
+    .select("link_id, token")
+    .single();
+  if (error || !data) return reply.code(500).send({ error: error?.message ?? "Could not create invite link" });
+
+  const { token: inviteToken } = data as { link_id: string; token: string };
+  const appUrl = process.env.APP_URL ?? "https://playback.allmyfriendsinc.com";
+  const resolved = store.resolveAccessRequest(id, "approve");
+  return ok({
+    request: resolved,
+    invite: {
+      token: inviteToken,
+      url: `${appUrl}/join/${inviteToken}`,
+      workspace_name: workspaceName,
+      email: resolved.email,
+      role: "viewer",
+    },
+  });
 });
 
 // ===== Real audio uploads (Supabase Storage) ============================

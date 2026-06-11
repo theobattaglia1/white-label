@@ -60,6 +60,27 @@ struct NowPlayingView: View {
                     .padding(.top, 12)
                     .padding(.bottom, safeBottom + 8)
             }
+            // Dismiss chevron overlays the top-trailing corner. Its hit area
+            // extends 70pt downward because the OS defers touches in the top
+            // strip of a status-bar-hidden full-screen view; the lower half
+            // of this frame sits in undeferred territory and catches the tap.
+            .overlay(alignment: .topTrailing) {
+                Button { onExit() } label: {
+                    VStack(spacing: 0) {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(PB.cream.opacity(0.6))
+                            .frame(width: 44, height: 26)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: 44, height: 96, alignment: .top)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close player")
+                .padding(.top, safeTop + 6)
+                .padding(.trailing, horizontalMargin - 10)
+            }
         }
         .foregroundStyle(PB.cream)
         .preferredColorScheme(.dark)
@@ -155,14 +176,9 @@ struct NowPlayingView: View {
                 track.versionLabel.uppercased(),
                 color: PB.cream.opacity(0.6), size: 10, tracking: 1.4
             )
-            Button { onExit() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(PB.cream.opacity(0.6))
-                    .frame(width: 44, height: 26).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close player")
+            // Dismiss chevron rendered as a top-trailing overlay on the main
+            // VStack (see body) — leave trailing space for it here.
+            Color.clear.frame(width: 36, height: 1)
         }
         .foregroundStyle(PB.cream.opacity(0.85))
         .frame(height: 26)

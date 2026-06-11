@@ -148,6 +148,13 @@ struct NowPlayingView: View {
             }
             .accessibilityHidden(true)
             Spacer()
+            // Dismiss control lives at the trailing edge — centered it sat
+            // directly beneath the Dynamic Island, whose expanded hit region
+            // swallowed taps (and HIG says keep controls clear of the island).
+            MonoLabel(
+                track.versionLabel.uppercased(),
+                color: PB.cream.opacity(0.6), size: 10, tracking: 1.4
+            )
             Button { onExit() } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 12, weight: .semibold))
@@ -156,11 +163,6 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close player")
-            Spacer()
-            MonoLabel(
-                track.versionLabel.uppercased(),
-                color: PB.cream.opacity(0.6), size: 10, tracking: 1.4
-            )
         }
         .foregroundStyle(PB.cream.opacity(0.85))
         .frame(height: 26)

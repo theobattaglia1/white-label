@@ -41,7 +41,7 @@ import { DropZone } from "./DropOverlay";
 // Explicit .tsx extension: "Shelf.tsx" (component) and "shelf.ts" (pure logic)
 // collide case-insensitively on macOS when resolved without an extension.
 import { Shelf } from "./Shelf.tsx";
-import { buildShelfSlots, recentToShelfItem, resolvePinRefs, type ShelfItem } from "./shelf.ts";
+import { buildShelfSlots, fallbackRecents, recentToShelfItem, resolvePinRefs, type ShelfItem } from "./shelf.ts";
 import { FirstListenPage, ListeningRoomPage } from "./ListeningFlows";
 import type { Session } from "@supabase/supabase-js";
 
@@ -1016,7 +1016,12 @@ function HomeView({
     const recentShelfItems = recentItems
       .map((item) => recentToShelfItem(item, sources))
       .filter((item): item is ShelfItem => item !== null);
-    return buildShelfSlots(pinItems, recentShelfItems);
+    // The recent-activity feed can be empty or unavailable (the dev API has no
+    // /recent route yet) — fall back to the loaded workspace data, newest
+    // first, so the shelf still fills when there are no pins. With genuinely
+    // zero items both lists stay empty and the shelf renders nothing.
+    const effectiveRecents = recentShelfItems.length > 0 ? recentShelfItems : fallbackRecents(sources);
+    return buildShelfSlots(pinItems, effectiveRecents);
   }, [pinRefs, recentItems, library, playlists, rooms]);
 
   // Songs waiting on the manager — still in review or sent back for changes.

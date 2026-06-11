@@ -57,8 +57,8 @@ export function shelfSubtitle(
 
 /** The already-loaded workspace data the shelf resolves pin refs against. */
 export type ShelfSources = {
-  songs: Array<{ song_id: string; title: string; artist_display_name?: string }>;
-  playlists: Array<{ playlist_id: string; title: string; item_count?: number; cover_seed?: string }>;
+  songs: Array<{ song_id: string; title: string; artist_display_name?: string; updated_at?: string }>;
+  playlists: Array<{ playlist_id: string; title: string; item_count?: number; cover_seed?: string; updated_at?: string }>;
   rooms: Array<{ room_id: string; title: string; song_count?: number }>;
 };
 
@@ -155,6 +155,47 @@ export function recentToShelfItem(recent: ShelfRecent, sources: ShelfSources): S
     };
   }
   return null;
+}
+
+/**
+ * Fallback recents when the recent-activity feed is empty or unavailable
+ * (e.g. a workspace with no activity rows yet): derive "recents" from the
+ * already-loaded workspace data — songs and playlists interleaved newest-first
+ * by updated_at. Pure, so the shelf never shows a dead band on a workspace
+ * that plainly has content.
+ */
+export function fallbackRecents(sources: ShelfSources): ShelfItem[] {
+  const dated: Array<{ at: string; item: ShelfItem }> = [];
+  for (const song of sources.songs) {
+    dated.push({
+      at: song.updated_at ?? "",
+      item: {
+        key: shelfKey("song", song.song_id),
+        type: "song",
+        id: song.song_id,
+        title: song.title,
+        subtitle: shelfSubtitle("song", { artist: song.artist_display_name }),
+        seed: song.song_id,
+        pinned: false,
+      },
+    });
+  }
+  for (const playlist of sources.playlists) {
+    dated.push({
+      at: playlist.updated_at ?? "",
+      item: {
+        key: shelfKey("playlist", playlist.playlist_id),
+        type: "playlist",
+        id: playlist.playlist_id,
+        title: playlist.title,
+        subtitle: shelfSubtitle("playlist", { songCount: playlist.item_count }),
+        seed: playlist.cover_seed ?? playlist.playlist_id,
+        pinned: false,
+      },
+    });
+  }
+  dated.sort((a, b) => b.at.localeCompare(a.at));
+  return dated.map((d) => d.item);
 }
 
 /**

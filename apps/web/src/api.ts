@@ -252,6 +252,11 @@ export const api = {
 
   getMyPins: (workspaceID = "wsp-amf-private") =>
     request<MyPinsPayload>(`/workspaces/${workspaceID}/my-pins`),
+  /** The caller's ordered pin list — raw "type:id" strings matching the iOS
+   *  PinRef encoding ("song:ID" | "playlist:ID" | "room:ID"). Feeds THE SHELF
+   *  on Home; resolved client-side against already-loaded workspace data. */
+  workspacePins: (workspaceID = "wsp-amf-private") =>
+    request<string[]>(`/workspaces/${workspaceID}/pins`),
   pinSong: (workspaceID: string, songID: string) =>
     request<{ pinned: true }>(`/workspaces/${workspaceID}/my-pins/songs/${songID}`, { method: "PUT", body: JSON.stringify({}) }),
   unpinSong: (workspaceID: string, songID: string) =>

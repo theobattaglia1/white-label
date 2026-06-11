@@ -33,11 +33,15 @@ import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Versio
 import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { catalogIdFor, catalogNumber, computeVersionDelta, coverGradient, formatHeardDisplay, formatVersionDelta, hashHue, heardByCount, humanizeVersionType, matchesSmart } from "./utils";
 import { usePlayer } from "./player";
-import { LivingCover, coverHue, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
+import { LivingCover, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
 import { PlaybackWordmark, PlaybackMark } from "./PlaybackWordmark";
 import { DropZone } from "./DropOverlay";
+// Explicit .tsx extension: "Shelf.tsx" (component) and "shelf.ts" (pure logic)
+// collide case-insensitively on macOS when resolved without an extension.
+import { Shelf } from "./Shelf.tsx";
+import { buildShelfSlots, recentToShelfItem, resolvePinRefs, type ShelfItem } from "./shelf.ts";
 import { FirstListenPage, ListeningRoomPage } from "./ListeningFlows";
 import type { Session } from "@supabase/supabase-js";
 
@@ -967,9 +971,11 @@ function HomeView({
   onTogglePlaylistPin: (id: string) => void;
   onToggleProjectPin: (id: string) => void;
 }) {
-  const player = usePlayer();
   const [pins, setPins] = useState<MyPinsPayload | null>(null);
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  // Raw iOS-format pin refs ("song:ID" | "playlist:ID" | "room:ID") — the
+  // user's server-side pin order, feeding THE SHELF.
+  const [pinRefs, setPinRefs] = useState<string[]>([]);
   const [rooms, setRooms] = useState<Awaited<ReturnType<typeof api.roomsSummary>>>([]);
   const [library, setLibrary] = useState<Awaited<ReturnType<typeof api.workspaceLibrary>>>([]);
   const [playlists, setPlaylists] = useState<Awaited<ReturnType<typeof api.playlists>>>([]);
@@ -980,13 +986,15 @@ function HomeView({
     Promise.all([
       api.getMyPins().catch((): MyPinsPayload => ({ songs: [], playlists: [], projects: [] })),
       api.recent("wsp-amf-private", 20).catch((): RecentItem[] => []),
+      api.workspacePins("wsp-amf-private").catch((): string[] => []),
       api.roomsSummary().catch(() => [] as Awaited<ReturnType<typeof api.roomsSummary>>),
       api.workspaceLibrary().catch(() => [] as Awaited<ReturnType<typeof api.workspaceLibrary>>),
       api.playlists().catch(() => [] as Awaited<ReturnType<typeof api.playlists>>),
       api.savedViews().catch(() => [] as Awaited<ReturnType<typeof api.savedViews>>),
-    ]).then(([p, r, rm, lib, pls, svs]) => {
+    ]).then(([p, r, refs, rm, lib, pls, svs]) => {
       setPins(p);
       setRecentItems(r);
+      setPinRefs(refs);
       setRooms(rm);
       setLibrary(lib);
       setPlaylists(pls);
@@ -996,14 +1004,20 @@ function HomeView({
 
   const totalPinned = pins ? pins.songs.length + pins.playlists.length : 0;
 
-  // Resume target: the most recently touched playable song, else the first one.
-  // Leads the page with the music instead of a giant meaningless headline.
-  const playable = library.filter((it) => it.current_version && it.asset);
-  const recentSongID = recentItems.find((it) => it.entity_type === "song")?.entity_id;
-  const continueItem =
-    (recentSongID ? playable.find((it) => it.song.song_id === recentSongID) : undefined) ?? playable[0];
-  // Only promise "where you left off" when it's genuinely the last-touched song.
-  const isResume = !!recentSongID && continueItem?.song.song_id === recentSongID;
+  // THE SHELF — pins (server-side pin order) + recents, resolved against the
+  // already-loaded workspace data, then slotted by the pure builder.
+  const shelfItems = useMemo(() => {
+    const sources = {
+      songs: library.map((it) => it.song),
+      playlists,
+      rooms,
+    };
+    const pinItems = resolvePinRefs(pinRefs, sources);
+    const recentShelfItems = recentItems
+      .map((item) => recentToShelfItem(item, sources))
+      .filter((item): item is ShelfItem => item !== null);
+    return buildShelfSlots(pinItems, recentShelfItems);
+  }, [pinRefs, recentItems, library, playlists, rooms]);
 
   // Songs waiting on the manager — still in review or sent back for changes.
   const needsAttention = library.filter(
@@ -1053,39 +1067,16 @@ function HomeView({
 
   return (
     <div className="cw-home">
-      {/* FEATURED — the latest mix as a living-cover banner */}
-      {continueItem && (
-        <div className="cw-featured">
-          <LivingCover hue={coverHue(continueItem.song.artist_display_name)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
-          <div className="cw-feat-scrim" />
-          <div className="cw-feat-corner"><span className="cw-micro">{isResume ? "Resume" : "Latest mix"}</span></div>
-          <div className="cw-feat-body">
-            <span className="cw-feat-eyebrow">{isResume ? "Resume" : "Latest mix"}{continueItem.current_version ? ` · ${continueItem.current_version.version_label}` : ""}</span>
-            <h1 className="cw-feat-title">{continueItem.song.title}</h1>
-            <div className="cw-feat-meta">
-              {continueItem.song.artist_display_name}
-              {typeof continueItem.song.bpm === "number" && <> · {continueItem.song.bpm} BPM</>}
-              {continueItem.song.song_key && <> · {continueItem.song.song_key}</>}
-              {typeof continueItem.asset?.duration_ms === "number" && <> · {formatTimestamp(continueItem.asset.duration_ms)}</>}
-            </div>
-            <div className="cw-feat-row">
-              <button
-                className="cw-btn play"
-                onClick={() => {
-                  if (continueItem.current_version && continueItem.asset) {
-                    player.play(continueItem.song, continueItem.current_version, continueItem.asset);
-                  }
-                }}
-              >
-                {player.song?.song_id === continueItem.song.song_id && player.isPlaying ? <Pause size={14} /> : <Play size={14} />} Play
-              </button>
-              <button className="cw-btn ghost" onClick={() => onOpenSong(continueItem.song.song_id)}>Open Song</button>
-              {needsAttention.length > 0 && (
-                <span className="cw-flag"><span className="ed-dot" aria-hidden="true" />{needsAttention.length} in review</span>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* THE SHELF — pins + recents as a record crate (replaces the old hero banner) */}
+      {shelfItems.length > 0 && (
+        <Shelf
+          items={shelfItems}
+          onOpen={(item) => {
+            if (item.type === "song") onOpenSong(item.id);
+            else if (item.type === "playlist") onOpenPlaylist(item.id);
+            else onOpenRoom(item.id);
+          }}
+        />
       )}
 
       {/* ROOMS — catalog wall of living-cover cards, one per artist world */}

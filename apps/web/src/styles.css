@@ -2059,6 +2059,8 @@ h2 {
   text-transform: uppercase;
   color: var(--pencil-warm);
 }
+/* Honest failure state — a fetch that 400s must read as a redline, not spin. */
+.overlay-loading--error { color: var(--redline); }
 
 @media (max-width: 959px) {
   .song-overlay {

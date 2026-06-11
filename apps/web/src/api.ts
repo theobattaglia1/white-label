@@ -210,7 +210,7 @@ export const api = {
   createLink: (body: Partial<ShareLink> & { workspace_id: string; target_type: "song" | "room" | "playlist"; target_id: string }) =>
     request<{ link: ShareLink; token: string }>("/links", { method: "POST", body: JSON.stringify(body) }),
   revokeLink: (id: string) => request<ShareLink>(`/links/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }),
-  roomAnalytics: (id = "room-hudson-ingram-lp") =>
+  roomAnalytics: (id: string) =>
     request<Array<ActivityEvent & { actor_display_name: string }>>(`/rooms/${id}/analytics`),
   workspaceMembers: (id = "wsp-amf-private") =>
     request<Array<{ user_id: string; display_name: string; role: string }>>(`/workspaces/${id}/members`),

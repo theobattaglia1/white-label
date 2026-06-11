@@ -91,8 +91,11 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [roomPayload, setRoomPayload] = useState<RoomPayload | null>(null);
   const [songPayload, setSongPayload] = useState<SongPayload | null>(null);
   const [mode, setMode] = useState<ViewMode>("home");
-  const [selectedSongID, setSelectedSongID] = useState("song-midnight");
-  const [activeRoomID, setActiveRoomID] = useState("room-hudson-ingram-lp");
+  // Both resolved from real workspace data on first refresh() — a hardcoded
+  // default here pointed at a room that no longer exists and took the whole
+  // workspace load down with it (ROOM NOT FOUND · 00 ROOMS, eternal LOADING).
+  const [selectedSongID, setSelectedSongID] = useState("");
+  const [activeRoomID, setActiveRoomID] = useState("");
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayTab, setOverlayTab] = useState<"player" | "workspace">("player");
   const [memberNumber, setMemberNumber] = useState<number | null>(null);
@@ -114,6 +117,10 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [savedViews, setSavedViews] = useState<Awaited<ReturnType<typeof api.savedViews>>>([]);
   const [activeSmartViewID, setActiveSmartViewID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Scoped failure states: a missing room or song must degrade quietly,
+  // never block the rest of the workspace or spin forever.
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [songError, setSongError] = useState<string | null>(null);
   // Bumped after a drag-and-drop batch lands so Home/Library re-fetch their
   // own data (they load on mount with local state) without a manual reload.
   const [libraryEpoch, setLibraryEpoch] = useState(0);
@@ -207,20 +214,48 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
 
   async function refresh(nextSongID = selectedSongID, nextRoomID = activeRoomID) {
     try {
-      const [room, summary, allPlaylists, allSavedViews] = await Promise.all([
-        api.room(nextRoomID),
+      const [summary, allPlaylists, allSavedViews] = await Promise.all([
         api.roomsSummary(),
         api.playlists(),
         api.savedViews(),
       ]);
-      setRoomPayload(room);
       setRoomsSummary(summary);
       setPlaylists(allPlaylists);
       setSavedViews(allSavedViews);
-      const songID = nextSongID || room.songs[0]?.song_id;
+
+      // Resolve the room against real data: keep the requested id only if it
+      // actually exists, otherwise fall back to the first real room. A stale
+      // or hardcoded id must never poison the whole workspace load.
+      const roomID = summary.some((r) => r.room_id === nextRoomID)
+        ? nextRoomID
+        : summary[0]?.room_id;
+      let room: RoomPayload | null = null;
+      if (roomID) {
+        setActiveRoomID(roomID);
+        try {
+          room = await api.room(roomID);
+          setRoomError(null);
+        } catch {
+          // Room fetch failed (deleted / no access) — degrade, don't hang.
+          setRoomError("Room unavailable");
+        }
+      } else {
+        setRoomError(null);
+      }
+      setRoomPayload(room);
+
+      // The song fetch is independent of the room: a song must still open
+      // even when its room context can't be loaded.
+      const songID = nextSongID || room?.songs[0]?.song_id;
       if (songID) {
         setSelectedSongID(songID);
-        setSongPayload(await api.song(songID));
+        try {
+          setSongPayload(await api.song(songID));
+          setSongError(null);
+        } catch {
+          setSongPayload(null);
+          setSongError("Song unavailable");
+        }
       }
       setInboxItems(await api.inbox());
       setError(null);
@@ -347,6 +382,9 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
           {mode === "room" && roomPayload && (
             <RoomView payload={roomPayload} onOpenSong={openSong} />
           )}
+          {mode === "room" && !roomPayload && roomError && (
+            <div className="overlay-loading overlay-loading--error" role="alert">Room unavailable</div>
+          )}
           {mode === "compare" && songPayload && <ComparisonMode payload={songPayload} onRefresh={() => refresh(songPayload.song.song_id)} />}
           {mode === "inbox" && <InboxView items={inboxItems} onOpenSong={openSong} />}
           {mode === "links" && roomPayload && selectedSong && (
@@ -374,6 +412,7 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
       <SongOverlay
         open={overlayOpen}
         payload={songPayload}
+        loadError={songError}
         tab={overlayTab}
         onTabChange={setOverlayTab}
         onClose={() => setOverlayOpen(false)}
@@ -4565,6 +4604,7 @@ function TransportKeys({
 function SongOverlay({
   open,
   payload,
+  loadError = null,
   tab,
   onTabChange,
   onClose,
@@ -4575,6 +4615,7 @@ function SongOverlay({
 }: {
   open: boolean;
   payload: SongPayload | null;
+  loadError?: string | null;
   tab: "player" | "workspace";
   onTabChange: (t: "player" | "workspace") => void;
   onClose: () => void;
@@ -4654,7 +4695,9 @@ function SongOverlay({
       <div className={`overlay-panel overlay-player-panel${tab === "workspace" ? " narrow-hidden" : ""}`}>
         {payload
           ? <NowPlayingView payload={payload} onClose={onClose} onNote={() => onTabChange("workspace")} />
-          : <div className="overlay-loading">Loading…</div>
+          : loadError
+            ? <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
+            : <div className="overlay-loading">Loading…</div>
         }
       </div>
 
@@ -4670,7 +4713,9 @@ function SongOverlay({
               onOpenSong={onOpenSong}
             />
           )
-          : <div className="overlay-loading">Loading…</div>
+          : loadError
+            ? <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
+            : <div className="overlay-loading">Loading…</div>
         }
       </div>
     </div>

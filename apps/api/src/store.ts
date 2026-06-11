@@ -135,8 +135,16 @@ export class WorkspaceStore {
   }
 
   getRoom(roomID: string) {
-    const canonicalRoomID = roomID === "room-secret-album" ? "room-hudson-ingram-lp" : roomID;
-    const room = this.snapshot.rooms.find((candidate) => candidate.room_id === canonicalRoomID);
+    // Legacy alias: an old seed snapshot renamed "room-secret-album" to
+    // "room-hudson-ingram-lp". Resolve against real data first — the alias is
+    // only a fallback when the requested id genuinely doesn't exist, so the
+    // rewrite can never 400 a room that actually does (production's real room
+    // IS "room-secret-album").
+    const room =
+      this.snapshot.rooms.find((candidate) => candidate.room_id === roomID) ??
+      (roomID === "room-secret-album"
+        ? this.snapshot.rooms.find((candidate) => candidate.room_id === "room-hudson-ingram-lp")
+        : undefined);
     if (!room) throw new Error("Room not found");
     const songs = this.snapshot.songs.filter((song) => song.primary_room_id === room.room_id);
     return {

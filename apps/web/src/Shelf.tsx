@@ -154,6 +154,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
       if (steps === 0) return;
       wheelAcc.current -= steps * 80;
       setPulled(false);
+      setHovered(null); // cards slide under a stationary cursor — pointerover won't refire
       setFocus((f) => Math.min(count - 1, Math.max(0, f + steps)));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -166,6 +167,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
     const clamped = Math.min(slots.length - 1, Math.max(0, next));
     if (clamped === focus) return;
     setPulled(false);
+    setHovered(null); // stale under-cursor hover — the crate is about to slide
     setFocus(clamped);
     cardRefs.current[clamped]?.focus();
   }
@@ -184,6 +186,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
     if (suppressClick.current) return;
     if (i !== focus) {
       setPulled(false);
+      setHovered(null); // the clicked card slides into focus — hover is stale once it moves
       setFocus(i);
       return;
     }
@@ -260,6 +263,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
     const target = st.anchor + Math.round(-dx / spacing); // one slot per spacing px
     const clamped = Math.min(slots.length - 1, Math.max(0, target));
     setPulled(false);
+    setHovered(null); // cards travel under the captured pointer — no enter/leave fires
     setFocus(clamped);
     if (target !== clamped && !reduced) {
       // Past either end the crate follows the pointer at 0.18× — rubber-band.

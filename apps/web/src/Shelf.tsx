@@ -3,22 +3,30 @@ import { coverGradient } from "./utils";
 import { SHELF_MAX_SLOTS, type ShelfItem } from "./shelf";
 
 /* THE SHELF — pins + recents as a record crate on Home.
-   A row of square 12" covers standing on a floor, receding in 3D perspective; the
-   focused card faces the viewer most, far cards sit nearly edge-on. Pure
-   CSS 3D — transforms + opacity only, transitions do the travel, no rAF.
+   A row of square 12" covers standing on a floor, receding in 3D. Every
+   sleeve leans the SAME way — one continuous direction, like records in a
+   crate viewed from one side. The focused card faces the viewer most; cards
+   ahead of it (right) recede slot by slot; cards behind it (left) are the
+   flipped-past end of the stack — packed tighter, pushed deeper, faded
+   quieter. Pure CSS 3D — transforms + opacity only, transitions do the
+   travel, no rAF.
 
    Hit model: each card <button> is a FLAT 2D-positioned strip (translateX +
    zIndex in painter's order); the 3D pose is applied to an inner, inert
-   .shelf-card-face via a per-card conjugated perspective() — visually
-   identical to a shared stage perspective, but clicks resolve through
-   ordinary 2D stacking, never the browser's 3D depth hit-testing.
+   .shelf-card-face with its own local perspective() — visually one crate,
+   but clicks resolve through ordinary 2D stacking, never the browser's 3D
+   depth hit-testing.
 
    Three-click state machine (focus → pull → open):
      1. click an unfocused card  → it eases into focus
      2. click the focused card   → PULL-OUT (slides up + toward viewer)
      3. click the pulled card    → onOpen(item) navigates
    Esc / click anywhere else while pulled → slips back into the crate.
-   ←/→ move focus, Enter advances the same progression (cards are buttons). */
+   ←/→ move focus, Enter advances the same progression (cards are buttons).
+   Dragging horizontally across the band flips through the crate (one slot
+   per card-spacing of travel, rubber-banding past the ends); a horizontal
+   two-finger trackpad scroll does the same. A real drag (>6px) suppresses
+   the click that fires on release, so it never doubles as focus/pull. */
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(
@@ -33,18 +41,36 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-type Pose = { x: number; z: number; ry: number; hidden: boolean };
+type Pose = { x: number; z: number; ry: number; fade: number; tuck: number };
 
-/** Crate pose for a card `d` slots away from focus. Focused card leans a
- *  gentle −18°; cards fall back toward −58° (near edge-on) as they recede. */
-function cardPose(d: number, spacing: number, focusGap: number, maxVisible: number): Pose {
+type CrateGeometry = { spacing: number; focusGap: number; backSpacing: number; backGap: number };
+
+/** Crate pose for a card `d` slots from focus — ONE continuous lean.
+ *  Focused: a gentle −18°. Ahead (d > 0): falls back toward −58° as it
+ *  recedes. Behind (d < 0): the SAME lean direction, but these are the
+ *  already-flipped records — pushed deeper (z −60…−126 vs −26…−104), packed
+ *  tighter, and faded, so the left side reads as the back of the same run,
+ *  never a mirrored book-end. `fade` is the at-rest card opacity; `tuck`
+ *  (0…1) quiets sleeve initials/type on strongly receded cards. */
+function cardPose(d: number, g: CrateGeometry): Pose {
+  if (d === 0) return { x: 0, z: 90, ry: -18, fade: 1, tuck: 0 };
   const abs = Math.abs(d);
-  if (d === 0) return { x: 0, z: 90, ry: -18, hidden: false };
-  const dir = d < 0 ? -1 : 1;
-  const ry = -18 - Math.min(8 + abs * 11, 40); // −37, −48, −58, −58 …
-  const x = dir * (focusGap + (abs - 1) * spacing);
-  const z = -26 * Math.min(abs, 4);
-  return { x, z, ry, hidden: abs > maxVisible };
+  if (d > 0) {
+    return {
+      x: g.focusGap + (abs - 1) * g.spacing,
+      z: -26 * Math.min(abs, 4),
+      ry: -18 - Math.min(8 + abs * 11, 40), // −37, −48, −58, −58 …
+      fade: 1 - Math.min(abs - 1, 4) * 0.08, // 1, 0.92 … 0.68
+      tuck: Math.min(1, (abs - 1) * 0.3),
+    };
+  }
+  return {
+    x: -(g.backGap + (abs - 1) * g.backSpacing),
+    z: -60 - (Math.min(abs, 4) - 1) * 22, // −60, −82, −104, −126
+    ry: -50 - Math.min((abs - 1) * 6, 14), // −50, −56, −62, −64
+    fade: Math.max(0.35, 0.8 - (abs - 1) * 0.15), // 0.8, 0.65 … 0.35
+    tuck: Math.min(1, 0.45 + (abs - 1) * 0.3),
+  };
 }
 
 /** 1–2 quiet initials for the sleeve face — never an identical blank. */
@@ -60,10 +86,16 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
   const [focus, setFocus] = useState(0);
   const [pulled, setPulled] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [rubber, setRubber] = useState(0); // px of give past the crate ends mid-drag
+  const [bandW, setBandW] = useState(0); // measured band width — clip guard
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
   const narrow = useMediaQuery("(max-width: 720px)");
   const rootRef = useRef<HTMLElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const dragRef = useRef<{ id: number; startX: number; anchor: number; active: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const wheelAcc = useRef(0);
 
   // Keep focus valid when the slot list shrinks (e.g. data refresh).
   useEffect(() => {
@@ -93,6 +125,41 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
     };
   }, [pulled, focus]);
 
+  // Measure the band: .shelf clips overflow, so any sleeve poking past the
+  // edge renders as a cut-off sliver. The visible window below shrinks to
+  // fit this width and crateShift centers it — nothing clips at any focus
+  // index, including 0 and the last slot.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => setBandW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Two-finger trackpad scroll: horizontal-dominant wheel deltas over the
+  // band flip focus, one slot per ~80px, clamped at the ends. Vertical-
+  // dominant wheels pass through untouched so the page keeps scrolling;
+  // horizontal ones are consumed (no page pan / history swipe), which needs
+  // a native non-passive listener — React's synthetic onWheel is passive.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const count = slots.length;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      wheelAcc.current += e.deltaX;
+      const steps = Math.trunc(wheelAcc.current / 80);
+      if (steps === 0) return;
+      wheelAcc.current -= steps * 80;
+      setPulled(false);
+      setFocus((f) => Math.min(count - 1, Math.max(0, f + steps)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [slots.length]);
+
   if (slots.length === 0) return null;
 
   function moveFocus(next: number) {
@@ -111,8 +178,10 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
     // Enter/Space hit the focused card button natively → handleCardClick.
   }
 
-  // The three-click progression.
+  // The three-click progression. A real drag sets suppressClick — its
+  // release click must not double as a focus/pull.
   function handleCardClick(i: number) {
+    if (suppressClick.current) return;
     if (i !== focus) {
       setPulled(false);
       setFocus(i);
@@ -127,35 +196,92 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
 
   // Narrow screens: shallower travel, fewer visible cards (edges still
   // clickable, so all 15 remain reachable by flipping through).
-  const spacing = narrow ? 40 : 56;
-  const focusGap = narrow ? 100 : 148;
-  const maxVisible = narrow ? 2 : 6;
+  const spacing = narrow ? 40 : 56; // slot pitch ahead of focus (also drag px/slot)
+  const focusGap = narrow ? 100 : 148; // focused card → first card ahead
+  const backSpacing = narrow ? 26 : 34; // tighter pitch behind focus
+  const backGap = narrow ? 76 : 112; // focused card → first card behind
   const cardHalf = narrow ? 80 : 132;
   const persp = narrow ? 900 : 1400;
-  // Vertical offset from a card's center up to the stage vanishing point
-  // (38% of stage height) — keeps the projection identical to the old
-  // stage-level `perspective` (see poseTransform3D below).
-  const vanishY = narrow ? -66 : -78;
+  const geom: CrateGeometry = { spacing, focusGap, backSpacing, backGap };
+
+  // Visible window per side. Behind shows fewer — it's the quiet end of the
+  // stack — and both sides shrink further if the measured band can't hold
+  // the composed span, so the outermost sleeve is always fully inside the
+  // band instead of a clipped sliver at its edge.
+  const aheadExtent = (n: number) => (n === 0 ? cardHalf : focusGap + (n - 1) * spacing + cardHalf);
+  const behindExtent = (n: number) => (n === 0 ? cardHalf : backGap + (n - 1) * backSpacing + cardHalf);
+  let visAhead = Math.min(slots.length - 1 - focus, narrow ? 2 : 6);
+  let visBehind = Math.min(focus, narrow ? 2 : 4);
+  while (
+    bandW > 0 &&
+    visAhead + visBehind > 2 &&
+    behindExtent(visBehind) + aheadExtent(visAhead) > bandW - 16
+  ) {
+    if (visAhead >= visBehind && visAhead > 1) visAhead -= 1;
+    else visBehind -= 1;
+  }
 
   // Compose the band around the *visible* group so there's never a dead
   // half-band: shift the whole crate by half the difference between the
-  // occupied extents left and right of focus. With focus on card 0 this
-  // lands the focused sleeve ~31% from the left edge, crate receding right.
-  const sideExtent = (n: number) => (n === 0 ? cardHalf : focusGap + (n - 1) * spacing + cardHalf);
-  const crateShift = Math.round(
-    (sideExtent(Math.min(focus, maxVisible)) -
-      sideExtent(Math.min(Math.max(slots.length - 1 - focus, 0), maxVisible))) / 2,
-  );
+  // occupied extents behind and ahead of focus. Sized-to-fit (above) +
+  // centered (here) ⇒ no clipping at any focus index.
+  const crateShift = Math.round((behindExtent(visBehind) - aheadExtent(visAhead)) / 2);
 
-  /** The 3D face transform for a card whose flat hit-rect sits at `x`.
-   *  `perspective()` is conjugated by the offset from this card's center to
-   *  the shared vanishing point (stage center, 38% up) — matrix-identical to
-   *  the old stage-level `perspective: 1400px`, but each card now flattens
-   *  into its own 2D layer, so sibling stacking AND hit-testing are plain
-   *  z-index instead of browser 3D depth-sorting (which is what broke
-   *  click-to-focus: pointer hits never followed the 3D-transformed quads). */
-  function poseTransform3D(x: number, z: number, ry: number): string {
-    return `translate(${-x}px, ${vanishY}px) perspective(${persp}px) translate(${x}px, ${-vanishY}px) translateZ(${z}px) rotateY(${ry}deg)`;
+  /** The 3D face transform. Each card carries its own local perspective()
+   *  (origin at its own center), so every sleeve projects identically and
+   *  the bin reads as one continuous run of records leaning the same way —
+   *  a shared off-axis vanishing point is what flared the left side into a
+   *  mirrored book-end. The face still flattens into its own 2D layer, so
+   *  sibling stacking AND hit-testing stay plain z-index (which is what
+   *  fixed click-to-focus: pointer hits never follow 3D-transformed quads). */
+  function poseTransform3D(z: number, ry: number): string {
+    return `perspective(${persp}px) translateZ(${z}px) rotateY(${ry}deg)`;
+  }
+
+  // Click-drag across the band flips through the crate. The drag becomes
+  // real only after 6px of horizontal travel — below that it stays a plain
+  // click (focus → pull → open). Pointer capture starts at that same moment,
+  // never on pointerdown, so plain clicks are never retargeted off the cards.
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0 || pulled) return;
+    dragRef.current = { id: e.pointerId, startX: e.clientX, anchor: focus, active: false };
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const st = dragRef.current;
+    if (!st || e.pointerId !== st.id) return;
+    const dx = e.clientX - st.startX;
+    if (!st.active) {
+      if (Math.abs(dx) <= 6) return;
+      st.active = true;
+      suppressClick.current = true;
+      stageRef.current?.setPointerCapture(e.pointerId);
+    }
+    const target = st.anchor + Math.round(-dx / spacing); // one slot per spacing px
+    const clamped = Math.min(slots.length - 1, Math.max(0, target));
+    setPulled(false);
+    setFocus(clamped);
+    if (target !== clamped && !reduced) {
+      // Past either end the crate follows the pointer at 0.18× — rubber-band.
+      const overshoot = -dx - (clamped - st.anchor) * spacing;
+      setRubber(-overshoot * 0.18);
+    } else {
+      setRubber(0);
+    }
+  }
+
+  function onPointerEnd(e: React.PointerEvent) {
+    const st = dragRef.current;
+    if (!st || e.pointerId !== st.id) return;
+    dragRef.current = null;
+    setRubber(0);
+    if (st.active) {
+      stageRef.current?.releasePointerCapture(e.pointerId);
+      // The release click (if any) lands right after pointerup.
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    }
   }
 
   return (
@@ -170,20 +296,26 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
         <span className="shelf-rule" aria-hidden="true" />
         <span className="shelf-count">{String(slots.length).padStart(2, "0")} Records</span>
       </div>
-      <div className="shelf-stage">
+      <div
+        className="shelf-stage"
+        ref={stageRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+      >
         <div className="shelf-labels">
           {slots.map((item, i) => {
             const d = i - focus;
-            const pose = cardPose(d, spacing, focusGap, maxVisible);
-            // Each label anchors to ITS card: the card's composed x plus a
-            // small outward nudge for neighbors so the focused label never
-            // collides. Focused + 1 neighbor each side only (neighbors
-            // dimmed); hover whispers the label in for other visible cards;
-            // everything hides during pull-out (the pulled sleeve rises into
-            // the label band — no ghost stubs over the artwork).
+            const pose = cardPose(d, geom);
+            const hidden = d > visAhead || -d > visBehind;
+            // Exactly ONE label at rest: the focused card's. Hovering any
+            // other visible card whispers its label in (dimmed) under the
+            // cursor. Everything hides during pull-out (the pulled sleeve
+            // rises into the label band — no ghost stubs over the artwork).
             const dir = d < 0 ? -1 : d > 0 ? 1 : 0;
-            const labelX = pose.x + crateShift + dir * (narrow ? 38 : 52);
-            const visible = !pose.hidden && !pulled && (Math.abs(d) <= 1 || hovered === i);
+            const labelX = pose.x + crateShift + rubber + dir * (narrow ? 38 : 52);
+            const visible = !hidden && !pulled && (d === 0 || hovered === i);
             return (
               <div
                 key={item.key}
@@ -203,8 +335,9 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
         <div className="shelf-crate">
           {slots.map((item, i) => {
             const d = i - focus;
-            const pose = cardPose(d, spacing, focusGap, maxVisible);
-            const x = pose.x + crateShift;
+            const pose = cardPose(d, geom);
+            const hidden = d > visAhead || -d > visBehind;
+            const x = pose.x + crateShift + rubber;
             const isFocused = d === 0;
             const isPulled = isFocused && pulled;
             const dimmed = pulled && !isFocused;
@@ -223,8 +356,8 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
             const faceTransform = reduced
               ? "none"
               : isPulled
-                ? poseTransform3D(x, 230, 0)
-                : poseTransform3D(x, pose.z - (dimmed ? 40 : 0), pose.ry);
+                ? poseTransform3D(230, 0)
+                : poseTransform3D(pose.z - (dimmed ? 40 : 0), pose.ry);
             return (
               <button
                 key={item.key}
@@ -234,9 +367,10 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
                 style={{
                   transform: hitTransform,
                   zIndex: isPulled ? 60 : 40 - Math.abs(d),
-                  opacity: pose.hidden ? 0 : dimmed ? 0.45 : 1,
-                  pointerEvents: pose.hidden ? "none" : undefined,
-                }}
+                  opacity: hidden ? 0 : dimmed ? 0.45 : pose.fade,
+                  pointerEvents: hidden ? "none" : undefined,
+                  ["--shelf-tuck" as string]: pose.tuck,
+                } as React.CSSProperties}
                 tabIndex={isFocused ? 0 : -1}
                 aria-label={`Open ${item.title}, ${item.type}${item.pinned ? ", pinned" : ""}`}
                 onClick={() => handleCardClick(i)}

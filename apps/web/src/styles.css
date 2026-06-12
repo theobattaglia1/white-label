@@ -6442,6 +6442,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .shelf-stage {
   position: relative;
   height: 396px;
+  /* Horizontal click-drag / two-finger scroll flip the crate; vertical
+     touch pans still belong to the page. */
+  touch-action: pan-y;
 }
 .shelf-crate {
   position: absolute;
@@ -6467,8 +6470,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
     transform 450ms cubic-bezier(0.3, 0.7, 0.25, 1.04),
     opacity 300ms var(--easing);
 }
+/* Focus: nothing on mouse/programmatic focus; keyboard focus gets a quiet
+   on-brand cream hairline floated just off the sleeve edge. */
+.shelf-card:focus { outline: none; }
 .shelf-card:focus-visible { outline: none; }
-.shelf-card:focus-visible .shelf-cover { border-color: var(--notes-blue); }
+.shelf-card:focus-visible .shelf-cover {
+  border-color: rgba(243, 236, 222, 0.4);
+  outline: 1px solid rgba(243, 236, 222, 0.32);
+  outline-offset: 3px;
+}
 
 /* The visual sleeve — carries the 3D pose (inline, JS-computed) and is inert
    so pointer hits always resolve on the flat button strips above it. */
@@ -6524,6 +6534,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   background: linear-gradient(105deg, rgba(255, 255, 255, 0.10) 0%, transparent 32%, rgba(0, 0, 0, 0.22) 100%);
   pointer-events: none;
 }
+/* --shelf-tuck (0…1, set inline per card) quiets the sleeve text as a card
+   recedes — strongly tucked slivers must not stack big initials into clutter. */
 .shelf-cover-initials {
   position: absolute;
   left: 14px;
@@ -6535,6 +6547,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   line-height: 1;
   color: rgba(243, 236, 222, 0.82);
   mix-blend-mode: overlay;
+  opacity: calc(1 - var(--shelf-tuck, 0) * 0.85);
+  transform: scale(calc(1 - var(--shelf-tuck, 0) * 0.3));
+  transform-origin: left bottom;
+  transition: opacity 300ms var(--easing), transform 300ms var(--easing);
 }
 .shelf-cover-type {
   position: absolute;
@@ -6547,6 +6563,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   text-transform: uppercase;
   color: rgba(243, 236, 222, 0.66);
   mix-blend-mode: overlay;
+  opacity: calc(1 - var(--shelf-tuck, 0) * 0.85);
+  transition: opacity 300ms var(--easing);
 }
 .shelf-card.is-pulled .shelf-cover {
   border-color: rgba(243, 236, 222, 0.3);
@@ -6627,5 +6645,5 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   .shelf-card-lift { transition: none; }
   .shelf-card:not(.is-focused):hover .shelf-card-lift { transform: none; }
   .shelf--reduced .shelf-card.is-focused .shelf-cover { border-color: rgba(243, 236, 222, 0.32); }
-  .shelf--reduced .shelf-card.is-pulled .shelf-cover { border-color: var(--notes-blue); }
+  .shelf--reduced .shelf-card.is-pulled .shelf-cover { border-color: rgba(243, 236, 222, 0.7); }
 }

@@ -3,10 +3,13 @@ import SwiftUI
 /// THE SHELF — pins + recents as a record crate on Home.
 ///
 /// SwiftUI port of the web reference (apps/web/src/Shelf.tsx): a row of square
-/// 12" sleeves standing on a floor, receding in 3D; the focused card faces the
-/// viewer most, far cards sit nearly edge-on, cards left of focus mirror and
-/// lean the other way. Transforms + opacity only — no timers, no TimelineView,
-/// no auto-advance, and no reads of any high-frequency player state.
+/// 12" sleeves standing on a floor, receding in 3D. Every sleeve leans the
+/// SAME way — one continuous direction, like records in a crate viewed from
+/// one side. The focused card faces the viewer most; cards ahead of focus
+/// (right) recede slot by slot; cards behind focus (left) are the flipped-past
+/// end of the stack — packed tighter, pushed deeper, faded quieter. Transforms
+/// + opacity only — no timers, no TimelineView, no auto-advance, and no reads
+/// of any high-frequency player state.
 ///
 /// Hit model (ported from the web fix in bc0dbdf): each card button is a FLAT
 /// strip — offset(x:) + zIndex in painter's order, like records in a bin. The
@@ -35,12 +38,16 @@ struct ShelfView: View {
     /// border + label emphasis. Fully functional, nothing travels in 3D.
     private var reduced: Bool { systemReduceMotion || appReduceMotion }
 
-    // Crate geometry — spacing keeps every exposed sleeve sliver ≥ 44pt.
+    // Crate geometry — spacing keeps every exposed sleeve sliver ≥ 44pt
+    // ahead of focus; behind focus the slivers are inert filler (tighter).
     private let cardW: CGFloat = 196
     private let cardH: CGFloat = 196        // 1:1 square sleeve — artwork fills the face
-    private let spacing: CGFloat = 44       // adjacent receding cards
-    private let focusGap: CGFloat = 104     // focused card → first neighbor
-    private let maxVisible = 3              // cards drawn each side of focus
+    private let spacing: CGFloat = 44       // slot pitch ahead of focus (also drag pt/slot)
+    private let focusGap: CGFloat = 104     // focused card → first card ahead
+    private let backSpacing: CGFloat = 26   // tighter pitch behind focus
+    private let backGap: CGFloat = 84       // focused card → first card behind
+    private let maxVisibleAhead = 3         // cards drawn ahead of focus
+    private let maxVisibleBehind = 2        // fewer behind — the quiet end of the stack
     private let depth: CGFloat = 1100       // perspective distance for z → scale
     private let labelBandH: CGFloat = 56
     private let stageH: CGFloat = 282
@@ -54,36 +61,55 @@ struct ShelfView: View {
         var z: CGFloat
         var ry: Double
         var hidden: Bool
+        var fade: Double    // at-rest card opacity
+        var tuck: Double    // 0…1 — quiets sleeve initials as a card recedes
     }
 
-    /// Crate pose for a card `d` slots away from focus. Focused card leans a
-    /// gentle −18°; cards fall back toward ±55° (near edge-on) as they recede,
-    /// cards left of focus mirroring the lean.
+    /// Crate pose for a card `d` slots away from focus — ONE continuous lean
+    /// direction across the whole bin. Focused: a gentle −18°. Ahead (d > 0):
+    /// falls back toward −55° as it recedes. Behind (d < 0): the SAME lean,
+    /// but these are the already-flipped records — pushed deeper (z −60…−126
+    /// vs −26…−104), packed tighter, and faded, so the left side reads as the
+    /// back of the same run, never a mirrored book-end.
     private func pose(_ d: Int) -> Pose {
-        if d == 0 { return Pose(x: 0, z: 90, ry: -18, hidden: false) }
+        if d == 0 { return Pose(x: 0, z: 90, ry: -18, hidden: false, fade: 1, tuck: 0) }
         let a = abs(d)
-        let dir: CGFloat = d < 0 ? -1 : 1
-        let lean = 18.0 + Double(min(8 + a * 11, 37))   // 37°, 48°, 55°, 55° …
+        if d > 0 {
+            return Pose(
+                x: focusGap + CGFloat(a - 1) * spacing,
+                z: CGFloat(-26 * min(a, 4)),
+                ry: -18 - Double(min(8 + a * 11, 37)),          // −37°, −48°, −55° …
+                hidden: a > maxVisibleAhead,
+                fade: 1 - Double(min(a - 1, 4)) * 0.08,         // 1, 0.92 …
+                tuck: min(1, Double(a - 1) * 0.3)
+            )
+        }
         return Pose(
-            x: dir * (focusGap + CGFloat(a - 1) * spacing),
-            z: CGFloat(-26 * min(a, 4)),
-            ry: d > 0 ? -lean : lean,
-            hidden: a > maxVisible
+            x: -(backGap + CGFloat(a - 1) * backSpacing),
+            z: CGFloat(-60 - (min(a, 4) - 1) * 22),             // −60, −82, −104 …
+            ry: -50 - Double(min((a - 1) * 6, 14)),             // −50°, −56°, −62° …
+            hidden: a > maxVisibleBehind,
+            fade: max(0.35, 0.8 - Double(a - 1) * 0.15),        // 0.8, 0.65 …
+            tuck: min(1, 0.45 + Double(a - 1) * 0.3)
         )
     }
 
     /// Compose the band around the *visible* group so there's never a dead
     /// half-band: shift the whole crate by half the difference between the
-    /// occupied extents left and right of focus (focused sleeve lands about a
-    /// third in from the leading edge when the crate recedes one way).
-    private func sideExtent(_ n: Int) -> CGFloat {
+    /// occupied extents behind (left) and ahead (right) of focus — the two
+    /// sides have different gaps and pitches now, so each gets its own extent.
+    private func aheadExtent(_ n: Int) -> CGFloat {
         n == 0 ? cardW / 2 : focusGap + CGFloat(n - 1) * spacing + cardW / 2
     }
 
+    private func behindExtent(_ n: Int) -> CGFloat {
+        n == 0 ? cardW / 2 : backGap + CGFloat(n - 1) * backSpacing + cardW / 2
+    }
+
     private var crateShift: CGFloat {
-        let left = sideExtent(min(focus, maxVisible))
-        let right = sideExtent(min(max(items.count - 1 - focus, 0), maxVisible))
-        return ((left - right) / 2).rounded()
+        let behind = behindExtent(min(focus, maxVisibleBehind))
+        let ahead = aheadExtent(min(max(items.count - 1 - focus, 0), maxVisibleAhead))
+        return ((behind - ahead) / 2).rounded()
     }
 
     var body: some View {
@@ -132,8 +158,8 @@ struct ShelfView: View {
         .accessibilityLabel("The shelf — pinned and recent")
     }
 
-    // MARK: labels — focused card + 1 neighbor each side, anchored above
-    // THEIR card. All hidden during pull-out (the pulled sleeve rises into
+    // MARK: labels — exactly ONE label at rest: the focused card's, anchored
+    // above ITS sleeve. Hidden during pull-out (the pulled sleeve rises into
     // the label band); under Reduce Motion the focused label stays as the
     // pull-out emphasis instead.
     private var labels: some View {
@@ -143,7 +169,7 @@ struct ShelfView: View {
                 let p = pose(d)
                 let dir: CGFloat = d < 0 ? -1 : (d > 0 ? 1 : 0)
                 let pulledEmphasis = pulled && reduced && d == 0
-                let visible = !p.hidden && abs(d) <= 1 && (!pulled || pulledEmphasis)
+                let visible = !p.hidden && d == 0 && (!pulled || pulledEmphasis)
                 VStack(spacing: 3) {
                     Text(item.title)
                         .font(PB.display(16))
@@ -163,7 +189,7 @@ struct ShelfView: View {
                 }
                 .frame(width: 184)
                 .offset(x: p.x + crateShift + dir * 52)
-                .opacity(visible ? (d == 0 ? 1 : 0.55) : 0)
+                .opacity(visible ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity)
@@ -207,7 +233,7 @@ struct ShelfView: View {
         .scaleEffect(isPulled && !reduced ? 1.12 : 1)
         .offset(x: x, y: isPulled && !reduced ? -46 : 0)
         .zIndex(isPulled ? 60 : Double(40 - abs(d)))
-        .opacity(p.hidden ? 0 : (dimmed ? 0.45 : 1))
+        .opacity(p.hidden ? 0 : (dimmed ? 0.45 : p.fade))
         .allowsHitTesting(!p.hidden)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Open \(item.title), \(kindName(item))\(item.pinned ? ", pinned" : "")")
@@ -220,7 +246,7 @@ struct ShelfView: View {
         let z: CGFloat = p.z - (dimmed ? 40 : 0)
         let scale: CGFloat = (reduced || isPulled) ? 1 : depth / (depth - z)
         let emphasized = isPulled && reduced
-        return cover(item)
+        return cover(item, tuck: p.tuck)
             .frame(width: cardW, height: cardH)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
@@ -235,9 +261,11 @@ struct ShelfView: View {
 
     /// Sleeve artwork: real cover when one resolves (same source as Library
     /// rows), otherwise a deterministic mesh + quiet initials — never an
-    /// identical blank. Meshes are static here: 15 sleeves must not run 15
-    /// redraw loops.
-    @ViewBuilder private func cover(_ item: ShelfItem) -> some View {
+    /// identical blank. `tuck` fades + shrinks the initials as the sleeve
+    /// recedes, so strongly tucked slivers stay quiet instead of stacking
+    /// big letters into clutter. Meshes are static here: 15 sleeves must not
+    /// run 15 redraw loops.
+    @ViewBuilder private func cover(_ item: ShelfItem, tuck: Double) -> some View {
         if let track = pinnedCover(item.ref, store) {
             TrackArtwork(track: track, cornerRadius: 10, showsKeyline: false, animateFallback: false)
         } else {
@@ -245,6 +273,8 @@ struct ShelfView: View {
                 MeshCover(colors: MeshPalette.colors(for: item.id), animate: false, fillsSafeArea: false)
                 MonoLabel(initials(item.title), color: PB.cream, size: 28, tracking: 2)
                     .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    .scaleEffect(1 - tuck * 0.3)
+                    .opacity(1 - tuck * 0.85)
             }
         }
     }

@@ -19,22 +19,29 @@ struct TransportBar: View {
     private let darkInk = Color(hex: 0x33302B)
 
     var body: some View {
-        // 10pt gaps: five 54pt keys must clear the 32pt screen margins on
-        // the narrowest supported phones.
-        HStack(spacing: 10) {
+        // Two-tier hierarchy: 44pt bookends (menu / note) flank a 54pt
+        // playback cluster. 10pt gaps inside the cluster, a wider 14pt gap
+        // to each bookend so the trio reads as the primary unit.
+        // Width: 2×44 + 3×54 + 2×10 + 2×14 = 298pt — clears the 32pt screen
+        // margins on the narrowest supported phones (was 310pt at five 54s).
+        HStack(spacing: 14) {
             // ⋯ — the app's context-menu affordance, rendered as a hardware
             // key so it reads as a control (the rotating P read as a logo).
-            key(.menu, held: false, face: greyFace, wall: greyWall, ink: darkInk, onMenu)
-            key(.back, held: false, face: greyFace, wall: greyWall, ink: darkInk, onBack)
-            // single play/pause toggle — pause glyph while playing, latched down
-            key(isPlaying ? .pause : .play, held: isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onToggle)
-            key(.forward, held: false, face: greyFace, wall: greyWall, ink: darkInk, onForward)
-            key(.note, held: false, face: noteFace, wall: noteWall, ink: PB.cream, onNote)
+            key(.menu, held: false, face: greyFace, wall: greyWall, ink: darkInk, side: 44, onMenu)
+            HStack(spacing: 10) {
+                key(.back, held: false, face: greyFace, wall: greyWall, ink: darkInk, onBack)
+                // single play/pause toggle — pause glyph while playing, latched down
+                key(isPlaying ? .pause : .play, held: isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onToggle)
+                key(.forward, held: false, face: greyFace, wall: greyWall, ink: darkInk, onForward)
+            }
+            key(.note, held: false, face: noteFace, wall: noteWall, ink: PB.cream, side: 44, onNote)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func key(_ glyph: DotGlyphKind, held: Bool, face: Color, wall: Color, ink: Color, _ action: @escaping () -> Void) -> some View {
+    // `side` is the visual key diameter; never pass below 44 — that is the
+    // minimum hit target and the visual circle is also the tappable area.
+    private func key(_ glyph: DotGlyphKind, held: Bool, face: Color, wall: Color, ink: Color, side: CGFloat = 54, _ action: @escaping () -> Void) -> some View {
         Button {
             #if canImport(UIKit)
             UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
@@ -43,7 +50,7 @@ struct TransportBar: View {
         } label: {
             DotGlyph(kind: glyph, color: ink)
         }
-        .buttonStyle(FlatKeyStyle(face: face, wall: wall, held: held))
+        .buttonStyle(FlatKeyStyle(face: face, wall: wall, held: held, side: side))
         .accessibilityLabel(glyph.accessibilityLabel)
     }
 }
@@ -76,6 +83,9 @@ private struct FlatKeyStyle: ButtonStyle {
                 .opacity(down ? 0.85 : 1)
         }
         .frame(width: side, height: side)
+        // full square hit target — keeps ≥44pt tappable even on the smaller
+        // 44pt bookend keys (HIG minimum)
+        .contentShape(Rectangle())
         // even, top-down shadow when raised; none when recessed
         .shadow(color: .black.opacity(down ? 0 : 0.22), radius: down ? 0 : 5, x: 0, y: 0)
         // push-in; momentary keys bounce back on release, latched keys settle in

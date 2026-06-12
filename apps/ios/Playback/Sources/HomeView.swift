@@ -360,6 +360,10 @@ struct HomeView: View {
                 MonoLabel(subtitle ?? "\(t.artist) · \(t.versionLabel)", color: PB.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
+            // Honest state: device-local song — dim cream, not an alert.
+            if store.isLocalOnlyTrack(t.id) {
+                MonoLabel("Not synced", color: PB.cream.opacity(0.45), size: 8, tracking: 1.4)
+            }
             if showOpen, store.openCount(t.id) > 0 {
                 MonoLabel("\(store.openCount(t.id)) open", color: PB.redline, size: 9, tracking: 1)
             }

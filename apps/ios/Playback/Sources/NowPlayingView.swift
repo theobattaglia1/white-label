@@ -172,6 +172,10 @@ struct NowPlayingView: View {
             // Dismiss control lives at the trailing edge — centered it sat
             // directly beneath the Dynamic Island, whose expanded hit region
             // swallowed taps (and HIG says keep controls clear of the island).
+            // Honest state: device-local song — quiet dim cream, no alarm.
+            if store.isLocalOnlyTrack(track.id) {
+                MonoLabel("Not synced", color: PB.cream.opacity(0.45), size: 9, tracking: 1.4)
+            }
             MonoLabel(
                 track.versionLabel.uppercased(),
                 color: PB.cream.opacity(0.6), size: 10, tracking: 1.4

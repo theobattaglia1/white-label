@@ -4,13 +4,26 @@ import AVFoundation
 enum ServiceError: Error, LocalizedError {
     case emptyResponse
     case requestFailed(String)
+    case httpStatus(Int, String)
     case uploadFailed(Int, String)
 
     var errorDescription: String? {
         switch self {
         case .emptyResponse: return "The service returned an empty response."
         case .requestFailed(let message): return message
+        case .httpStatus(_, let message): return message
         case .uploadFailed(let status, let detail): return "Upload failed (\(status)): \(detail)"
+        }
+    }
+}
+
+extension Error {
+    /// HTTP status carried by a ServiceError, if any — lets share UI tell
+    /// 422 ("song hasn't finished syncing") from 503 (storage busy) apart.
+    var serviceHTTPStatus: Int? {
+        switch self as? ServiceError {
+        case .httpStatus(let status, _), .uploadFailed(let status, _): return status
+        default: return nil
         }
     }
 }
@@ -896,7 +909,7 @@ struct ServiceClient {
         guard (200...299).contains(http.statusCode) else {
             let message = (try? JSONDecoder().decode([String: String].self, from: data)["error"])
                 ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            throw ServiceError.requestFailed(message)
+            throw ServiceError.httpStatus(http.statusCode, message)
         }
         let envelope = try JSONDecoder().decode(Envelope<T>.self, from: data)
         if let error = envelope.error { throw ServiceError.requestFailed(error) }

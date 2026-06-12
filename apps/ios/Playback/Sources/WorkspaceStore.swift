@@ -283,8 +283,11 @@ final class WorkspaceStore {
             syncState = .synced
             syncMessage = "Uploaded"
         } catch {
+            // Honest state: the song exists only on this device now. Keep the
+            // notice sticky (executePersist won't clobber .offline) — the
+            // NOT SYNCED badge carries the ongoing state in lists/player.
             syncState = .offline
-            syncMessage = "Saved locally; upload failed"
+            syncMessage = "Upload failed — saved on this device only"
         }
 
         return createTrack(
@@ -545,6 +548,92 @@ final class WorkspaceStore {
 
     func isCustomTrack(_ id: String) -> Bool {
         customTracks.contains { $0.id == id }
+    }
+
+    /// Honest sync state: a custom track lives only on this device — the
+    /// cloud has never seen its id, so share links can never resolve it.
+    /// (Upload failed at import, or it was created while offline.)
+    func isLocalOnlyTrack(_ id: String) -> Bool {
+        Config.useRemoteAPI && isCustomTrack(id)
+    }
+
+    /// The import keeps the source audio in Documents (`importedAudioPath`),
+    /// so the upload can be re-run — unless the file is gone, in which case
+    /// re-upload is impossible and the UI must say so instead.
+    func canRetryUpload(_ id: String) -> Bool {
+        guard isLocalOnlyTrack(id),
+              let stored = customTracks.first(where: { $0.id == id }),
+              let path = stored.importedAudioPath
+        else { return false }
+        return importedFileURL(path) != nil
+    }
+
+    /// Re-runs the upload path used at import for a local-only track.
+    /// On success the track swaps to its cloud identity: the device-local
+    /// copy is dropped and every local reference is remapped to the new
+    /// song id (same reconciliation the import success path relies on).
+    @MainActor
+    @discardableResult
+    func retryUpload(_ id: String) async -> Bool {
+        guard Config.useRemoteAPI,
+              let stored = customTracks.first(where: { $0.id == id }),
+              let path = stored.importedAudioPath,
+              let audioURL = importedFileURL(path)
+        else { return false }
+
+        syncState = .syncing
+        syncMessage = "Uploading song"
+        do {
+            let result = try await ServiceClient.shared.uploadNewSong(
+                audioURL: audioURL,
+                title: stored.title,
+                artist: stored.artist,
+                project: stored.label,
+                versionLabel: stored.versionLabel,
+                durationMs: stored.durationMs,
+                artworkPath: stored.importedArtworkPath
+            )
+            adoptUploadedTrack(localID: id, cloudID: result.songExternalId)
+            await refreshFromService()
+            syncState = .synced
+            syncMessage = "Uploaded"
+            lastSavedAt = Date()
+            return true
+        } catch {
+            syncState = .offline
+            syncMessage = "Upload failed — saved on this device only"
+            return false
+        }
+    }
+
+    /// Swap a local-only track for its cloud identity after a successful
+    /// upload: remap playlist/room/pin/note references and drop the local
+    /// copy so the service track is the single identity going forward.
+    private func adoptUploadedTrack(localID: String, cloudID: String) {
+        customTracks.removeAll { $0.id == localID }
+        for i in localPlaylists.indices {
+            localPlaylists[i].trackIDs = localPlaylists[i].trackIDs.map { $0 == localID ? cloudID : $0 }
+        }
+        for i in customRooms.indices {
+            customRooms[i].trackIDs = customRooms[i].trackIDs.map { $0 == localID ? cloudID : $0 }
+        }
+        var pinsChanged = false
+        pins = pins.map { ref in
+            guard let pin = PinRef(ref), pin.kind == .song, pin.targetID == localID else { return ref }
+            pinsChanged = true
+            return PinRef(kind: .song, targetID: cloudID).id
+        }
+        if let notes = notesByTrack.removeValue(forKey: localID) {
+            notesByTrack[cloudID] = (notesByTrack[cloudID] ?? []) + notes
+        }
+        if let title = titleOverrides.removeValue(forKey: localID) { titleOverrides[cloudID] = title }
+        versionsByTrack[localID] = nil
+        currentByTrack[localID] = nil
+        if let date = activity.removeValue(forKey: PinRef(kind: .song, targetID: localID).id) {
+            activity[PinRef(kind: .song, targetID: cloudID).id] = date
+        }
+        persist()
+        if pinsChanged { schedulePinsPush() }
     }
 
     func isEditableTrack(_ id: String) -> Bool {
@@ -1207,7 +1296,11 @@ final class WorkspaceStore {
     }
 
     private func executePersist() {
-        syncState = .saving
+        // Honest state: a sticky .offline/.error notice ("Upload failed —
+        // saved on this device only") must survive the routine local-save
+        // flicker — don't let the debounce overwrite it with "Saved locally".
+        let preserveNotice = syncState == .offline || syncState == .error
+        if !preserveNotice { syncState = .saving }
         pins = Self.normalizedPins(pins)
         let enc = JSONEncoder()
         if let d = try? enc.encode(notesByTrack) { UserDefaults.standard.set(d, forKey: notesKey) }
@@ -1222,8 +1315,10 @@ final class WorkspaceStore {
         if let d = try? enc.encode(activity) { UserDefaults.standard.set(d, forKey: activityKey) }
         if let d = try? enc.encode(deletedTrackIDs) { UserDefaults.standard.set(d, forKey: deletedTracksKey) }
         lastSavedAt = Date()
-        syncState = .ready
-        syncMessage = "Saved locally"
+        if !preserveNotice {
+            syncState = .ready
+            syncMessage = "Saved locally"
+        }
     }
 
     private func loadPersisted() {

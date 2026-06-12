@@ -3,19 +3,53 @@ import SwiftUI
 import UIKit
 #endif
 
+/// Why a share link can't be produced right now. Honest state, mono-caps,
+/// inline: NOT SYNCED is a quiet dim-cream fact (the song never reached the
+/// cloud — a POST is guaranteed to fail); redline is reserved for true
+/// failures (storage busy, unknown errors).
+enum ShareLinkIssue: Equatable {
+    case notSynced      // local-only track — gated up front, or API 422
+    case storageBusy    // API 503
+    case failed         // everything else
+
+    var label: String {
+        switch self {
+        case .notSynced: return "Not synced — upload first"
+        case .storageBusy: return "Storage busy — tap to retry"
+        case .failed: return "Link failed — tap to retry"
+        }
+    }
+    var tint: Color {
+        self == .notSynced ? PB.cream.opacity(0.55) : PB.redline
+    }
+
+    /// Maps the API's statusCode (commit 74f6454: 422 = song hasn't synced,
+    /// 503 = storage problems) onto the right inline state.
+    static func from(_ error: Error) -> ShareLinkIssue {
+        switch error.serviceHTTPStatus {
+        case 422: return .notSynced
+        case 503: return .storageBusy
+        default: return .failed
+        }
+    }
+}
+
 /// The floating menu's contents — share, link, playlist, export, rename.
 struct MenuSheet: View {
     var player: Player
     var store: WorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
-    @State private var linkFailed = false
+    @State private var linkIssue: ShareLinkIssue?
     @State private var linkFailureRevert: Task<Void, Never>?
     @State private var exported = false
     @State private var showEditSong = false
     @State private var shareError: String?
     @State private var exportItems: [Any] = []
     @State private var showExportSheet = false
+    @State private var isUploading = false
+    @State private var uploadFailed = false
+    @State private var uploaded = false
 
     private var track: Track { player.track }
 
@@ -48,10 +82,36 @@ struct MenuSheet: View {
                         }
                         Button { copyLink() } label: {
                             MenuRow(icon: "link",
-                                    title: linkFailed ? "Link failed — tap to retry" : (copied ? "Link copied" : "Copy link"),
+                                    title: linkIssue?.label ?? (copied ? "Link copied" : "Copy link"),
                                     detail: nil,
-                                    tint: linkFailed ? PB.redline : (copied ? PB.green : PB.cream),
-                                    monoTitle: linkFailed)
+                                    tint: linkIssue?.tint ?? (copied ? PB.green : PB.cream),
+                                    monoTitle: linkIssue != nil)
+                        }
+                        if uploaded {
+                            MenuRow(icon: "checkmark.icloud",
+                                    title: "Uploaded — synced",
+                                    detail: nil,
+                                    tint: PB.green,
+                                    monoTitle: true)
+                        } else if store.isLocalOnlyTrack(track.id) {
+                            if store.canRetryUpload(track.id) {
+                                Button { retryUpload() } label: {
+                                    MenuRow(icon: "icloud.and.arrow.up",
+                                            title: uploadRowTitle,
+                                            detail: nil,
+                                            tint: uploadRowTint,
+                                            monoTitle: true)
+                                }
+                                .disabled(isUploading)
+                            } else {
+                                // The source file is gone — re-upload is
+                                // impossible; be honest about what's possible.
+                                MenuRow(icon: "icloud.slash",
+                                        title: "Saved on this device only — re-import to share",
+                                        detail: nil,
+                                        tint: PB.cream.opacity(0.55),
+                                        monoTitle: true)
+                            }
                         }
                         NavigationLink { AddToPlaylistView(track: track, store: store) } label: {
                             MenuRow(icon: "plus.square.on.square", title: "Add to playlist", detail: "Copy into another list")
@@ -108,12 +168,47 @@ struct MenuSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PB.cream.opacity(0.07), lineWidth: 1))
     }
 
+    private var uploadRowTitle: String {
+        if isUploading { return "Uploading" }
+        if uploadFailed { return "Upload failed — tap to retry" }
+        return "Retry upload"
+    }
+
+    private var uploadRowTint: Color {
+        if isUploading { return PB.cream.opacity(0.55) }
+        if uploadFailed { return PB.redline }
+        return PB.cream
+    }
+
+    private func retryUpload() {
+        guard !isUploading else { return }
+        isUploading = true
+        withAnimation { uploadFailed = false }
+        Task {
+            let ok = await store.retryUpload(track.id)
+            await MainActor.run {
+                isUploading = false
+                withAnimation {
+                    uploaded = ok
+                    uploadFailed = !ok
+                    if ok { linkIssue = nil }
+                }
+            }
+        }
+    }
+
     private func copyLink() {
         shareError = nil
         linkFailureRevert?.cancel()
-        withAnimation { linkFailed = false }
+        withAnimation { linkIssue = nil }
         guard Config.useRemoteAPI else {
-            showLinkFailure()
+            showLinkIssue(.failed)
+            return
+        }
+        // Honest gate: a local-only track can never resolve on the server —
+        // don't POST a link that's guaranteed to fail.
+        guard !store.isLocalOnlyTrack(track.id) else {
+            showLinkIssue(.notSynced)
             return
         }
         Task {
@@ -127,25 +222,25 @@ struct MenuSheet: View {
                 }
             } catch {
                 await MainActor.run {
-                    showLinkFailure()
+                    showLinkIssue(.from(error))
                 }
             }
         }
     }
 
-    /// Honest state: link creation failed, so nothing was copied.
-    /// The same row shows a quiet mono-caps redline failure, reverts to
+    /// Honest state: link creation failed (or is impossible), so nothing was
+    /// copied. The same row shows a quiet mono-caps inline state, reverts to
     /// idle after ~4s, and tapping it retries the request.
-    private func showLinkFailure() {
+    private func showLinkIssue(_ issue: ShareLinkIssue) {
         withAnimation {
             copied = false
-            linkFailed = true
+            linkIssue = issue
         }
         linkFailureRevert = Task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation { linkFailed = false }
+                withAnimation { linkIssue = nil }
             }
         }
     }
@@ -161,6 +256,11 @@ struct MenuSheet: View {
 
         guard Config.useRemoteAPI else {
             shareError = "Export file unavailable"
+            return
+        }
+        // Local-only and the local file is gone — an export link can't exist.
+        guard !store.isLocalOnlyTrack(track.id) else {
+            shareError = "Not synced — upload first"
             return
         }
         Task {
@@ -245,7 +345,7 @@ struct ShareView: View {
     @State private var access: ShareAccess = .restricted
     @State private var role: ShareRole = .comment
     @State private var copied = false
-    @State private var linkFailed = false
+    @State private var linkIssue: ShareLinkIssue?
     @State private var linkFailureRevert: Task<Void, Never>?
     @State private var isCreating = false
     @State private var link: String?
@@ -259,6 +359,11 @@ struct ShareView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // Honest state, up front: this song only exists on this
+                // device — no link or invite can resolve it until it syncs.
+                if store.isLocalOnlyTrack(track.id) {
+                    MonoLabel("Not synced — upload first", color: PB.cream.opacity(0.55), size: 9, tracking: 1.2)
+                }
                 section("General access") {
                     ForEach(ShareAccess.allCases, id: \.self) { a in
                         optionRow(a.rawValue,
@@ -305,8 +410,8 @@ struct ShareView: View {
                         Text(link ?? "Create link when copied").font(PB.mono(12)).foregroundStyle(PB.cream).lineLimit(1)
                         Spacer()
                         Button { copy() } label: {
-                            Text(isCreating ? "CREATING" : (linkFailed ? "LINK FAILED — TAP TO RETRY" : (copied ? "COPIED" : "COPY"))).font(PB.mono(10)).tracking(1)
-                                .foregroundStyle(linkFailed ? PB.redline : (copied ? PB.green : PB.cobalt))
+                            Text(isCreating ? "CREATING" : (linkIssue?.label.uppercased() ?? (copied ? "COPIED" : "COPY"))).font(PB.mono(10)).tracking(1)
+                                .foregroundStyle(linkIssue?.tint ?? (copied ? PB.green : PB.cobalt))
                         }.buttonStyle(.plain)
                         .disabled(isCreating)
                     }
@@ -393,9 +498,15 @@ struct ShareView: View {
     private func copy() {
         error = nil
         linkFailureRevert?.cancel()
-        withAnimation { linkFailed = false }
+        withAnimation { linkIssue = nil }
         guard Config.useRemoteAPI else {
-            showLinkFailure()
+            showLinkIssue(.failed)
+            return
+        }
+        // Honest gate: a local-only track can never resolve on the server —
+        // don't POST a link that's guaranteed to fail.
+        guard !store.isLocalOnlyTrack(track.id) else {
+            showLinkIssue(.notSynced)
             return
         }
         isCreating = true
@@ -412,31 +523,37 @@ struct ShareView: View {
             } catch {
                 await MainActor.run {
                     isCreating = false
-                    showLinkFailure()
+                    showLinkIssue(.from(error))
                 }
             }
         }
     }
 
-    /// Honest state: link creation failed, so nothing was copied.
-    /// The COPY control shows a quiet mono-caps redline failure, reverts
+    /// Honest state: link creation failed (or is impossible), so nothing was
+    /// copied. The COPY control shows a quiet mono-caps inline state, reverts
     /// to idle after ~4s, and tapping it retries the request.
-    private func showLinkFailure() {
+    private func showLinkIssue(_ issue: ShareLinkIssue) {
         withAnimation {
             copied = false
-            linkFailed = true
+            linkIssue = issue
         }
         linkFailureRevert = Task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation { linkFailed = false }
+                withAnimation { linkIssue = nil }
             }
         }
     }
 
     private func invite() {
         error = nil
+        // Same honest gate as COPY — an invite needs a link, and a link
+        // needs the song to exist on the server.
+        guard !store.isLocalOnlyTrack(track.id) else {
+            showLinkIssue(.notSynced)
+            return
+        }
         isCreating = true
         Task {
             do {
@@ -458,8 +575,13 @@ struct ShareView: View {
                 }
             } catch {
                 await MainActor.run {
-                    self.error = "Invite unavailable"
                     isCreating = false
+                    // The invite rides on link creation — surface the same
+                    // differentiated state instead of a generic failure.
+                    switch ShareLinkIssue.from(error) {
+                    case .failed: self.error = "Invite unavailable"
+                    case let issue: showLinkIssue(issue)
+                    }
                 }
             }
         }

@@ -47,6 +47,20 @@ struct ServiceClient {
         return URLSession(configuration: config)
     }()
 
+    /// Storage transfers get their own session. `timeoutIntervalForResource`
+    /// is a hard wall-clock cap on the WHOLE transfer — the API session's
+    /// 120s kills any multi-megabyte song on a slow uplink mid-PUT, and every
+    /// automatic retry then dies at the same wall ("Upload failed — retrying
+    /// automatically" forever against a perfectly healthy server). Keep a
+    /// 60s *idle* timeout so genuinely stalled transfers still fail fast,
+    /// but allow up to an hour of wall-clock time for the bytes themselves.
+    private let uploadSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60      // idle gap between bytes
+        config.timeoutIntervalForResource = 3600   // total transfer budget
+        return URLSession(configuration: config)
+    }()
+
     struct Envelope<T: Decodable>: Decodable {
         let data: T?
         let error: String?
@@ -968,7 +982,7 @@ struct ServiceClient {
         request.setValue(contentType, forHTTPHeaderField: "content-type")
         request.setValue("true", forHTTPHeaderField: "x-upsert")
         let delegate = progress.map { UploadProgressObserver(onProgress: $0) }
-        let (_, response) = try await session.upload(for: request, fromFile: url, delegate: delegate)
+        let (_, response) = try await uploadSession.upload(for: request, fromFile: url, delegate: delegate)
         guard let http = response as? HTTPURLResponse else { return }
         guard (200...299).contains(http.statusCode) else {
             throw ServiceError.uploadFailed(http.statusCode, HTTPURLResponse.localizedString(forStatusCode: http.statusCode))

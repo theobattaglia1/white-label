@@ -347,7 +347,14 @@ extension WorkspaceStore {
                 }
                 let delay = Self.uploadBackoffDelay(forAttempt: job.attempts)
                 markJobFailed(job.id, message: error.localizedDescription, retryDelay: delay)
-                syncState = .offline
+                // .error, NOT .offline: a failed transfer is an upload
+                // problem, not evidence the cloud library is unreachable.
+                // .offline made Profile read "Cloud library: UNAVAILABLE"
+                // while reads were succeeding. .error keeps the honest
+                // "Upload failed" notice (it survives executePersist's
+                // debounce the same way) and the next successful refresh
+                // or upload still clears it via .synced.
+                syncState = .error
                 syncMessage = "Upload failed — retrying automatically"
                 try? await Task.sleep(for: .seconds(Double(delay)))
                 if Task.isCancelled { return }

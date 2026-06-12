@@ -698,7 +698,7 @@ server.post("/notes/:id/convert-to-task", async (request) => {
 
 server.post("/links", async (request) => {
   const auth = await requireAuthedFromRequest(request);
-  return ok(store.createLink(auth, request.body as never));
+  return ok(await store.createLink(auth, request.body as never));
 });
 server.get("/links/:id", async (request) => {
   const { id } = request.params as { id: string };
@@ -1116,9 +1116,18 @@ server.post("/room/:token/notes", async (request) => {
   }));
 });
 
-server.get("/shared/:token", async (request) => {
+server.get("/shared/:token", async (request, reply) => {
   const { token } = request.params as { token: string };
-  const payload = store.resolveShared(token);
+  const payload = await store.resolveSharedFresh(token);
+  // A link that resolves but exposes nothing playable (target song/version
+  // missing from this instance's snapshot) is a dead link to the recipient —
+  // return an honest 404 instead of a 200 the player can never render.
+  if (payload.songs.length === 0 || payload.versions.length === 0) {
+    return reply.code(404).send({
+      error: "link_target_unavailable",
+      message: "Nothing is available through this link anymore.",
+    });
+  }
   // Log the open so the manager can see the link was opened (not just played).
   store.recordShareOpen(token);
   return ok(payload);
@@ -1129,7 +1138,7 @@ server.get("/shared/:token/stream/:versionId", async (request, reply) => {
   // gated on the link being LIVE. Revoking a link immediately stops streaming,
   // and the recipient never holds a permanent URL (only this endpoint, which
   // re-checks on every load). This is what makes revocation real.
-  const shared = store.resolveShared(token);
+  const shared = await store.resolveSharedFresh(token);
   const version = shared.versions.find((candidate) => candidate.version_id === versionId);
   if (!version) throw new Error("Version is not available through this link");
   const asset = shared.assets.find((candidate) => candidate.asset_id === version.file_asset_id);
@@ -1148,7 +1157,7 @@ server.get("/shared/:token/stream/:versionId", async (request, reply) => {
 });
 server.post("/shared/:token/notes", async (request) => {
   const { token } = request.params as { token: string };
-  const shared = store.resolveShared(token);
+  const shared = await store.resolveSharedFresh(token);
   if (!shared.link.allow_comments) throw new Error("Comments are disabled for this link");
   // Scope guard: a recipient may only comment on a song + version that this
   // link actually exposes. resolveShared() already filters to the link's
@@ -1164,7 +1173,7 @@ server.post("/shared/:token/notes", async (request) => {
 });
 server.post("/shared/:token/approve", async (request) => {
   const { token } = request.params as { token: string };
-  const shared = store.resolveShared(token);
+  const shared = await store.resolveSharedFresh(token);
   if (!shared.link.allow_approval) throw new Error("Approvals are disabled for this link");
   const body = request.body as { version_id: string; state?: "approved" | "revision_requested" | "passed"; note?: string };
   // Scope guard: only a version this link exposes may be approved through it.
@@ -1175,7 +1184,7 @@ server.post("/shared/:token/approve", async (request) => {
 });
 server.get("/shared/:token/download/:versionId", async (request, reply) => {
   const { token, versionId } = request.params as { token: string; versionId: string };
-  const shared = store.resolveShared(token);
+  const shared = await store.resolveSharedFresh(token);
   if (shared.link.download_policy === "none") throw new Error("Downloads are disabled for this link");
   const version = shared.versions.find((candidate) => candidate.version_id === versionId);
   if (!version) throw new Error("Version is not available through this link");

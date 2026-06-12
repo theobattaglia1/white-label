@@ -68,7 +68,7 @@ import {
   persistTimestampedReaction,
   persistVersionPatch,
 } from "./supabase-persist";
-import { isSupabaseEnabled } from "./supabase";
+import { getSupabase, isSupabaseEnabled } from "./supabase";
 import type { StemJob } from "./stems";
 
 export interface AuthContext {
@@ -447,7 +447,7 @@ export class WorkspaceStore {
     return approval;
   }
 
-  createLink(auth: AuthContext, params: {
+  async createLink(auth: AuthContext, params: {
     workspace_id: string;
     target_type: "song" | "room" | "playlist";
     target_id: string;
@@ -484,6 +484,16 @@ export class WorkspaceStore {
       created_at: new Date().toISOString(),
     };
     this.snapshot.shareLinks = [...this.snapshot.shareLinks, link];
+    // Durable-or-fail: await persistence instead of fire-and-forget. The token
+    // we hand back must still resolve after a restart or on a sibling instance
+    // — an unpersisted link dies with this process, and the recipient lands on
+    // a dead /shared/<token> page. If the row can't be written, roll the link
+    // back and fail the request so the client never copies a doomed URL.
+    const persisted = await persistShareLink(link).catch(() => false);
+    if (!persisted) {
+      this.snapshot.shareLinks = this.snapshot.shareLinks.filter((candidate) => candidate.link_id !== link.link_id);
+      throw new Error("Share link couldn't be saved — try again in a moment.");
+    }
     this.recordEvent({
       workspace_id: params.workspace_id,
       actor_user_id: auth.userID,
@@ -493,7 +503,6 @@ export class WorkspaceStore {
       link_id: link.link_id,
       metadata: { version_policy: link.version_policy, download_policy: link.download_policy },
     });
-    void persistShareLink(link).catch(() => undefined);
     return { link, token };
   }
 
@@ -683,6 +692,76 @@ export class WorkspaceStore {
       });
     });
     return { ...resolved, assets, rooms, playlist, notes };
+  }
+
+  /** resolveShared with a Supabase read-through for tokens the in-memory
+   *  snapshot doesn't know. Snapshots only hydrate at boot, and links are
+   *  created on whichever instance served the POST — so a link created on a
+   *  sibling instance (or right before a restart) used to 400 for the
+   *  recipient even though its row exists in share_links. The recovered link
+   *  is spliced into the snapshot so streams/notes/approvals resolve too. */
+  async resolveSharedFresh(token: string) {
+    try {
+      return this.resolveShared(token);
+    } catch (err) {
+      const recovered = await this.recoverShareLinkFromSupabase(token).catch(() => false);
+      if (!recovered) throw err;
+      return this.resolveShared(token);
+    }
+  }
+
+  private async recoverShareLinkFromSupabase(token: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const tokenHash = hashToken(token);
+    // Already in the snapshot (e.g. revoked or expired) — nothing to recover;
+    // let the original resolveShared error stand.
+    if (this.snapshot.shareLinks.some((link) => link.token_hash === tokenHash || link.demo_token === token)) {
+      return false;
+    }
+    const { data: row, error } = await supabase
+      .from("share_links")
+      .select("*")
+      .eq("token_hash", tokenHash)
+      .maybeSingle();
+    if (error || !row) return false;
+    // Translate the row's UUID references back to the external ids the
+    // snapshot speaks (same mapping as the boot-time loader).
+    const targetTable = row.target_type === "song" ? "songs" : row.target_type === "room" ? "rooms" : "playlists";
+    const targetColumn = row.target_type === "song" ? "song_id" : row.target_type === "room" ? "room_id" : "playlist_id";
+    const { data: target } = await supabase
+      .from(targetTable)
+      .select("external_id")
+      .eq(targetColumn, row.target_id)
+      .maybeSingle();
+    const { data: workspace } = await supabase
+      .from("workspaces")
+      .select("external_id")
+      .eq("workspace_id", row.workspace_id)
+      .maybeSingle();
+    const link: ShareLink = {
+      link_id: row.external_id ?? row.link_id,
+      workspace_id: (workspace?.external_id as string | undefined) ?? row.workspace_id,
+      target_type: row.target_type,
+      target_id: (target?.external_id as string | undefined) ?? row.target_id,
+      token_hash: row.token_hash,
+      link_name: row.link_name ?? undefined,
+      access_mode: row.access_mode,
+      password_hash: row.password_hash ?? undefined,
+      expires_at: row.expires_at ?? undefined,
+      download_policy: row.download_policy,
+      version_policy: row.version_policy,
+      requires_identity: !!row.requires_identity,
+      watermark_enabled: !!row.watermark_enabled,
+      allow_comments: !!row.allow_comments,
+      allow_approval: !!row.allow_approval,
+      allow_forwarding: !!row.allow_forwarding,
+      created_by: undefined,
+      revoked_at: row.revoked_at ?? undefined,
+      created_at: row.created_at,
+    };
+    this.snapshot.shareLinks = [...this.snapshot.shareLinks, link];
+    return true;
   }
 
   createFirstListenShare(auth: AuthContext, params: {

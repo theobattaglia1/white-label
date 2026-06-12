@@ -132,17 +132,33 @@ export async function persistLinkRevocation(
   if (error) console.warn("[supabase-persist] link revoke failed:", error.message);
 }
 
-/** Persist a newly-created share link to Supabase. */
-export async function persistShareLink(link: ShareLink): Promise<void> {
+/** Persist a newly-created share link to Supabase.
+ *
+ *  Returns true when the row is durably stored (or Supabase isn't configured —
+ *  pure in-memory mode). Returns false when the row could NOT be written.
+ *  Callers must treat false as a failed link creation: on hosts that restart
+ *  or run multiple instances (Render), an unpersisted link exists only in one
+ *  process's memory and dies with it — which is exactly how iOS-created links
+ *  turned into dead /shared/<token> pages for recipients. */
+export async function persistShareLink(link: ShareLink): Promise<boolean> {
   const supabase = getSupabase();
-  if (!supabase) return;
+  if (!supabase) return true;
 
-  const workspaceUuid = await uuidFor("workspaces", "workspace_id", link.workspace_id);
-  const targetUuid = await targetUuidFor(link.target_type, link.target_id);
+  // The song row this link targets is itself written asynchronously by the
+  // upload flow moments earlier — a share created from iOS right after an
+  // upload can race that insert. Retry the lookup briefly before giving up.
+  let workspaceUuid: string | null = null;
+  let targetUuid: string | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    workspaceUuid = workspaceUuid ?? (await uuidFor("workspaces", "workspace_id", link.workspace_id));
+    targetUuid = targetUuid ?? (await targetUuidFor(link.target_type, link.target_id));
+    if (workspaceUuid && targetUuid) break;
+  }
   const createdByUuid = link.created_by ? await uuidFor("users", "user_id", link.created_by) : null;
   if (!workspaceUuid || !targetUuid) {
     console.warn("[supabase-persist] link skipped — couldn't resolve workspace/target", link.workspace_id, link.target_id);
-    return;
+    return false;
   }
 
   const { error } = await supabase.from("share_links").insert({
@@ -166,7 +182,11 @@ export async function persistShareLink(link: ShareLink): Promise<void> {
     revoked_at: link.revoked_at ?? null,
     created_at: link.created_at,
   });
-  if (error) console.warn("[supabase-persist] link insert failed:", error.message);
+  if (error) {
+    console.warn("[supabase-persist] link insert failed:", error.message);
+    return false;
+  }
+  return true;
 }
 
 /** Persist invited recipients for a share link. */

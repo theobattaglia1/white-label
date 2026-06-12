@@ -4613,6 +4613,24 @@ function JoinPage({ token }: { token: string }) {
   );
 }
 
+/** Reject after `ms` so a hanging request (cold-started API, dead network)
+ *  can't strand a recipient on the loading skeleton forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error("Request timed out")), ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        window.clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 function SharedListeningPage({ token }: { token: string }) {
   const [payload, setPayload] = useState<SharedPayload | null>(null);
   const [selectedSongID, setSelectedSongID] = useState<string | null>(null);
@@ -4621,7 +4639,15 @@ function SharedListeningPage({ token }: { token: string }) {
   async function loadShared() {
     setLoadError(null);
     try {
-      const nextPayload = await api.shared(token);
+      const nextPayload = await withTimeout(api.shared(token), 30_000);
+      // A 200 whose songs/versions are empty is a dead link, not a loading
+      // state — surface the honest failure instead of an eternal skeleton.
+      if (nextPayload.songs.length === 0 || nextPayload.versions.length === 0) {
+        setPayload(null);
+        setSelectedSongID(null);
+        setLoadError("This private link is live, but nothing is playable through it anymore. Ask the sender for a fresh link.");
+        return;
+      }
       setPayload(nextPayload);
       setSelectedSongID(nextPayload.songs[0]?.song_id ?? null);
     } catch {
@@ -4790,6 +4816,21 @@ function SharedListeningView({
   }
 
   if (!payload || !song || !current) {
+    // Loaded-but-unusable (the payload arrived but its song or current version
+    // is missing) is a dead link, not a loading state — show an honest failure
+    // instead of skeletons that never resolve.
+    if (payload) {
+      return (
+        <div className="shared-page">
+          <TopBar roomTitle="Private link" error={null} />
+          <div className="sleeve-state" role="alert">
+            <p className="eyebrow">LINK UNAVAILABLE</p>
+            <h1>Nothing to play</h1>
+            <p>This link opened, but the song behind it isn't available right now. Ask the sender for a fresh link.</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="shared-page">
         <TopBar roomTitle="Private link" error={null} />

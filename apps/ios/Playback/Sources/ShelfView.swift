@@ -48,14 +48,18 @@ struct ShelfView: View {
     /// border + label emphasis. Fully functional, nothing travels in 3D.
     private var reduced: Bool { systemReduceMotion || appReduceMotion }
 
-    // Crate geometry — spacing keeps every exposed sleeve sliver ≥ 44pt
-    // ahead of focus; behind focus the slivers are inert filler (tighter).
-    private let cardW: CGFloat = 196
-    private let cardH: CGFloat = 196        // 1:1 square sleeve — artwork fills the face
-    private let spacing: CGFloat = 44       // slot pitch ahead of focus (also drag pt/slot)
-    private let focusGap: CGFloat = 104     // focused card → first card ahead
+    // Crate geometry — tuned for a phone band: the COMPOSED group (behind
+    // extent + ahead extent, ~355pt) must sit inside the screen with ≥16pt
+    // side insets at every focus index, so the crate reads as an object in
+    // the band rather than a strip bleeding off both edges. Ahead pitch is
+    // the tappable sliver per receding record (also drag pt/slot); behind
+    // slivers are inert filler (tighter).
+    private let cardW: CGFloat = 190
+    private let cardH: CGFloat = 190        // 1:1 square sleeve — artwork fills the face
+    private let spacing: CGFloat = 36       // slot pitch ahead of focus (also drag pt/slot)
+    private let focusGap: CGFloat = 90      // focused card → first card ahead
     private let backSpacing: CGFloat = 26   // tighter pitch behind focus
-    private let backGap: CGFloat = 84       // focused card → first card behind
+    private let backGap: CGFloat = 76       // focused card → first card behind
     private let maxVisibleAhead = 3         // base budget ahead of focus
     private let maxVisibleBehind = 2        // fewer behind — the quiet end of the stack
 
@@ -98,8 +102,19 @@ struct ShelfView: View {
         return min(focus, maxVisibleBehind + max(0, maxVisibleAhead - availAhead))
     }
     private let depth: CGFloat = 1100       // perspective distance for z → scale
-    private let labelBandH: CGFloat = 56
-    private let stageH: CGFloat = 282
+    private let labelBandH: CGFloat = 48
+    private let stageH: CGFloat = 280       // 48 label + 22 gap + 190 cards + floor shadow
+
+    // Projected half-widths used to compose/center the band. The focused
+    // sleeve projects wider than cardW/2 (z 90 → scale ~1.09); the outermost
+    // slivers project far NARROWER (leaned toward edge-on + sunk in z), so
+    // using cardW/2 there would both mis-center the group and overestimate
+    // its span — the old source of edge bleed.
+    // Ahead cards lean with their NEAR (right) edge outermost — perspective
+    // widens it; behind cards put their FAR (left) edge outermost — narrower.
+    private let focusedHalf: CGFloat = 108
+    private let aheadEdgeHalf: CGFloat = 54
+    private let behindEdgeHalf: CGFloat = 36
 
     private var crateAnimation: Animation {
         reduced ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85)
@@ -124,14 +139,23 @@ struct ShelfView: View {
     /// either run when the other side has no items): z keeps sinking, the
     /// lean eases toward −65°, opacity keeps falling to a 0.3 floor — never
     /// a flat run of identical slivers.
+    /// Lean ladders (degrees) per slot away from focus. On a phone the
+    /// receding run must compress like records in a bin — the FIRST ahead
+    /// neighbor already drops to −45° (a thin exposed sliver, not a second
+    /// face), then the lean climbs sharply toward edge-on. Behind starts
+    /// deeper still. Past the ladder both cap at −66°.
+    private static let aheadLean: [Double] = [-45, -56, -62]
+    private static let behindLean: [Double] = [-55, -60, -64]
+    private static let leanCap: Double = -66
+
     private func pose(_ d: Int) -> Pose {
-        if d == 0 { return Pose(x: 0, z: 90, ry: -18, hidden: false, fade: 1, tuck: 0) }
+        if d == 0 { return Pose(x: 0, z: 104, ry: -20, hidden: false, fade: 1, tuck: 0) }
         let a = abs(d)
         if d > 0 {
             return Pose(
                 x: focusGap + CGFloat(a - 1) * spacing,
                 z: CGFloat(-26 * min(a, 4) - max(0, a - 4) * 9),
-                ry: -18 - Double(min(8 + a * 11, 37)) - Double(min(max(0, a - 3) * 5, 10)), // −37°, −48°, −55° … −65° cap
+                ry: a <= Self.aheadLean.count ? Self.aheadLean[a - 1] : Self.leanCap, // −45°, −56°, −62° … −66° cap
                 hidden: a > visAhead,
                 fade: max(0.3, 1 - Double(a - 1) * 0.08),       // 1, 0.92 … falls to a 0.3 floor
                 tuck: min(1, Double(a - 1) * 0.3)
@@ -140,7 +164,7 @@ struct ShelfView: View {
         return Pose(
             x: -(backGap + CGFloat(a - 1) * backSpacing),
             z: CGFloat(-60 - (min(a, 4) - 1) * 22 - max(0, a - 4) * 9), // −60, −82, −104, −126, then −9/slot
-            ry: -50 - Double(min((a - 1) * 6, 14)) - Double(min(max(0, a - 4), 2)), // −50°, −56°, −62° … −66° cap
+            ry: a <= Self.behindLean.count ? Self.behindLean[a - 1] : Self.leanCap, // −55°, −60°, −64° … −66° cap
             hidden: a > visBehind,
             fade: max(0.3, 0.8 - Double(a - 1) * 0.15),         // 0.8, 0.65 … falls to a 0.3 floor
             tuck: min(1, 0.45 + Double(a - 1) * 0.3)
@@ -152,11 +176,11 @@ struct ShelfView: View {
     /// occupied extents behind (left) and ahead (right) of focus — the two
     /// sides have different gaps and pitches now, so each gets its own extent.
     private func aheadExtent(_ n: Int) -> CGFloat {
-        n == 0 ? cardW / 2 : focusGap + CGFloat(n - 1) * spacing + cardW / 2
+        n == 0 ? focusedHalf : focusGap + CGFloat(n - 1) * spacing + aheadEdgeHalf
     }
 
     private func behindExtent(_ n: Int) -> CGFloat {
-        n == 0 ? cardW / 2 : backGap + CGFloat(n - 1) * backSpacing + cardW / 2
+        n == 0 ? focusedHalf : backGap + CGFloat(n - 1) * backSpacing + behindEdgeHalf
     }
 
     private var crateShift: CGFloat {
@@ -204,7 +228,7 @@ struct ShelfView: View {
             labels
 
             crate
-                .padding(.top, labelBandH + 8)
+                .padding(.top, labelBandH + 22)
         }
         .frame(height: stageH)
         .frame(maxWidth: .infinity)
@@ -321,9 +345,26 @@ struct ShelfView: View {
                     .strokeBorder(PB.cream.opacity(emphasized ? 0.7 : 0.14),
                                   lineWidth: emphasized ? 1.5 : 0.75)
             )
-            .shadow(color: .black.opacity(0.55), radius: 14, x: 0, y: 12)
-            .scaleEffect(scale)
-            .rotation3DEffect(.degrees(ry), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+            .shadow(color: .black.opacity(0.4), radius: 9, x: 0, y: 6)
+            // Soft floor shadow grounding the sleeve — drawn behind the face,
+            // hugging its bottom edge, so it scales/leans with the record.
+            .background(alignment: .bottom) {
+                Ellipse()
+                    .fill(.black.opacity(0.45))
+                    .frame(width: cardW * 0.88, height: 16)
+                    .blur(radius: 9)
+                    .offset(y: 11)
+            }
+            // Anchor depth scaling at the BOTTOM edge: every record's sleeve
+            // bottom stays on one shared floor line as it recedes (only the
+            // perspective tilt varies it), instead of drifting diagonally.
+            .scaleEffect(scale, anchor: .bottom)
+            // Rotation is ALSO bottom-anchored: the projection origin sits on
+            // the floor line, so the bottom edge of every leaning sleeve maps
+            // to itself (a straight run along the floor) and the perspective
+            // flare goes upward only — records standing in a bin, not a fan.
+            .rotation3DEffect(.degrees(ry), axis: (x: 0, y: 1, z: 0),
+                              anchor: .bottom, perspective: 0.5)
     }
 
     /// Sleeve artwork: real cover when one resolves (same source as Library

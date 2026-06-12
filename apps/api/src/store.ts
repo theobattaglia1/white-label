@@ -67,6 +67,7 @@ import {
   persistShareSessionRecipient,
   persistTimestampedReaction,
   persistVersionPatch,
+  type PersistShareLinkResult,
 } from "./supabase-persist";
 import { getSupabase, isSupabaseEnabled } from "./supabase";
 import type { StemJob } from "./stems";
@@ -489,10 +490,31 @@ export class WorkspaceStore {
     // — an unpersisted link dies with this process, and the recipient lands on
     // a dead /shared/<token> page. If the row can't be written, roll the link
     // back and fail the request so the client never copies a doomed URL.
-    const persisted = await persistShareLink(link).catch(() => false);
-    if (!persisted) {
+    const persisted = await persistShareLink(link).catch((err): PersistShareLinkResult => ({
+      ok: false,
+      reason: "write_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    }));
+    if (!persisted.ok) {
       this.snapshot.shareLinks = this.snapshot.shareLinks.filter((candidate) => candidate.link_id !== link.link_id);
-      throw new Error("Share link couldn't be saved — try again in a moment.");
+      // Log the REAL failure — the user-facing message below is intentionally
+      // generic, so this line is the only place the underlying cause survives.
+      console.warn(
+        `[store] share link rolled back (${persisted.reason}) for ${link.target_type} ${link.target_id}: ${persisted.detail}`,
+      );
+      if (persisted.reason === "target_unresolved") {
+        // 422: this song/workspace has no Supabase row (e.g. an upload that
+        // only succeeded locally on the device) — retrying won't fix it.
+        throw Object.assign(
+          new Error("This song hasn't finished syncing to the cloud, so a link can't be created yet."),
+          { statusCode: 422 },
+        );
+      }
+      // 503: storage write unavailable — transient; retrying may succeed.
+      throw Object.assign(
+        new Error("Share link storage is temporarily unavailable — try again in a moment."),
+        { statusCode: 503 },
+      );
     }
     this.recordEvent({
       workspace_id: params.workspace_id,

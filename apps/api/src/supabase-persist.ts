@@ -132,17 +132,29 @@ export async function persistLinkRevocation(
   if (error) console.warn("[supabase-persist] link revoke failed:", error.message);
 }
 
+/** Outcome of a share-link persist attempt. `reason` distinguishes the two
+ *  very different failures the route layer must surface differently:
+ *  - "target_unresolved": the workspace/song this link points at has no row in
+ *    Supabase (e.g. a song that only exists on one device because its upload
+ *    failed) — retrying will NOT help until the target is synced.
+ *  - "write_failed": the row insert itself failed (RLS, schema, outage) —
+ *    storage is unavailable; retrying later may help. `detail` carries the
+ *    real underlying message for logs. */
+export type PersistShareLinkResult =
+  | { ok: true }
+  | { ok: false; reason: "target_unresolved" | "write_failed"; detail: string };
+
 /** Persist a newly-created share link to Supabase.
  *
- *  Returns true when the row is durably stored (or Supabase isn't configured —
- *  pure in-memory mode). Returns false when the row could NOT be written.
- *  Callers must treat false as a failed link creation: on hosts that restart
- *  or run multiple instances (Render), an unpersisted link exists only in one
- *  process's memory and dies with it — which is exactly how iOS-created links
- *  turned into dead /shared/<token> pages for recipients. */
-export async function persistShareLink(link: ShareLink): Promise<boolean> {
+ *  Returns ok:true when the row is durably stored (or Supabase isn't configured —
+ *  pure in-memory mode). Returns ok:false (with reason + detail) when the row
+ *  could NOT be written. Callers must treat ok:false as a failed link creation:
+ *  on hosts that restart or run multiple instances (Render), an unpersisted link
+ *  exists only in one process's memory and dies with it — which is exactly how
+ *  iOS-created links turned into dead /shared/<token> pages for recipients. */
+export async function persistShareLink(link: ShareLink): Promise<PersistShareLinkResult> {
   const supabase = getSupabase();
-  if (!supabase) return true;
+  if (!supabase) return { ok: true };
 
   // The song row this link targets is itself written asynchronously by the
   // upload flow moments earlier — a share created from iOS right after an
@@ -157,8 +169,13 @@ export async function persistShareLink(link: ShareLink): Promise<boolean> {
   }
   const createdByUuid = link.created_by ? await uuidFor("users", "user_id", link.created_by) : null;
   if (!workspaceUuid || !targetUuid) {
-    console.warn("[supabase-persist] link skipped — couldn't resolve workspace/target", link.workspace_id, link.target_id);
-    return false;
+    const missing = [
+      workspaceUuid ? null : `workspace ${link.workspace_id}`,
+      targetUuid ? null : `${link.target_type} ${link.target_id}`,
+    ].filter(Boolean).join(" and ");
+    const detail = `no Supabase row for ${missing}`;
+    console.warn("[supabase-persist] link skipped —", detail);
+    return { ok: false, reason: "target_unresolved", detail };
   }
 
   const { error } = await supabase.from("share_links").insert({
@@ -184,9 +201,9 @@ export async function persistShareLink(link: ShareLink): Promise<boolean> {
   });
   if (error) {
     console.warn("[supabase-persist] link insert failed:", error.message);
-    return false;
+    return { ok: false, reason: "write_failed", detail: error.message };
   }
-  return true;
+  return { ok: true };
 }
 
 /** Persist invited recipients for a share link. */

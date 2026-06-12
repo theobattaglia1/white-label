@@ -1401,7 +1401,15 @@ server.setErrorHandler((error, _request, reply) => {
     return;
   }
   server.log.error(error);
-  reply.status(400).send({ error: error.message });
+  // Honor an explicit statusCode carried by the error (e.g. 503 "storage write
+  // unavailable" / 422 "target not synced" from createLink) so clients can
+  // distinguish retryable failures from permanent ones. Bare Errors keep the
+  // legacy 400 behaviour.
+  const status =
+    typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode <= 599
+      ? error.statusCode
+      : 400;
+  reply.status(status).send({ error: error.message });
 });
 
   return server;

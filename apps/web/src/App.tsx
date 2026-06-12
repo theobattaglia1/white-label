@@ -101,7 +101,6 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   const [selectedSongID, setSelectedSongID] = useState("");
   const [activeRoomID, setActiveRoomID] = useState("");
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const [overlayTab, setOverlayTab] = useState<"player" | "workspace">("player");
   const [memberNumber, setMemberNumber] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
@@ -292,15 +291,13 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
   function openSong(songID: string) {
     setSelectedSongID(songID);
     void refresh(songID, activeRoomID);
-    setOverlayTab("workspace");
     setOverlayOpen(true);
   }
 
-  // The immersive "now playing" surface — what the mini-player opens.
+  // The mini-player opens the same sheet — one surface, player strip on top.
   function openNowPlaying(songID: string) {
     setSelectedSongID(songID);
     void refresh(songID, activeRoomID);
-    setOverlayTab("player");
     setOverlayOpen(true);
   }
 
@@ -417,8 +414,6 @@ function WorkspaceApp({ onSignOut }: { onSignOut?: () => void } = {}) {
         open={overlayOpen}
         payload={songPayload}
         loadError={songError}
-        tab={overlayTab}
-        onTabChange={setOverlayTab}
         onClose={() => setOverlayOpen(false)}
         playlists={playlists}
         onRefresh={() => songPayload && refresh(songPayload.song.song_id)}
@@ -2120,21 +2115,20 @@ function LaneComposer({
   );
 }
 
-/* The immersive now-playing surface — matches the Playback now-playing concept:
-   a dark editorial field (huge title, credits, integrated transport) beside a
-   full-bleed generative cover with the motion/tone pickers. */
+/* The player strip — the sheet's full-width middle band: transport keys,
+   scrubber + time, the NOTE LANE beneath, keyboard hints, and the confined
+   ambient dot field. The old full-bleed hero (monument title + cover ocean)
+   is gone from this surface; identity lives in the sheet header band. */
 function NowPlayingView({
   payload,
   active = true,
-  onClose,
   noteCue,
   onRefresh,
 }: {
   payload: SongPayload;
-  /** Overlay visibility — gates keyboard shortcuts + the ambient field. */
+  /** Sheet visibility — gates keyboard shortcuts + the ambient field. */
   active?: boolean;
-  onClose?: () => void;
-  /** External cue (rail ADD NOTE) — open the lane composer at this playhead (ms). */
+  /** External cue (ADD NOTE) — open the lane composer at this playhead (ms). */
   noteCue?: { ms: number; key: number } | null;
   /** Refetch the song payload after a note posts from the lane. */
   onRefresh?: () => void;
@@ -2149,34 +2143,13 @@ function NowPlayingView({
   const progress = durationMs > 0 ? Math.max(0, Math.min(1, positionMs / durationMs)) : 0;
   const playing = isThis && player.isPlaying;
 
-  // Cover field controls — persisted per song.
-  const coverKey = `wl-np-cover-${song.song_id}`;
-  const [coverMode, setCoverMode] = useState<number>(5);
-  const [coverTone, setCoverTone] = useState<number>(0);
-  const [coverHex, setCoverHex] = useState<string>("#4663E8");
-  useEffect(() => {
-    let mode = 5, tone = 0, hex = "#4663E8";
-    try {
-      const raw = localStorage.getItem(coverKey);
-      if (raw) { const s = JSON.parse(raw); if (typeof s.mode === "number") mode = s.mode; if (typeof s.tone === "number") tone = s.tone; if (typeof s.hex === "string") hex = s.hex; }
-    } catch { /* ignore */ }
-    setCoverMode(mode); setCoverTone(tone); setCoverHex(hex);
-  }, [song.song_id]);
-  function persistCover(next: { mode?: number; tone?: number; hex?: string }) {
-    const merged = { mode: next.mode ?? coverMode, tone: next.tone ?? coverTone, hex: next.hex ?? coverHex };
-    try { localStorage.setItem(coverKey, JSON.stringify(merged)); } catch { /* ignore */ }
-  }
-
-  // The 11 cover options live behind one discreet control now — zero
-  // permanent chrome; pick → closes.
-  const [coverMenuOpen, setCoverMenuOpen] = useState(false);
-
-  // Keyboard hint row: fades in on first hover of the left panel, stays.
+  // Keyboard hint row: fades in on first hover of the strip, stays.
   const [hintsSeen, setHintsSeen] = useState(false);
 
-  // Ambient dot field behind the left panel — same module as DropOverlay +
-  // SignIn, dimmer and fps-capped like the sign-in field. Reduced motion
-  // renders one static frame and pulse() is a no-op (handled in the module).
+  // Ambient dot field confined to the player strip — same module as
+  // DropOverlay + SignIn, dimmer and fps-capped like the sign-in field.
+  // Reduced motion renders one static frame and pulse() is a no-op
+  // (handled in the module).
   const fieldCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fieldRef = useRef<AmbientField | null>(null);
   const transportRef = useRef<HTMLDivElement | null>(null);
@@ -2199,10 +2172,13 @@ function NowPlayingView({
     if (isThis) player.toggle();
     else if (version && asset) player.play(song, version, asset);
     if (willPlay) {
-      // Pulse-on-play: the wavefront starts at the play key itself.
+      // Pulse-on-play: the wavefront starts at the play key itself. The
+      // canvas no longer sits at the viewport origin (it's clipped to the
+      // strip), so convert the key's viewport point into canvas space.
       const key = transportRef.current?.querySelector<HTMLElement>(".flat-key:nth-of-type(2)");
       const r = (key ?? transportRef.current)?.getBoundingClientRect();
-      if (r) fieldRef.current?.pulse(r.left + r.width / 2, r.top + r.height / 2, { strength: 0.85 });
+      const c = fieldCanvasRef.current?.getBoundingClientRect();
+      if (r && c) fieldRef.current?.pulse(r.left + r.width / 2 - c.left, r.top + r.height / 2 - c.top, { strength: 0.85 });
     }
   }
 
@@ -2304,55 +2280,15 @@ function NowPlayingView({
   }, [active]);
 
   return (
-    <div className="np-stage">
-      <div className="np-left" onMouseEnter={() => setHintsSeen(true)}>
-        <canvas ref={fieldCanvasRef} className="np-field-canvas" aria-hidden="true" />
-        <header className="np-top">
-          <span className="np-wm"><Wordmark size="sm" /><span className="np-cat">{catalogIdFor(song.song_id)}</span></span>
-          <div className="np-top-actions">
-            <button
-              className={`np-cover-btn${coverMenuOpen ? " open" : ""}`}
-              onClick={() => setCoverMenuOpen((o) => !o)}
-              aria-expanded={coverMenuOpen}
-              aria-haspopup="menu"
-            >
-              Cover
-            </button>
-            {onClose && (
-              <button className="np-close" onClick={onClose} aria-label="Close">
-                <X size={18} />
-              </button>
-            )}
-          </div>
-          {coverMenuOpen && (
-            <div className="np-cover-pop" role="menu" aria-label="Cover style">
-              <div className="pls-pickers">
-                <div className="pls-pick">
-                  <span className="pls-pick-lab">Motion</span>
-                  {MOTION_MODES.map((m) => (
-                    <button key={m.id} className={`pls-pk${coverMode === m.id ? " active" : ""}`} onClick={() => { setCoverMode(m.id); persistCover({ mode: m.id }); setCoverMenuOpen(false); }}>{m.label}</button>
-                  ))}
-                </div>
-                <div className="pls-pick">
-                  <span className="pls-pick-lab">Tone</span>
-                  {TONE_MODES.map((t) => (
-                    <button key={t.id} className={`pls-pk${coverTone === t.id ? " active" : ""}`} onClick={() => { setCoverTone(t.id); persistCover({ tone: t.id }); setCoverMenuOpen(false); }}>{t.label}</button>
-                  ))}
-                  <label className={`pls-swatch${coverTone === 3 ? " active" : ""}`} title="Pick a main color" style={{ ["--sw" as string]: coverHex }}>
-                    <input type="color" value={coverHex} onChange={(e) => { setCoverHex(e.target.value); setCoverTone(3); persistCover({ tone: 3, hex: e.target.value }); setCoverMenuOpen(false); }} />
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-        </header>
-        <div className="np-hero">
-          <span className="np-eyebrow">Now Playing{song.project_name ? ` · ${song.project_name}` : ""}</span>
-          <h1 className="np-title">{song.title}</h1>
-          <div className="np-artist">{song.artist_display_name}</div>
-        </div>
-        <footer className="np-foot">
-          <div className="np-transport" ref={transportRef}>
+    <div className="sheet-player" onMouseEnter={() => setHintsSeen(true)}>
+      {/* The dim ambient field — clipped to the strip; a hint of life,
+          not a backdrop ocean. The module sizes the buffer to the
+          viewport, so the canvas stays viewport-sized and the wrapper
+          crops it to the strip. */}
+      <div className="sheet-field-clip" aria-hidden="true">
+        <canvas ref={fieldCanvasRef} className="np-field-canvas" />
+      </div>
+      <div className="np-transport" ref={transportRef}>
             <TransportKeys
               playing={playing}
               canPlay={!!(version && asset)}
@@ -2455,17 +2391,6 @@ function NowPlayingView({
                 <span>Esc close</span>
               </div>
             </div>
-          </div>
-        </footer>
-      </div>
-      <div className="np-right">
-        <LivingCover
-          mode={coverMode}
-          tone={coverTone}
-          hue={coverTone === 3 ? hexToHue(coverHex) : undefined}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-        />
-        <div className="np-seam" />
       </div>
     </div>
   );
@@ -2517,14 +2442,21 @@ function SongWorkspace({
   onRefreshPlaylists,
   onOpenSong,
   onRequestNote,
+  onClose,
+  playerStrip,
 }: {
   payload: SongPayload;
   onRefresh: () => void;
   playlists?: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists?: () => void;
   onOpenSong?: (id: string) => void;
-  /** ADD NOTE accelerator — opens the player panel's lane composer at this playhead (ms). */
+  /** ADD NOTE accelerator — opens the player strip's lane composer at this playhead (ms). */
   onRequestNote?: (ms: number) => void;
+  /** Close the sheet — renders the quiet × in the header band. */
+  onClose?: () => void;
+  /** The player strip (transport + scrubber + lane), slotted between the
+      header band and the workbench so the sheet reads as one column. */
+  playerStrip?: ReactNode;
 }) {
   const [activeVersionID, setActiveVersionID] = useState(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
   const [uploadingPct, setUploadingPct] = useState<number | null>(null);
@@ -2540,6 +2472,28 @@ function SongWorkspace({
 
   const activeVersion = payload.versions.find((version) => version.version_id === activeVersionID) ?? payload.currentVersion;
   const activeAsset = assetForVersion(payload.assets, activeVersion);
+
+  // Cover field controls — persisted per song. The generative cover is now a
+  // ~104px tile in the sheet's header band; the 11 options live behind one
+  // discreet COVER control (zero permanent chrome; pick → closes).
+  const coverKey = `wl-np-cover-${payload.song.song_id}`;
+  const [coverMode, setCoverMode] = useState<number>(5);
+  const [coverTone, setCoverTone] = useState<number>(0);
+  const [coverHex, setCoverHex] = useState<string>("#4663E8");
+  const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+  useEffect(() => {
+    let mode = 5, tone = 0, hex = "#4663E8";
+    try {
+      const raw = localStorage.getItem(coverKey);
+      if (raw) { const s = JSON.parse(raw); if (typeof s.mode === "number") mode = s.mode; if (typeof s.tone === "number") tone = s.tone; if (typeof s.hex === "string") hex = s.hex; }
+    } catch { /* ignore */ }
+    setCoverMode(mode); setCoverTone(tone); setCoverHex(hex);
+    setCoverMenuOpen(false);
+  }, [payload.song.song_id]);
+  function persistCover(next: { mode?: number; tone?: number; hex?: string }) {
+    const merged = { mode: next.mode ?? coverMode, tone: next.tone ?? coverTone, hex: next.hex ?? coverHex };
+    try { localStorage.setItem(coverKey, JSON.stringify(merged)); } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     setActiveVersionID(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
@@ -2668,15 +2622,25 @@ function SongWorkspace({
   }, [resolvedFlashID]);
 
   return (
-    <div className="view-stack">
-      <div className="sw-head">
-        <div className="breadcrumb">
-          {payload.song.project_name ?? "Room"} / <b>{payload.song.title}</b>
+    <div className="sheet-stack">
+      {/* Header band — one compact row: cover tile · identity · actions. */}
+      <header className="sheet-head">
+        <div className="sheet-cover" aria-hidden="true">
+          <LivingCover
+            mode={coverMode}
+            tone={coverTone}
+            hue={coverTone === 3 ? hexToHue(coverHex) : undefined}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+          />
         </div>
-        <p className="eyebrow">{payload.song.artist_display_name}</p>
-        <h2 className="sw-title">{payload.song.title}</h2>
-        {metaParts.length > 0 && <div className="sw-meta">{metaParts.join(" · ")}</div>}
-        <div className="sw-actions">
+        <div className="sheet-id">
+          <div className="sheet-crumb">{payload.song.project_name ?? "Room"} / {payload.song.title}</div>
+          <h2 className="sheet-title">{payload.song.title}</h2>
+          <p className="sheet-artist">{payload.song.artist_display_name}</p>
+          {metaParts.length > 0 && <div className="sw-meta">{metaParts.join(" · ")}</div>}
+        </div>
+        <div className="sheet-head-actions">
+          <div className="sw-actions">
           <button
             className="hairline-act"
             onClick={triggerUpload}
@@ -2711,17 +2675,61 @@ function SongWorkspace({
               onAdded={onRefreshPlaylists}
             />
           )}
-        </div>
-        {uploadError && <span className="upload-error">{uploadError}</span>}
-        {shareUrl && (
-          <div className="sw-share">
-            <code>{shareUrl}</code>
-            <button className="text-button" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy</button>
           </div>
-        )}
-      </div>
+          <button
+            className={`np-cover-btn${coverMenuOpen ? " open" : ""}`}
+            onClick={() => setCoverMenuOpen((o) => !o)}
+            aria-expanded={coverMenuOpen}
+            aria-haspopup="menu"
+          >
+            Cover
+          </button>
+          {onClose && (
+            <button className="np-close" onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          )}
+          {coverMenuOpen && (
+            <div className="np-cover-pop" role="menu" aria-label="Cover style">
+              <div className="pls-pickers">
+                <div className="pls-pick">
+                  <span className="pls-pick-lab">Motion</span>
+                  {MOTION_MODES.map((m) => (
+                    <button key={m.id} className={`pls-pk${coverMode === m.id ? " active" : ""}`} onClick={() => { setCoverMode(m.id); persistCover({ mode: m.id }); setCoverMenuOpen(false); }}>{m.label}</button>
+                  ))}
+                </div>
+                <div className="pls-pick">
+                  <span className="pls-pick-lab">Tone</span>
+                  {TONE_MODES.map((t) => (
+                    <button key={t.id} className={`pls-pk${coverTone === t.id ? " active" : ""}`} onClick={() => { setCoverTone(t.id); persistCover({ tone: t.id }); setCoverMenuOpen(false); }}>{t.label}</button>
+                  ))}
+                  <label className={`pls-swatch${coverTone === 3 ? " active" : ""}`} title="Pick a main color" style={{ ["--sw" as string]: coverHex }}>
+                    <input type="color" value={coverHex} onChange={(e) => { setCoverHex(e.target.value); setCoverTone(3); persistCover({ tone: 3, hex: e.target.value }); setCoverMenuOpen(false); }} />
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </header>
+      {(uploadError || shareUrl) && (
+        <div className="sheet-head-sub">
+          {uploadError && <span className="upload-error">{uploadError}</span>}
+          {shareUrl && (
+            <div className="sw-share">
+              <code>{shareUrl}</code>
+              <button className="text-button" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy</button>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="rail-cards">
+      {/* Player strip — full sheet width, between the header and the bench. */}
+      {playerStrip}
+
+      {/* Workbench — the two quiet panels side by side; each column scrolls. */}
+      <div className="sheet-bench rail-cards">
+        <div className="bench-col">
         <VersionStack
           payload={payload}
           activeVersionID={activeVersion?.version_id}
@@ -2751,6 +2759,10 @@ function SongWorkspace({
             }
           }}
         />
+        {onOpenSong && (
+          <FindSimilarPanel song={payload.song} onOpenSong={onOpenSong} />
+        )}
+        </div>
         {pendingPromote && (
           <CarryForwardTriage
             payload={payload}
@@ -2778,6 +2790,7 @@ function SongWorkspace({
             onCancel={() => setPendingUploadFile(null)}
           />
         )}
+        <div className="bench-col">
         <NotesPanel
           notes={payload.notes}
           song={payload.song}
@@ -2788,10 +2801,8 @@ function SongWorkspace({
             else if (activeVersion && activeAsset) player.play(payload.song, activeVersion, activeAsset, { startAtMs: ms });
           }}
         />
+        </div>
       </div>
-      {onOpenSong && (
-        <FindSimilarPanel song={payload.song} onOpenSong={onOpenSong} />
-      )}
     </div>
   );
 }
@@ -5347,18 +5358,18 @@ function TransportKeys({
 }
 
 /* =====================================================================
-   SongOverlay — the iOS-style slide-up player + workspace panel.
-   Replaces the old "nowplaying" and "song" page modes.
-   On wide screens (≥960px): both panels side by side.
-   On narrow: tabbed, tab bar at top.
+   SongOverlay — THE SLEEVE: the song opens as a large centered sheet
+   floating over the current page, which stays rendered behind a dimming
+   scrim. Inside: a compact header band (cover · identity · actions), the
+   full-width player strip (transport + scrubber + note lane), and the
+   workbench (VERSIONS / NOTES side by side). Esc, scrim-click and the
+   quiet × close it. Narrow screens (<900px): full-screen as before.
    ===================================================================== */
 
 function SongOverlay({
   open,
   payload,
   loadError = null,
-  tab,
-  onTabChange,
   onClose,
   playlists,
   onRefresh,
@@ -5368,22 +5379,20 @@ function SongOverlay({
   open: boolean;
   payload: SongPayload | null;
   loadError?: string | null;
-  tab: "player" | "workspace";
-  onTabChange: (t: "player" | "workspace") => void;
   onClose: () => void;
   playlists: Awaited<ReturnType<typeof api.playlists>>;
   onRefresh: () => void;
   onRefreshPlaylists: () => void;
   onOpenSong?: (id: string) => void;
 }) {
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
 
-  // The rail's ADD NOTE accelerator opens the player panel's LANE composer
-  // at the playhead (N and the transport note key are handled in the panel).
+  // The header's ADD NOTE accelerator opens the player strip's LANE composer
+  // at the playhead (N and the transport note key are handled in the strip).
   const [noteCue, setNoteCue] = useState<{ ms: number; key: number } | null>(null);
   function requestNote(ms: number) {
     setNoteCue({ ms, key: Date.now() });
-    onTabChange("player"); // narrow screens: bring the lane into view
   }
 
   // ESC to close
@@ -5394,10 +5403,11 @@ function SongOverlay({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  // Focus trap: when overlay opens, focus it; Tab cycles within it
+  // Focus trap: when the sheet opens, focus it; Tab cycles within it;
+  // restore focus to the opener on close.
   useEffect(() => {
     if (!open) return;
-    const el = overlayRef.current;
+    const el = sheetRef.current;
     if (!el) return;
     const prev = document.activeElement as HTMLElement | null;
     el.focus();
@@ -5416,68 +5426,54 @@ function SongOverlay({
   }, [open]);
 
   useEffect(() => {
-    const el = overlayRef.current as (HTMLDivElement & { inert?: boolean }) | null;
+    const el = layerRef.current as (HTMLDivElement & { inert?: boolean }) | null;
     if (!el) return;
     el.inert = !open;
     el.toggleAttribute("inert", !open);
   }, [open]);
 
+  // The room behind stays rendered but must not scroll under the scrim.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   return (
     <div
-      ref={overlayRef}
-      className={`song-overlay${open ? " open" : ""}`}
+      ref={layerRef}
+      className={`song-sheet-layer${open ? " open" : ""}`}
       aria-hidden={!open}
-      aria-modal={open ? true : undefined}
-      role={open ? "dialog" : undefined}
-      aria-label="Song player and workspace"
-      tabIndex={open ? -1 : undefined}
     >
-      {/* Narrow: tab bar */}
-      <div className="overlay-tabs">
-        <button
-          className={`overlay-tab${tab === "player" ? " active" : ""}`}
-          onClick={() => onTabChange("player")}
-        >
-          Now Playing
-        </button>
-        <button
-          className={`overlay-tab${tab === "workspace" ? " active" : ""}`}
-          onClick={() => onTabChange("workspace")}
-        >
-          Workspace
-        </button>
-        <button className="overlay-close-tab" onClick={onClose} aria-label="Close">
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Player panel — left on wide, full on narrow when tab=player */}
-      <div className={`overlay-panel overlay-player-panel${tab === "workspace" ? " narrow-hidden" : ""}`}>
-        {payload
-          ? <NowPlayingView payload={payload} active={open} onClose={onClose} noteCue={noteCue} onRefresh={onRefresh} />
-          : loadError
-            ? <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
-            : <div className="overlay-loading">Loading…</div>
-        }
-      </div>
-
-      {/* Workspace panel — right on wide, full on narrow when tab=workspace */}
-      <div className={`overlay-panel overlay-workspace-panel${tab === "player" ? " narrow-hidden" : ""}`}>
-        {payload
-          ? (
-            <SongWorkspace
-              payload={payload}
-              playlists={playlists}
-              onRefresh={onRefresh}
-              onRefreshPlaylists={onRefreshPlaylists}
-              onOpenSong={onOpenSong}
-              onRequestNote={requestNote}
-            />
-          )
-          : loadError
-            ? <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
-            : <div className="overlay-loading">Loading…</div>
-        }
+      {/* Scrim — the room stays visible behind, dimmed; click closes. */}
+      <div className="song-sheet-scrim" onClick={onClose} aria-hidden="true" />
+      <div
+        ref={sheetRef}
+        className="song-sheet"
+        aria-modal={open ? true : undefined}
+        role={open ? "dialog" : undefined}
+        aria-label="Song sheet — player and workbench"
+        tabIndex={open ? -1 : undefined}
+      >
+        {payload ? (
+          <SongWorkspace
+            payload={payload}
+            playlists={playlists}
+            onRefresh={onRefresh}
+            onRefreshPlaylists={onRefreshPlaylists}
+            onOpenSong={onOpenSong}
+            onRequestNote={requestNote}
+            onClose={onClose}
+            playerStrip={
+              <NowPlayingView payload={payload} active={open} noteCue={noteCue} onRefresh={onRefresh} />
+            }
+          />
+        ) : loadError ? (
+          <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
+        ) : (
+          <div className="overlay-loading">Loading…</div>
+        )}
       </div>
     </div>
   );

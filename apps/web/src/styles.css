@@ -1851,40 +1851,186 @@ h2 {
 }
 
 /* =====================================================================
-   Song Overlay — slide-up player + workspace (iOS model on web).
-   Wide (≥960px): two columns side by side.
-   Narrow: single column, tab-switched.
+   THE SLEEVE — the song page as a centered sheet over the room.
+   The current page stays rendered behind a dimming scrim; the sheet
+   scales in like the record being pulled out and turned over.
    ===================================================================== */
-.song-overlay {
+.song-sheet-layer {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: var(--studio-black, #0c0907);
   display: grid;
-  /* Left: now-playing (fills the space); Right: workspace sidebar (fixed width) */
-  grid-template-columns: 1fr minmax(360px, 440px);
-  grid-template-rows: 100%;
-  transform: translateY(100%);
-  transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
-  will-change: transform;
+  place-items: center;
 }
-.song-overlay:not(.open) {
+.song-sheet-layer:not(.open) {
   visibility: hidden;
   pointer-events: none;
+  /* hold visibility through the exit fade (~160ms) */
+  transition: visibility 0s linear 0.18s;
 }
-.song-overlay.open { transform: translateY(0); }
-
-/* Tab bar — hidden on wide */
-.overlay-tabs {
-  display: none;
+.song-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 4, 3, 0.62);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+  opacity: 0;
+  transition: opacity 0.16s ease-in;
+}
+.song-sheet-layer.open .song-sheet-scrim {
+  opacity: 1;
+  transition: opacity 0.2s ease-out;
+}
+.song-sheet {
+  position: relative;
+  width: min(1150px, calc(100vw - 64px));
+  max-height: 85vh;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  /* the sleeve surface: lifted from page black, hairline edge, deep shadow */
+  background: #14100b;
+  border: 1px solid rgba(243, 236, 222, 0.11);
+  border-radius: 10px;
+  box-shadow: 0 48px 120px rgba(0, 0, 0, 0.62), 0 14px 44px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.16s ease-in, transform 0.16s ease-in;
+}
+.song-sheet-layer.open .song-sheet {
+  opacity: 1;
+  /* `none` (not scale(1)) so the open sheet creates no containing block
+     for its fixed-position dialogs (carry triage, upload type picker). */
+  transform: none;
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Reduced motion: instant fade — no scale, no blur, no delays. */
+  .song-sheet,
+  .song-sheet-layer.open .song-sheet { transform: none; transition: opacity 0.01s linear; }
+  .song-sheet-scrim,
+  .song-sheet-layer.open .song-sheet-scrim { transition: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .song-sheet-layer:not(.open) { transition: none; }
 }
 
-/* Panels */
-.overlay-panel { overflow: hidden; }
-.overlay-workspace-panel {
-  border-left: 1px solid var(--studio-hairline, rgba(255,255,255,.06));
+/* ── Inside the sheet: header band · player strip · workbench ── */
+.sheet-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 24px 16px;
+  flex: none;
+}
+.sheet-cover {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  flex: none;
+  border: 1px solid rgba(243, 236, 222, 0.14);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.sheet-id { flex: 1; min-width: 0; }
+.sheet-crumb {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pencil-faint, rgba(243, 236, 222, 0.3));
+  margin-bottom: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-title {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 2.6vw, 32px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  color: var(--tape-oxide);
+  margin: 0 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-artist {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  margin: 0 0 8px;
+}
+.sheet-head .sw-meta { margin-bottom: 0; }
+.sheet-head-actions {
+  position: relative; /* anchors the COVER popover */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  flex: none;
+}
+.sheet-head-sub {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px 12px;
+  flex: none;
+}
+.sheet-head-sub .sw-share { margin-top: 0; min-width: 0; }
+/* In the header band the playlist menu must drop DOWN (it used to sit
+   mid-rail and opened upward — that would clip at the sheet's top edge). */
+.sheet-head-actions .add-to-playlist .add-menu {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+/* ── Player strip: transport keys + scrubber + note lane, full width ── */
+.sheet-player {
+  position: relative;
+  flex: none;
+  padding: 14px 24px 12px;
+  border-top: 1px solid var(--studio-hairline);
+  border-bottom: 1px solid var(--studio-hairline);
+}
+/* The ambient field, clipped to the strip — a hint of life, not an ocean. */
+.sheet-field-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* positioned (z auto) so the transport paints above the canvas without
+   creating a stacking context — the lane composer must float over the
+   header band, and the COVER popover over the strip */
+.sheet-player .np-transport { position: relative; }
+
+/* ── Workbench: the two quiet panels side by side; columns scroll ── */
+.sheet-bench {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 20px 24px 24px;
+}
+.bench-col {
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 /* ── Hardware transport keys (ported from iOS Transport.swift) ── */
@@ -1937,102 +2083,7 @@ h2 {
               0 1px 3px rgba(0,0,0,0.25);
 }
 
-/* Transport row inside np-foot: replace the old np-keys layout */
-.np-transport {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* ── Overlay workspace panel: intentional layout for the ~440px right column ── */
-
-/* Reset the negative-margin bleed designed to escape .workspace-main padding */
-.song-overlay .song-card-hero {
-  margin: 0 !important;
-  border-radius: 0;
-  padding: 20px 24px 24px !important;
-}
-
-/* Breadcrumb: readable in the dark workspace panel */
-.song-overlay .song-card-hero .breadcrumb {
-  color: var(--pencil-warm);
-  font-size: 11px;
-  margin-bottom: 4px;
-}
-
-/* Hide the cover thumbnail — the cover is already the full-bleed background
-   on the left panel. Show only the song info column. */
-.song-overlay .song-card-cover { display: none !important; }
-.song-overlay .song-card-body {
-  display: block !important;
-  padding: 0;
-}
-.song-overlay .song-card-info {
-  padding: 20px 24px 0 !important;
-}
-
-/* Version stack + waveband + actions: clean single-column spacing */
-.song-overlay .song-card-waveband {
-  padding: 12px 24px !important;
-}
-.song-overlay .song-card-info .actions {
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* content-columns (versions, notes, deliverables): single column, full width,
-   tighter padding to fit the panel without crowding */
-.song-overlay .content-columns {
-  grid-template-columns: 1fr !important;
-  border-top: 1px solid var(--studio-hairline);
-}
-.song-overlay .content-columns > section {
-  border-right: none !important;
-  border-bottom: 1px solid var(--studio-hairline);
-  padding: 20px 24px !important;
-}
-.song-overlay .content-columns > section:last-child {
-  border-bottom: none;
-}
-
-/* The view-stack container: no extra padding (the sections handle their own) */
-.song-overlay .overlay-workspace-panel .view-stack {
-  padding: 0;
-  gap: 0;
-}
-
-/* NowPlayingView inside the overlay: collapse the np-stage to a single
-   column (player info only). The cover art (.np-right) becomes a full-bleed
-   background behind the player panel — same as iOS where the cover sits
-   behind the transport, not beside it. */
-.song-overlay .np-stage {
-  margin: 0 !important;
-  height: 100% !important;
-  min-height: 0;
-  display: flex !important;
-  flex-direction: column;
-  position: relative;
-}
-/* Cover art: full-bleed behind the player panel */
-.song-overlay .np-right {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 0;
-  opacity: 0.35;
-}
-/* Player info sits above the cover art */
-.song-overlay .np-left {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  overflow-y: auto;
-}
-.song-overlay .overlay-player-panel {
-  height: 100%;
-  overflow: hidden;
-}
-
-/* Close button inside the player panel — top-right */
+/* Close button in the sheet header band — the quiet × */
 .np-close {
   margin-left: auto;
   background: transparent;
@@ -2061,78 +2112,34 @@ h2 {
 }
 /* Honest failure state — a fetch that 400s must read as a redline, not spin. */
 .overlay-loading--error { color: var(--redline); }
-
-@media (max-width: 959px) {
-  .song-overlay {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-    /* On mobile: slide up from bottom, overlay is full screen */
-    inset: 0;
-  }
-  /* On mobile the NowPlayingView stacks vertically: info on top, cover below */
-  .song-overlay .np-stage {
-    flex-direction: column !important;
-  }
-  .song-overlay .np-right {
-    position: relative !important;
-    inset: auto !important;
-    height: 240px;
-    opacity: 1 !important;
-    flex-shrink: 0;
-    order: -1; /* cover on top on mobile */
-  }
-  .song-overlay .np-left {
-    flex: 1;
-    min-height: 0;
-  }
-  .song-overlay .overlay-player-panel {
-    overflow-y: auto;
-  }
-  .overlay-tabs {
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid var(--studio-hairline, rgba(255,255,255,.08));
-    padding: 0 16px;
-    flex-shrink: 0;
-  }
-  .overlay-tab {
-    background: none;
-    border: none;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--pencil-warm);
-    padding: 14px 16px;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    transition: color .15s, border-color .15s;
-  }
-  .overlay-tab.active { color: var(--tape-oxide); border-bottom-color: var(--tape-oxide); }
-  .overlay-close-tab {
-    margin-left: auto;
-    background: none;
-    border: none;
-    color: var(--pencil-warm);
-    cursor: pointer;
-    padding: 8px;
-    display: flex;
-    align-items: center;
-    border-radius: 4px;
-  }
-  .overlay-close-tab:hover { color: var(--tape-oxide); }
-  /* On narrow, hide the inactive panel */
-  .overlay-panel.narrow-hidden { display: none; }
-  /* On narrow, hide the np-close button (tab bar serves that role) */
-  .np-close { display: none; }
+/* Inside the sheet the loading/error states render centered + compact. */
+.song-sheet > .overlay-loading {
+  height: auto;
+  flex: 1 1 auto;
+  padding: 60px 24px;
+  text-align: center;
 }
 
-@media (min-width: 960px) {
-  /* On wide, always show both panels — ignore narrow-hidden */
-  .overlay-panel.narrow-hidden { display: block !important; }
-  /* Hide the narrow tab bar */
-  .overlay-tabs { display: none !important; }
+/* Below ~1080px the workbench stacks; the sheet scrolls as one column. */
+@media (max-width: 1079px) {
+  .song-sheet { overflow-y: auto; display: block; }
+  .sheet-bench { grid-template-columns: 1fr; }
+  .bench-col { overflow-y: visible; }
+}
+
+/* Narrow screens: the sheet goes full-screen (mobile behavior preserved). */
+@media (max-width: 899px) {
+  .song-sheet {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+  }
+  .sheet-head { flex-wrap: wrap; gap: 14px; }
+  .sheet-cover { width: 72px; height: 72px; }
+  .sheet-head-actions { align-self: center; flex-wrap: wrap; justify-content: flex-end; }
 }
 
 /* =====================================================================
@@ -5762,9 +5769,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .mini-copy.linked:hover { opacity: .72; }
 .mini-copy:disabled { cursor: default; }
 
-/* === v3 full-bleed split — playlist + now playing run to the window edges === */
+/* === v3 full-bleed split — the playlist page runs to the window edges === */
 /* Escape .workspace-main padding (36px clamp(18,4vw,56) 56px) and the 64px top bar. */
-.pls-page, .np-stage {
+.pls-page {
   margin: -36px calc(-1 * clamp(18px,4vw,56px)) -56px;
   height: calc(100vh - 64px);
   min-height: 0;
@@ -5780,45 +5787,17 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   box-shadow: none;
 }
 /* keep a recessed seam + hairline on the left edge of the cover field */
-.pls-right .pls-cover-scrim, .np-seam {
+.pls-right .pls-cover-scrim {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   box-shadow: inset 60px 0 90px -50px rgba(0,0,0,.85), inset 1px 0 0 rgba(255,255,255,.05);
 }
 @media (max-width: 900px) {
-  .pls-page, .np-stage { margin: -24px -18px; height: auto; grid-template-columns: 1fr; grid-template-rows: auto 46vh; }
+  .pls-page { margin: -24px -18px; height: auto; grid-template-columns: 1fr; grid-template-rows: auto 46vh; }
   .pls-left { padding: 24px 18px; }
 }
 
-/* === now playing — dark editorial field beside the immersive cover === */
-.np-stage { display: grid; grid-template-columns: minmax(0,1fr) 52vw; }
-.np-left { position: relative; display: flex; flex-direction: column; padding: 30px clamp(34px,3.4vw,56px) 26px clamp(40px,4vw,64px); overflow: hidden; z-index: 2; }
-.np-left::after { content: ""; position: absolute; top: 50%; right: -40px; width: 340px; height: 520px; transform: translateY(-50%); pointer-events: none; z-index: -1; filter: blur(70px); opacity: .5; background: radial-gradient(closest-side, rgba(120,90,235,.55), rgba(255,90,54,.28) 55%, transparent 75%); }
-.np-top { display: flex; align-items: center; gap: 18px; }
-.np-wm { font-family: var(--font-mono); font-weight: 800; font-size: 14px; letter-spacing: .02em; display: flex; align-items: center; gap: 9px; color: var(--tape-oxide); }
-/* np-wm::before dot removed — wordmark already carries the identity */
-.np-cat { font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: .18em; color: var(--pencil-warm); }
-.np-link { margin-left: auto; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--pencil-warm); background: transparent; border: 1px solid var(--ed-line); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
-.np-link:hover { color: var(--tape-oxide); border-color: rgba(243,236,222,.4); }
-.np-hero { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 30px; }
-.np-eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--pencil-faint, rgba(243,236,222,.3)); margin-bottom: 26px; }
-.np-title { font-family: var(--font-display); font-weight: 700; -webkit-text-stroke: .7px currentColor; paint-order: stroke fill; font-size: clamp(56px,6.8vw,104px); line-height: .94; letter-spacing: -.05em; color: var(--tape-oxide); }
-.np-artist { font-family: var(--font-mono); font-size: 13px; font-weight: 500; letter-spacing: .24em; text-transform: uppercase; color: var(--pencil-warm); margin-top: 28px; }
-.np-flag { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-top: 20px; }
-.np-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 8px; box-shadow: 0 0 10px rgba(255,74,34,.7); }
-/* padding-bottom keeps the lane + hint rows off the viewport's bottom edge
-   even when np-left's content overflows into its own bottom padding. */
-.np-foot { border-top: 1px solid var(--ed-line); padding-top: 20px; padding-bottom: 18px; }
-.np-credits { display: flex; flex-wrap: wrap; gap: 22px 40px; margin-bottom: 22px; }
-.np-c { display: flex; flex-direction: column; gap: 5px; }
-.np-c .k { font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--pencil-faint, rgba(243,236,222,.3)); }
-.np-c .v { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--tape-oxide); }
+/* === player strip transport + scrubber (lives inside the song sheet) === */
 .np-transport { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 24px; }
-.np-keys { display: flex; align-items: center; gap: 12px; }
-.np-keys button { background: transparent; border: none; color: var(--tape-oxide); width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer; opacity: .68; transition: opacity .15s; }
-.np-keys button:hover:not(:disabled) { opacity: 1; }
-.np-keys button:disabled { opacity: .3; cursor: default; }
-.np-keys .play { background: var(--tape-oxide); color: var(--studio-black); width: 44px; height: 44px; border-radius: 50%; opacity: 1; }
-.np-keys .play:disabled { opacity: .4; }
 /* Grid (not flex) so the note lane can sit in row 2 of the bar's column,
    sharing the np-bar's exact left/right edges. */
 .np-scrub { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; }
@@ -5826,10 +5805,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .np-bar { flex: 1; height: 3px; border-radius: 2px; background: rgba(243,236,222,.16); position: relative; border: none; padding: 0; cursor: pointer; }
 .np-bar:disabled { cursor: default; }
 .np-bar i { position: absolute; left: 0; top: 0; height: 100%; border-radius: 2px; background: var(--tape-oxide); }
-.np-right { position: relative; overflow: hidden; }
-.np-lab { position: absolute; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; padding: 26px 30px; z-index: 3; }
-.np-lab.tp { top: 0; } .np-lab.bt { bottom: 0; align-items: flex-end; }
-.np-lab .cw-micro { color: rgba(255,255,255,.82); mix-blend-mode: overlay; }
 
 /* === v3.1 type system wiring ======================================== */
 /* The TE Univers cuts are single-weight masters — never synthesize bold/italic. */
@@ -5839,7 +5814,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .cw-feat-title, .cw-shead h2, .pls-title, .ibx-head h1,
 .cmp-page .section-head h1, .cmp-page .panel-topline h2,
 .ask-page .section-head h1, .share-page .section-head h1,
-.np-title, .section-head h1, .disp, .song-card-info .title { -webkit-text-stroke: 0; }
+.sheet-title, .section-head h1, .disp, .song-card-info .title { -webkit-text-stroke: 0; }
 
 /* Ndot (dot-matrix) — sparingly, on the prominent action buttons only. */
 .cw-btn, .pls-btn, .song-card-info .actions .btn.primary, .song-card-info .actions .btn.red {
@@ -6195,7 +6170,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .cw-feat-title, .cw-shead h2, .pls-title, .ibx-head h1,
 .cmp-page .section-head h1, .cmp-page .panel-topline h2,
 .ask-page .section-head h1, .share-page .section-head h1,
-.np-title, .section-head h1, .disp, .song-card-info .title,
+.sheet-title, .section-head h1, .disp, .song-card-info .title,
 .panel-topline h2 {
   letter-spacing: 0;
   -webkit-text-stroke: .75px currentColor;
@@ -6654,33 +6629,24 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 
 
 /* =====================================================================
-   Song page rework — one job per panel.
-   LEFT = the record: ambient field, single player, COVER popover, hints.
-   RIGHT = the desk: slim header, hairline actions, VERSIONS/NOTES/READINESS.
+   Sheet internals — player strip chrome, COVER popover, hints, lane.
    ===================================================================== */
 
-/* ── Ambient dot field behind the LEFT panel only ──
-   The module sizes the buffer to the viewport, so the element must be
-   viewport-sized too: np-left starts at the viewport origin on wide
-   layouts and its overflow clips the field to the left panel. */
+/* ── Ambient dot field inside the player strip ──
+   The module sizes the buffer to the viewport, so the canvas stays
+   viewport-sized; .sheet-field-clip crops it to the strip. Very low
+   opacity — a hint of life, not a backdrop ocean. */
 .np-field-canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: -1; /* behind np-left content, same plane as its glow ::after */
+  opacity: .55;
   pointer-events: none;
 }
-@media (max-width: 959px) {
-  /* Narrow: np-left no longer sits at the viewport origin — hide the field
-     rather than show it misaligned. */
-  .np-field-canvas { display: none; }
-}
 
-/* ── COVER control: one discreet mono-caps button, top-right ── */
-.np-top { position: relative; }
-.np-top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* ── COVER control: one discreet mono-caps button in the header band ── */
 .np-cover-btn {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -6812,25 +6778,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 .np-hints.seen { opacity: 1; }
 
-/* ── RIGHT rail: slim header, one meta line, hairline actions ── */
-.sw-head {
-  padding: 20px 24px 22px;
-  border-bottom: 1px solid var(--studio-hairline);
-}
-.sw-head .breadcrumb {
-  color: var(--pencil-warm);
-  font-size: 11px;
-  margin-bottom: 14px;
-}
-.sw-head .eyebrow { margin-bottom: 6px; }
-.sw-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -.02em;
-  color: var(--tape-oxide);
-  margin: 0 0 8px;
-}
+/* ── Header band leftovers shared with the sheet: meta line, actions ── */
 .sw-meta {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -7237,32 +7185,25 @@ button.stems-ctl:disabled { opacity: .45; cursor: default; }
   text-transform: uppercase;
 }
 
-/* ── Two-panel rail: quiet cards floating on the dark ── */
-.song-overlay .rail-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  padding: 22px 20px 30px;
-}
-.song-overlay .rail-cards .rail-panel {
+/* ── Workbench panels: quiet cards floating on the sleeve ──
+   (layout — columns, gaps, scroll — lives on .sheet-bench/.bench-col) */
+.song-sheet .rail-cards .rail-panel {
   /* the sign-in door surface: slight tint + hairline + inner padding */
   background: rgba(22, 17, 12, 0.78);
   border: 1px solid rgba(243, 236, 222, 0.12);
   border-radius: 2px;
   padding: 18px 20px 20px;
 }
-/* Slim header + actions sit above the first panel, unboxed. */
-.song-overlay .sw-head { border-bottom: none; padding-bottom: 4px; }
 
-/* ── Color hierarchy: redline reserved across the rail ── */
-.song-overlay .eyebrow { color: rgba(243, 236, 222, 0.5); }
-.song-overlay .add-to-playlist .add-menu .eyebrow { color: rgba(243, 236, 222, 0.5); }
-.song-overlay .version-row .ver-num { color: rgba(243, 236, 222, 0.45); }
-.song-overlay .version-row.selected { border-left-color: rgba(243, 236, 222, 0.4); }
-.song-overlay .notes-open-count.hot { color: var(--redline); }
+/* ── Color hierarchy: redline reserved across the workbench ── */
+.song-sheet .eyebrow { color: rgba(243, 236, 222, 0.5); }
+.song-sheet .add-to-playlist .add-menu .eyebrow { color: rgba(243, 236, 222, 0.5); }
+.song-sheet .version-row .ver-num { color: rgba(243, 236, 222, 0.45); }
+.song-sheet .version-row.selected { border-left-color: rgba(243, 236, 222, 0.4); }
+.song-sheet .notes-open-count.hot { color: var(--redline); }
 
-/* Exactly one interactive register: rail text-buttons become hairline mono-caps. */
-.song-overlay .rail-cards .text-button {
+/* Exactly one interactive register: bench text-buttons become hairline mono-caps. */
+.song-sheet .rail-cards .text-button {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
@@ -7276,7 +7217,7 @@ button.stems-ctl:disabled { opacity: .45; cursor: default; }
   cursor: pointer;
   transition: color .15s, border-color .15s;
 }
-.song-overlay .rail-cards .text-button:hover {
+.song-sheet .rail-cards .text-button:hover {
   color: var(--tape-oxide);
   border-color: rgba(243, 236, 222, .4);
 }
@@ -7323,12 +7264,12 @@ button.stems-ctl:disabled { opacity: .45; cursor: default; }
 .untimed-act { border-color: rgba(243, 236, 222, .14); color: rgba(243, 236, 222, .5); }
 
 /* The untimed composer inside the NOTES card: quiet send, no red. */
-.song-overlay .notes-panel .note-composer {
+.song-sheet .notes-panel .note-composer {
   background: transparent;
   border: 1px solid var(--studio-hairline);
   border-radius: 8px;
 }
-.song-overlay .note-composer .accent-button {
+.song-sheet .note-composer .accent-button {
   background: transparent;
   border-color: var(--studio-hairline);
   color: var(--pencil-warm);
@@ -7338,7 +7279,7 @@ button.stems-ctl:disabled { opacity: .45; cursor: default; }
   letter-spacing: .16em;
   text-transform: uppercase;
 }
-.song-overlay .note-composer .accent-button:hover:not(:disabled) {
+.song-sheet .note-composer .accent-button:hover:not(:disabled) {
   background: transparent;
   color: var(--tape-oxide);
   border-color: rgba(243, 236, 222, .4);

@@ -12,13 +12,19 @@ struct TransportBar: View {
     var onToggle: () -> Void
     var onForward: () -> Void
     var onNote: () -> Void
+    var onMenu: () -> Void = {}
 
     private let greyFace = Color(hex: 0xD3CFC5), greyWall = Color(hex: 0x8C887D)
     private let noteFace = Color(hex: 0x6E86EC), noteWall = Color(hex: 0x3A52C4)
     private let darkInk = Color(hex: 0x33302B)
 
     var body: some View {
-        HStack(spacing: 13) {
+        // 10pt gaps: five 54pt keys must clear the 32pt screen margins on
+        // the narrowest supported phones.
+        HStack(spacing: 10) {
+            // ⋯ — the app's context-menu affordance, rendered as a hardware
+            // key so it reads as a control (the rotating P read as a logo).
+            key(.menu, held: false, face: greyFace, wall: greyWall, ink: darkInk, onMenu)
             key(.back, held: false, face: greyFace, wall: greyWall, ink: darkInk, onBack)
             // single play/pause toggle — pause glyph while playing, latched down
             key(isPlaying ? .pause : .play, held: isPlaying, face: greyFace, wall: greyWall, ink: darkInk, onToggle)
@@ -81,7 +87,7 @@ private struct FlatKeyStyle: ButtonStyle {
 // MARK: - Dot-matrix glyphs
 
 enum DotGlyphKind {
-    case play, pause, back, forward, note
+    case play, pause, back, forward, note, menu
     var accessibilityLabel: String {
         switch self {
         case .play: return "Play"
@@ -89,6 +95,7 @@ enum DotGlyphKind {
         case .back: return "Previous track"
         case .forward: return "Next track"
         case .note: return "Add note"
+        case .menu: return "More actions"
         }
     }
 
@@ -104,6 +111,9 @@ enum DotGlyphKind {
                                "XXXXX.XXX",
                                ".......X.",
                                "XXX......"]
+        // ⋯ — three fat dots, the established "more actions" glyph
+        case .menu:    return ["XX.XX.XX",
+                               "XX.XX.XX"]
         }
     }
 }

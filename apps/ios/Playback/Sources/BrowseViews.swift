@@ -356,16 +356,10 @@ func pinnedTitle(_ ref: PinRef, _ store: WorkspaceStore) -> String {
 }
 
 extension View {
-    /// Long-press → pin / unpin from Home.
+    /// Long-press → pin / unpin from Home, plus Share wherever the target
+    /// can carry a real link (songs and playlists).
     func pinMenu(_ store: WorkspaceStore, _ ref: PinRef) -> some View {
-        contextMenu {
-            Button {
-                store.togglePin(ref.id)
-            } label: {
-                Label(store.isPinned(ref.id) ? "Unpin from Home" : "Pin to Home",
-                      systemImage: store.isPinned(ref.id) ? "pin.slash" : "pin")
-            }
-        }
+        modifier(PinMenuModifier(store: store, ref: ref))
     }
 
     func songActionsMenu(_ store: WorkspaceStore, _ track: Track) -> some View {
@@ -373,10 +367,66 @@ extension View {
     }
 }
 
+private struct PinMenuModifier: ViewModifier {
+    var store: WorkspaceStore
+    var ref: PinRef
+    @State private var showShare = false
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Button {
+                    store.togglePin(ref.id)
+                } label: {
+                    Label(store.isPinned(ref.id) ? "Unpin from Home" : "Pin to Home",
+                          systemImage: store.isPinned(ref.id) ? "pin.slash" : "pin")
+                }
+                // Share rides the existing link flows — songs use the full
+                // ShareView, playlists the playlist link sheet. Projects
+                // have no server share target, so no invented flow.
+                if shareTarget != nil {
+                    Button {
+                        showShare = true
+                    } label: {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+            .sheet(isPresented: $showShare) {
+                switch shareTarget {
+                case .song(let track):
+                    TrackShareSheet(track: track, store: store)
+                case .playlist(let playlist):
+                    PlaylistShareSheet(playlist: playlist, store: store)
+                case nil:
+                    EmptyView()
+                }
+            }
+    }
+
+    private enum ShareTarget {
+        case song(Track)
+        case playlist(Playlist)
+    }
+
+    private var shareTarget: ShareTarget? {
+        switch ref.kind {
+        case .song:
+            if let track = store.track(ref.targetID) { return .song(track) }
+        case .playlist:
+            if let playlist = store.playlist(ref.targetID) { return .playlist(playlist) }
+        case .room:
+            break
+        }
+        return nil
+    }
+}
+
 private struct SongActionsMenuModifier: ViewModifier {
     var store: WorkspaceStore
     var track: Track
     @State private var showEdit = false
+    @State private var showShare = false
 
     func body(content: Content) -> some View {
         content
@@ -387,6 +437,12 @@ private struct SongActionsMenuModifier: ViewModifier {
                 } label: {
                     Label(store.isPinned(pin.id) ? "Unpin from Home" : "Pin to Home",
                           systemImage: store.isPinned(pin.id) ? "pin.slash" : "pin")
+                }
+
+                Button {
+                    showShare = true
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
                 }
 
                 Menu {
@@ -433,6 +489,9 @@ private struct SongActionsMenuModifier: ViewModifier {
             .sheet(isPresented: $showEdit) {
                 EditSongSheet(trackID: track.id, store: store)
             }
+            .sheet(isPresented: $showShare) {
+                TrackShareSheet(track: track, store: store)
+            }
     }
 }
 
@@ -448,16 +507,30 @@ struct SongActionsButton: View {
     var store: WorkspaceStore
     var track: Track
     var extraActions: [SongRowMenuAction] = []
+    var onPlay: (() -> Void)? = nil
     @State private var showEdit = false
+    @State private var showShare = false
 
     var body: some View {
         Menu {
+            if let onPlay {
+                Button(action: onPlay) {
+                    Label("Play", systemImage: "play")
+                }
+            }
+
             let pin = PinRef(kind: .song, targetID: track.id)
             Button {
                 store.togglePin(pin.id)
             } label: {
                 Label(store.isPinned(pin.id) ? "Unpin from Home" : "Pin to Home",
                       systemImage: store.isPinned(pin.id) ? "pin.slash" : "pin")
+            }
+
+            Button {
+                showShare = true
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
             }
 
             Menu {
@@ -525,6 +598,9 @@ struct SongActionsButton: View {
         .accessibilityLabel("Actions for \(store.displayTitle(track.id, track.title))")
         .sheet(isPresented: $showEdit) {
             EditSongSheet(trackID: track.id, store: store)
+        }
+        .sheet(isPresented: $showShare) {
+            TrackShareSheet(track: track, store: store)
         }
     }
 }
@@ -622,7 +698,7 @@ struct InteractiveSongItem<RowContent: View, IdleAccessory: View>: View {
                     .padding(.trailing, 4)
             } else if bulkMode == nil {
                 idleAccessory()
-                SongActionsButton(store: store, track: track, extraActions: extraActions)
+                SongActionsButton(store: store, track: track, extraActions: extraActions, onPlay: onOpen)
             }
         }
         .springboardDraggable(trackID: track.id, track: track, store: store,
@@ -3016,6 +3092,7 @@ struct PlaylistDetailView: View {
     @State private var selectedTrackIDs: Set<String> = []
     @State private var confirmBulkDelete = false
     @State private var showAddSongs = false
+    @State private var showSharePlaylist = false
     @State private var selectionDragTargets: [SelectionDragTarget] = []
 
     private var live: Playlist { store.playlist(playlist.id) ?? playlist }
@@ -3120,6 +3197,9 @@ struct PlaylistDetailView: View {
             PlaylistDetailView(playlist: pl, player: player, store: store,
                                openSong: openSong, openQueue: openQueue)
         }
+        .sheet(isPresented: $showSharePlaylist) {
+            PlaylistShareSheet(playlist: live, store: store)
+        }
         .onAppear { if !store.isDraft(live.id) { store.touch(PinRef(kind: .playlist, targetID: live.id).id) } }
         .onDisappear {
             // leaving a draft without keeping it = no changes
@@ -3201,6 +3281,18 @@ struct PlaylistDetailView: View {
                     .background(Capsule().fill(PB.cream))
                 }
                 .buttonStyle(.plain)
+
+                Button { showSharePlaylist = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 11, weight: .semibold))
+                        MonoLabel("Share", color: PB.cream, size: 11, tracking: 1.5)
+                    }
+                    .foregroundStyle(PB.cream)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Capsule().strokeBorder(PB.cream.opacity(0.45), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Share")
             }
             .padding(.top, 6)
         }
@@ -3291,7 +3383,8 @@ struct PlaylistDetailView: View {
                                     SongRowMenuAction(title: "Remove from playlist", systemImage: "minus.circle", role: .destructive) {
                                         removeFromPlaylist(t.id)
                                     }
-                                ]
+                                ],
+                                onPlay: { openQueue(t.id, tracks) }
                             )
                         }
                     }

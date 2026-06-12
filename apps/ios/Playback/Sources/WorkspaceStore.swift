@@ -985,6 +985,29 @@ final class WorkspaceStore {
         }
     }
 
+    /// A playlist that only exists in local state (draft or unsynced custom
+    /// list) can never resolve on the server — same honest gate as songs.
+    func isLocalOnlyPlaylist(_ id: String) -> Bool {
+        !servicePlaylists.contains { $0.id == id }
+    }
+
+    @MainActor
+    func createPlaylistShareLink(for playlist: Playlist) async throws -> String {
+        syncState = .syncing
+        syncMessage = "Creating share link"
+        do {
+            let created = try await ServiceClient.shared.createShareLink(targetType: "playlist", targetID: playlist.id)
+            syncState = .synced
+            syncMessage = "Share link ready"
+            lastSavedAt = Date()
+            return Config.shareURL(token: created.token)
+        } catch {
+            syncState = .offline
+            syncMessage = "Share link unavailable"
+            throw error
+        }
+    }
+
     @MainActor
     func inviteRecipients(
         linkID: String,

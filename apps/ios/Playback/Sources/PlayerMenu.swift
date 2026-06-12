@@ -623,6 +623,153 @@ struct ShareView: View {
     }
 }
 
+// MARK: - Share sheet hosts (rows outside the player menu)
+
+/// Standalone sheet host for the full song Share flow — lets any row's
+/// long-press menu or ⋯ menu open the same screen the player menu pushes,
+/// honest-state gating included.
+struct TrackShareSheet: View {
+    var track: Track
+    var store: WorkspaceStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ShareView(track: track, store: store)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }.font(PB.mono(13)).foregroundStyle(PB.cobalt)
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(PB.black)
+        .foregroundStyle(PB.cream)
+    }
+}
+
+/// Playlist share — the same honest-state link flow songs get: NOT SYNCED
+/// for local-only lists (a POST is guaranteed to fail), 422/503
+/// differentiation on real failures, tap-to-retry on the same control.
+struct PlaylistShareSheet: View {
+    var playlist: Playlist
+    var store: WorkspaceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+    @State private var isCreating = false
+    @State private var link: String?
+    @State private var linkIssue: ShareLinkIssue?
+    @State private var linkFailureRevert: Task<Void, Never>?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        MonoLabel("Playlist", color: PB.pencil, size: 10, tracking: 2)
+                        Text(playlist.title).font(PB.display(24)).foregroundStyle(PB.cream)
+                        MonoLabel("\(playlist.trackIDs.count) tracks", color: PB.pencil, size: 10, tracking: 1.2)
+                    }
+
+                    // Honest state, up front: this list only exists on this
+                    // device — no link can resolve it until it syncs.
+                    if store.isLocalOnlyPlaylist(playlist.id) {
+                        MonoLabel("Not synced — saved on this device", color: PB.cream.opacity(0.55), size: 9, tracking: 1.2)
+                    }
+
+                    HStack {
+                        Text(link ?? "Create link when copied").font(PB.mono(12)).foregroundStyle(PB.cream).lineLimit(1)
+                        Spacer()
+                        Button { copy() } label: {
+                            Text(isCreating ? "CREATING" : (linkIssue?.label.uppercased() ?? (copied ? "COPIED" : "COPY")))
+                                .font(PB.mono(10)).tracking(1)
+                                .foregroundStyle(linkIssue?.tint ?? (copied ? PB.green : PB.cobalt))
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isCreating)
+                        .accessibilityLabel("Copy share link")
+                    }
+                    .padding(.horizontal, 15)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PB.panel))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(PB.cream.opacity(0.07), lineWidth: 1))
+                }
+                .padding(22)
+            }
+            .background(PB.black)
+            .navigationTitle("Share playlist")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }.font(PB.mono(13)).foregroundStyle(PB.cobalt)
+                }
+            }
+            .toolbarBackground(PB.black, for: .navigationBar)
+        }
+        .presentationDetents([.medium])
+        .presentationBackground(PB.black)
+        .foregroundStyle(PB.cream)
+    }
+
+    private func copy() {
+        linkFailureRevert?.cancel()
+        withAnimation { linkIssue = nil }
+        guard Config.useRemoteAPI else {
+            showLinkIssue(.failed)
+            return
+        }
+        // Honest gate: a local-only playlist can never resolve on the
+        // server — don't POST a link that's guaranteed to fail.
+        guard !store.isLocalOnlyPlaylist(playlist.id) else {
+            showLinkIssue(.notSynced)
+            return
+        }
+        if let link {
+            #if canImport(UIKit)
+            UIPasteboard.general.string = link
+            #endif
+            withAnimation { copied = true }
+            return
+        }
+        isCreating = true
+        Task {
+            do {
+                let url = try await store.createPlaylistShareLink(for: playlist)
+                #if canImport(UIKit)
+                UIPasteboard.general.string = url
+                #endif
+                await MainActor.run {
+                    link = url
+                    isCreating = false
+                    withAnimation { copied = true }
+                }
+            } catch {
+                await MainActor.run {
+                    isCreating = false
+                    showLinkIssue(.from(error))
+                }
+            }
+        }
+    }
+
+    /// Honest state: link creation failed (or is impossible), so nothing was
+    /// copied. The COPY control shows a quiet mono-caps inline state, reverts
+    /// to idle after ~4s, and tapping it retries the request.
+    private func showLinkIssue(_ issue: ShareLinkIssue) {
+        withAnimation {
+            copied = false
+            linkIssue = issue
+        }
+        linkFailureRevert = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation { linkIssue = nil }
+            }
+        }
+    }
+}
+
 // MARK: - Add to playlist (duplicate into another list)
 
 struct AddToPlaylistView: View {

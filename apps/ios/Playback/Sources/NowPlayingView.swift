@@ -51,7 +51,8 @@ struct NowPlayingView: View {
                     onBack:    { player.prev() },
                     onToggle:  { player.toggle() },
                     onForward: { player.next() },
-                    onNote:    { onQuickNote() }
+                    onNote:    { onQuickNote() },
+                    onMenu:    { onMenu() }
                 )
                 .padding(.horizontal, horizontalMargin)
                 .padding(.top, 18)
@@ -146,23 +147,23 @@ struct NowPlayingView: View {
     // display refresh rate starved their tap recognition (inert chevron).
     private var statusRow: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            Button { onMenu() } label: {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
-                    let angle = (ctx.date.timeIntervalSinceReferenceDate
-                        .truncatingRemainder(dividingBy: 9) / 9) * 360
-                    ZStack {
-                        Circle().fill(PB.cream.opacity(0.92))
-                        Circle().strokeBorder(PB.cream.opacity(0.25), lineWidth: 0.75)
-                        Text("P").font(.custom("HelveticaNeue-Bold", size: 13))
-                            .foregroundStyle(PB.black)
-                    }
-                    .frame(width: 26, height: 26)
-                    .rotationEffect(.degrees(angle))
+            // Purely decorative brand mark — it read as a button when it
+            // opened the menu, so MENU now lives in the transport row as a
+            // ⋯ hardware key and the P just spins.
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+                let angle = (ctx.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: 9) / 9) * 360
+                ZStack {
+                    Circle().fill(PB.cream.opacity(0.92))
+                    Circle().strokeBorder(PB.cream.opacity(0.25), lineWidth: 0.75)
+                    Text("P").font(.custom("HelveticaNeue-Bold", size: 13))
+                        .foregroundStyle(PB.black)
                 }
-                .contentShape(Circle())
+                .frame(width: 26, height: 26)
+                .rotationEffect(.degrees(angle))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open player menu")
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
             TimelineView(.everyMinute) { ctx in
                 Text(ctx.date.formatted(.dateTime.hour().minute()))
                     .font(PB.mono(12)).tracking(1)

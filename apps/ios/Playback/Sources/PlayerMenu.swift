@@ -9,6 +9,8 @@ struct MenuSheet: View {
     var store: WorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
+    @State private var linkFailed = false
+    @State private var linkFailureRevert: Task<Void, Never>?
     @State private var exported = false
     @State private var showEditSong = false
     @State private var shareError: String?
@@ -45,8 +47,11 @@ struct MenuSheet: View {
                             MenuRow(icon: "person.3.sequence", title: "Create Listening Room", detail: "Private synced play")
                         }
                         Button { copyLink() } label: {
-                            MenuRow(icon: "link", title: copied ? "Link copied" : "Copy link",
-                                    detail: nil, tint: copied ? PB.green : PB.cream)
+                            MenuRow(icon: "link",
+                                    title: linkFailed ? "Link failed — tap to retry" : (copied ? "Link copied" : "Copy link"),
+                                    detail: nil,
+                                    tint: linkFailed ? PB.redline : (copied ? PB.green : PB.cream),
+                                    monoTitle: linkFailed)
                         }
                         NavigationLink { AddToPlaylistView(track: track, store: store) } label: {
                             MenuRow(icon: "plus.square.on.square", title: "Add to playlist", detail: "Copy into another list")
@@ -105,8 +110,10 @@ struct MenuSheet: View {
 
     private func copyLink() {
         shareError = nil
+        linkFailureRevert?.cancel()
+        withAnimation { linkFailed = false }
         guard Config.useRemoteAPI else {
-            copyLocalFallback()
+            showLinkFailure()
             return
         }
         Task {
@@ -120,9 +127,25 @@ struct MenuSheet: View {
                 }
             } catch {
                 await MainActor.run {
-                    shareError = "Link unavailable"
-                    copyLocalFallback()
+                    showLinkFailure()
                 }
+            }
+        }
+    }
+
+    /// Honest state: link creation failed, so nothing was copied.
+    /// The same row shows a quiet mono-caps redline failure, reverts to
+    /// idle after ~4s, and tapping it retries the request.
+    private func showLinkFailure() {
+        withAnimation {
+            copied = false
+            linkFailed = true
+        }
+        linkFailureRevert = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation { linkFailed = false }
             }
         }
     }
@@ -160,13 +183,6 @@ struct MenuSheet: View {
         }
     }
 
-    private func copyLocalFallback() {
-        #if canImport(UIKit)
-        UIPasteboard.general.string = Config.shareURL(token: track.id)
-        #endif
-        withAnimation { copied = true }
-    }
-
     private func localAudioURL() -> URL? {
         if let path = track.importedAudioPath {
             let url = path.hasPrefix("/")
@@ -199,11 +215,16 @@ private struct MenuRow: View {
     var title: String
     var detail: String?
     var tint: Color = PB.cream
+    var monoTitle = false
 
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon).font(.system(size: 15)).frame(width: 22).foregroundStyle(tint)
-            Text(title).font(PB.text(15)).foregroundStyle(tint)
+            if monoTitle {
+                MonoLabel(title, color: tint, size: 10, tracking: 1.2)
+            } else {
+                Text(title).font(PB.text(15)).foregroundStyle(tint)
+            }
             Spacer()
             if let detail { MonoLabel(detail, color: PB.pencil, size: 9, tracking: 1) }
         }
@@ -224,6 +245,8 @@ struct ShareView: View {
     @State private var access: ShareAccess = .restricted
     @State private var role: ShareRole = .comment
     @State private var copied = false
+    @State private var linkFailed = false
+    @State private var linkFailureRevert: Task<Void, Never>?
     @State private var isCreating = false
     @State private var link: String?
     @State private var linkID: String?
@@ -282,8 +305,8 @@ struct ShareView: View {
                         Text(link ?? "Create link when copied").font(PB.mono(12)).foregroundStyle(PB.cream).lineLimit(1)
                         Spacer()
                         Button { copy() } label: {
-                            Text(isCreating ? "CREATING" : (copied ? "COPIED" : "COPY")).font(PB.mono(10)).tracking(1)
-                                .foregroundStyle(copied ? PB.green : PB.cobalt)
+                            Text(isCreating ? "CREATING" : (linkFailed ? "LINK FAILED — TAP TO RETRY" : (copied ? "COPIED" : "COPY"))).font(PB.mono(10)).tracking(1)
+                                .foregroundStyle(linkFailed ? PB.redline : (copied ? PB.green : PB.cobalt))
                         }.buttonStyle(.plain)
                         .disabled(isCreating)
                     }
@@ -369,13 +392,10 @@ struct ShareView: View {
 
     private func copy() {
         error = nil
+        linkFailureRevert?.cancel()
+        withAnimation { linkFailed = false }
         guard Config.useRemoteAPI else {
-            let fallback = Config.shareURL(token: track.id)
-            #if canImport(UIKit)
-            UIPasteboard.general.string = fallback
-            #endif
-            link = fallback
-            withAnimation { copied = true }
+            showLinkFailure()
             return
         }
         isCreating = true
@@ -392,8 +412,25 @@ struct ShareView: View {
             } catch {
                 await MainActor.run {
                     isCreating = false
-                    self.error = "Share link unavailable"
+                    showLinkFailure()
                 }
+            }
+        }
+    }
+
+    /// Honest state: link creation failed, so nothing was copied.
+    /// The COPY control shows a quiet mono-caps redline failure, reverts
+    /// to idle after ~4s, and tapping it retries the request.
+    private func showLinkFailure() {
+        withAnimation {
+            copied = false
+            linkFailed = true
+        }
+        linkFailureRevert = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation { linkFailed = false }
             }
         }
     }

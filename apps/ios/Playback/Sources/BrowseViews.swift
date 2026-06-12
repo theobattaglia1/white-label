@@ -807,15 +807,9 @@ struct BulkSongActionBar: View {
 
 func copyShareLinks(_ tracks: [Track], store: WorkspaceStore) -> Bool {
     #if canImport(UIKit)
-    if Config.useRemoteAPI {
-        // API share links are per-song and async. For bulk selection, copy
-        // titles only — individual sharing from the player menu gives real links.
-        UIPasteboard.general.string = tracks.map { store.displayTitle($0.id, $0.title) }.joined(separator: "\n")
-    } else {
-        UIPasteboard.general.string = tracks.map { track in
-            "\(store.displayTitle(track.id, track.title)) — \(Config.shareURL(token: track.id))"
-        }.joined(separator: "\n")
-    }
+    // Honest state: never fabricate per-song URLs. For bulk selection, copy
+    // titles only — individual sharing from the player menu gives real links.
+    UIPasteboard.general.string = tracks.map { store.displayTitle($0.id, $0.title) }.joined(separator: "\n")
     return true
     #else
     return false

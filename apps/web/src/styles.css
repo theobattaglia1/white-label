@@ -6647,3 +6647,299 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   .shelf--reduced .shelf-card.is-focused .shelf-cover { border-color: rgba(243, 236, 222, 0.32); }
   .shelf--reduced .shelf-card.is-pulled .shelf-cover { border-color: rgba(243, 236, 222, 0.7); }
 }
+
+
+/* =====================================================================
+   Song page rework — one job per panel.
+   LEFT = the record: ambient field, single player, COVER popover, hints.
+   RIGHT = the desk: slim header, hairline actions, VERSIONS/NOTES/READINESS.
+   ===================================================================== */
+
+/* ── Ambient dot field behind the LEFT panel only ──
+   The module sizes the buffer to the viewport, so the element must be
+   viewport-sized too: np-left starts at the viewport origin on wide
+   layouts and its overflow clips the field to the left panel. */
+.np-field-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1; /* behind np-left content, same plane as its glow ::after */
+  pointer-events: none;
+}
+@media (max-width: 959px) {
+  /* Narrow: np-left no longer sits at the viewport origin — hide the field
+     rather than show it misaligned. */
+  .np-field-canvas { display: none; }
+}
+
+/* ── COVER control: one discreet mono-caps button, top-right ── */
+.np-top { position: relative; }
+.np-top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.np-cover-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  padding: 6px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.np-cover-btn:hover,
+.np-cover-btn.open { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
+
+/* Quiet dark popover holding the two option rows; pick → closes */
+.np-cover-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  background: rgba(12, 9, 7, .96);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+}
+.np-cover-pop .pls-pickers { align-items: flex-start; }
+
+/* ── Scrubber: note ticks + the note-at affordance + keyboard hints ── */
+.np-bar { display: block; }
+.np-bar.disabled { cursor: default; }
+.np-tick {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  transform: translateY(-50%);
+  padding: 0;
+  border: none;
+  border-radius: 1px;
+  cursor: pointer;
+  /* dot-matrix tick: a 2×2 grid of cream dots */
+  background:
+    radial-gradient(circle at 30% 30%, rgba(243, 236, 222, .95) 1.1px, transparent 1.2px),
+    radial-gradient(circle at 70% 30%, rgba(243, 236, 222, .95) 1.1px, transparent 1.2px),
+    radial-gradient(circle at 30% 70%, rgba(243, 236, 222, .95) 1.1px, transparent 1.2px),
+    radial-gradient(circle at 70% 70%, rgba(243, 236, 222, .95) 1.1px, transparent 1.2px);
+}
+.np-tick:hover { transform: translateY(-50%) scale(1.35); }
+.np-tick-tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 240px;
+  text-align: left;
+  background: rgba(12, 9, 7, .97);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 8px;
+  padding: 9px 11px;
+  pointer-events: none;
+  z-index: 30;
+}
+.np-tick:hover .np-tick-tip,
+.np-tick:focus-visible .np-tick-tip { display: flex; }
+.np-tick-tip .tip-head {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+}
+.np-tick-tip .tip-body {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--tape-oxide);
+  white-space: normal;
+}
+
+.np-scrub-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 10px;
+}
+.np-noteat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: color .15s;
+}
+.np-noteat:hover { color: var(--tape-oxide); }
+
+/* Keyboard hints: invisible until the first hover of the left panel */
+.np-hints {
+  display: flex;
+  gap: 18px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--pencil-faint, rgba(243, 236, 222, .3));
+  opacity: 0;
+  transition: opacity .8s ease;
+}
+.np-hints.seen { opacity: 1; }
+
+/* ── RIGHT rail: slim header, one meta line, hairline actions ── */
+.sw-head {
+  padding: 20px 24px 22px;
+  border-bottom: 1px solid var(--studio-hairline);
+}
+.sw-head .breadcrumb {
+  color: var(--pencil-warm);
+  font-size: 11px;
+  margin-bottom: 14px;
+}
+.sw-head .eyebrow { margin-bottom: 6px; }
+.sw-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--tape-oxide);
+  margin: 0 0 8px;
+}
+.sw-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  color: var(--pencil-warm);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 16px;
+}
+.sw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.hairline-act {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 7px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.hairline-act:hover:not(:disabled) { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
+.hairline-act:disabled { opacity: .45; cursor: not-allowed; }
+.sw-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  min-width: 0;
+}
+.sw-share code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--pencil-warm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── VERSIONS: inline CURRENT dot, FLIP control, AUDITIONING pulse ── */
+.ver-current {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--redline);
+}
+.ver-current::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--redline);
+  margin-right: 7px;
+  box-shadow: 0 0 8px rgba(255, 74, 34, .6);
+}
+.flip-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.flip-btn:hover { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
+.flip-btn.on { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .55); }
+.version-audition-cue {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--tape-oxide);
+  margin-top: 4px;
+  animation: audition-pulse 1.6s ease-in-out infinite;
+}
+.version-row.auditioning { border-left: 2px solid rgba(243, 236, 222, .5); padding-left: 8px; }
+@keyframes audition-pulse {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+
+/* ── READINESS: quiet mono lines, state spelled plainly ── */
+.readiness-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+.ready-line {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .14em;
+  color: var(--pencil-warm);
+}
+.ready-line.missing { color: var(--redline); }
+
+@media (prefers-reduced-motion: reduce) {
+  .version-audition-cue { animation: none; opacity: 1; }
+  .np-hints { transition: none; }
+  .np-tick:hover { transform: translateY(-50%); }
+}

@@ -24,7 +24,6 @@ import {
   Shield,
   SkipBack,
   SkipForward,
-  Upload,
   UserRound,
   Users,
   X,
@@ -33,6 +32,8 @@ import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Versio
 import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { catalogIdFor, catalogNumber, computeVersionDelta, coverGradient, formatHeardDisplay, formatVersionDelta, hashHue, heardByCount, humanizeVersionType, matchesSmart } from "./utils";
 import { usePlayer } from "./player";
+import { AmbientField } from "./ambientField";
+import { noteDisplayParts, parseTimestampPrefix } from "./noteTime";
 import { LivingCover, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
@@ -1840,7 +1841,19 @@ function PlaylistView({
 /* The immersive now-playing surface — matches the Playback now-playing concept:
    a dark editorial field (huge title, credits, integrated transport) beside a
    full-bleed generative cover with the motion/tone pickers. */
-function NowPlayingView({ payload, onClose, onNote }: { payload: SongPayload; onClose?: () => void; onNote?: () => void }) {
+function NowPlayingView({
+  payload,
+  active = true,
+  onClose,
+  onRequestNote,
+}: {
+  payload: SongPayload;
+  /** Overlay visibility — gates keyboard shortcuts + the ambient field. */
+  active?: boolean;
+  onClose?: () => void;
+  /** Open the note composer pre-filled at this playhead position (ms). */
+  onRequestNote?: (ms: number) => void;
+}) {
   const player = usePlayer();
   const song = payload.song;
   const isThis = player.song?.song_id === song.song_id;
@@ -1869,39 +1882,153 @@ function NowPlayingView({ payload, onClose, onNote }: { payload: SongPayload; on
     try { localStorage.setItem(coverKey, JSON.stringify(merged)); } catch { /* ignore */ }
   }
 
+  // The 11 cover options live behind one discreet control now — zero
+  // permanent chrome; pick → closes.
+  const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+
+  // Keyboard hint row: fades in on first hover of the left panel, stays.
+  const [hintsSeen, setHintsSeen] = useState(false);
+
+  // Ambient dot field behind the left panel — same module as DropOverlay +
+  // SignIn, dimmer and fps-capped like the sign-in field. Reduced motion
+  // renders one static frame and pulse() is a no-op (handled in the module).
+  const fieldCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fieldRef = useRef<AmbientField | null>(null);
+  const transportRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const canvas = fieldCanvasRef.current;
+    if (!canvas) return;
+    const field = new AmbientField({ fps: 13, opacityScale: 0.35, excitementTarget: 0.18 });
+    fieldRef.current = field;
+    field.attach(canvas);
+    return () => { field.detach(); fieldRef.current = null; };
+  }, [active]);
+  // While playing, the field leans in slightly; eases back when paused.
+  useEffect(() => {
+    fieldRef.current?.setExcitementTarget(playing ? 0.3 : 0.18);
+  }, [playing]);
+
   function togglePlay() {
+    const willPlay = !playing;
     if (isThis) player.toggle();
     else if (version && asset) player.play(song, version, asset);
+    if (willPlay) {
+      // Pulse-on-play: the wavefront starts at the play key itself.
+      const key = transportRef.current?.querySelector<HTMLElement>(".flat-key:nth-of-type(2)");
+      const r = (key ?? transportRef.current)?.getBoundingClientRect();
+      if (r) fieldRef.current?.pulse(r.left + r.width / 2, r.top + r.height / 2, { strength: 0.85 });
+    }
   }
+
+  // Notes that carry a timestamp (native field, or the honest "@m:ss " body
+  // convention) become ticks on the scrubber.
+  const noteTicks = useMemo(() => {
+    const ticks: Array<{ id: string; ms: number; body: string; author: string }> = [];
+    if (durationMs <= 0) return ticks;
+    for (const note of payload.notes) {
+      const parts = noteDisplayParts(note);
+      if (parts.ms === undefined || parts.ms < 0 || parts.ms > durationMs) continue;
+      ticks.push({
+        id: note.note_id,
+        ms: parts.ms,
+        body: parts.body,
+        author: note.author_guest_label ?? "Workspace",
+      });
+    }
+    return ticks;
+  }, [payload.notes, durationMs]);
+
+  function seekToMs(ms: number) {
+    if (isThis) player.seek(ms);
+    else if (version && asset) player.play(song, version, asset, { startAtMs: ms });
+  }
+
+  // Keyboard: Space play/pause · ←/→ ±10s · N note at playhead. Esc close
+  // lives in SongOverlay. Never trap keys while a field is focused.
+  const keyActionsRef = useRef({ togglePlay, seekBy: (_: number) => {}, note: () => {} });
+  keyActionsRef.current = {
+    togglePlay,
+    seekBy: (deltaMs: number) => {
+      if (!isThis || durationMs === 0) return;
+      player.seek(Math.max(0, Math.min(durationMs, positionMs + deltaMs)));
+    },
+    note: () => onRequestNote?.(positionMs),
+  };
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const a = keyActionsRef.current;
+      if ((e.key === " " || e.code === "Space") && !(t && (t.tagName === "BUTTON" || t.tagName === "A"))) {
+        e.preventDefault();
+        a.togglePlay();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        a.seekBy(-10_000);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        a.seekBy(10_000);
+      } else if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        a.note();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
 
   return (
     <div className="np-stage">
-      <div className="np-left">
+      <div className="np-left" onMouseEnter={() => setHintsSeen(true)}>
+        <canvas ref={fieldCanvasRef} className="np-field-canvas" aria-hidden="true" />
         <header className="np-top">
           <span className="np-wm"><Wordmark size="sm" /><span className="np-cat">{catalogIdFor(song.song_id)}</span></span>
-          {onClose && (
-            <button className="np-close" onClick={onClose} aria-label="Close">
-              <X size={18} />
+          <div className="np-top-actions">
+            <button
+              className={`np-cover-btn${coverMenuOpen ? " open" : ""}`}
+              onClick={() => setCoverMenuOpen((o) => !o)}
+              aria-expanded={coverMenuOpen}
+              aria-haspopup="menu"
+            >
+              Cover
             </button>
+            {onClose && (
+              <button className="np-close" onClick={onClose} aria-label="Close">
+                <X size={18} />
+              </button>
+            )}
+          </div>
+          {coverMenuOpen && (
+            <div className="np-cover-pop" role="menu" aria-label="Cover style">
+              <div className="pls-pickers">
+                <div className="pls-pick">
+                  <span className="pls-pick-lab">Motion</span>
+                  {MOTION_MODES.map((m) => (
+                    <button key={m.id} className={`pls-pk${coverMode === m.id ? " active" : ""}`} onClick={() => { setCoverMode(m.id); persistCover({ mode: m.id }); setCoverMenuOpen(false); }}>{m.label}</button>
+                  ))}
+                </div>
+                <div className="pls-pick">
+                  <span className="pls-pick-lab">Tone</span>
+                  {TONE_MODES.map((t) => (
+                    <button key={t.id} className={`pls-pk${coverTone === t.id ? " active" : ""}`} onClick={() => { setCoverTone(t.id); persistCover({ tone: t.id }); setCoverMenuOpen(false); }}>{t.label}</button>
+                  ))}
+                  <label className={`pls-swatch${coverTone === 3 ? " active" : ""}`} title="Pick a main color" style={{ ["--sw" as string]: coverHex }}>
+                    <input type="color" value={coverHex} onChange={(e) => { setCoverHex(e.target.value); setCoverTone(3); persistCover({ tone: 3, hex: e.target.value }); setCoverMenuOpen(false); }} />
+                  </label>
+                </div>
+              </div>
+            </div>
           )}
         </header>
         <div className="np-hero">
-          <span className="np-eyebrow">Now Playing{version?.version_label ? ` · ${version.version_label}` : ""}{song.project_name ? ` · ${song.project_name}` : ""}</span>
+          <span className="np-eyebrow">Now Playing{song.project_name ? ` · ${song.project_name}` : ""}</span>
           <h1 className="np-title">{song.title}</h1>
           <div className="np-artist">{song.artist_display_name}</div>
-          {version && (
-            <div className="np-flag"><span className="np-dot" />{version.version_label}{version.is_approved ? " · Approved" : version.is_current ? " · Current" : ""}</div>
-          )}
         </div>
         <footer className="np-foot">
-          <div className="np-credits">
-            {song.bpm != null && <div className="np-c"><span className="k">Tempo</span><span className="v">{song.bpm} BPM</span></div>}
-            {song.song_key && <div className="np-c"><span className="k">Key</span><span className="v">{song.song_key}</span></div>}
-            {asset?.loudness_lufs != null && <div className="np-c"><span className="k">Loudness</span><span className="v">{asset.loudness_lufs} LUFS</span></div>}
-            {durationMs > 0 && <div className="np-c"><span className="k">Length</span><span className="v">{formatTimestamp(durationMs)}</span></div>}
-            {asset?.mime_type && <div className="np-c"><span className="k">Format</span><span className="v">{asset.mime_type.replace("audio/", "").toUpperCase()}</span></div>}
-          </div>
-          <div className="np-transport">
+          <div className="np-transport" ref={transportRef}>
             <TransportKeys
               playing={playing}
               canPlay={!!(version && asset)}
@@ -1916,19 +2043,53 @@ function NowPlayingView({ payload, onClose, onNote }: { payload: SongPayload; on
                 const nextAsset = assetForVersion(payload.assets, next);
                 if (next && nextAsset) player.play(payload.song, next, nextAsset);
               }}
-              onNote={onNote}
+              onNote={onRequestNote ? () => onRequestNote(positionMs) : undefined}
             />
             <div className="np-scrub">
               <span className="np-time">{formatTimestamp(positionMs)}</span>
-              <button
-                className="np-bar"
+              <div
+                className={`np-bar${!isThis || durationMs === 0 ? " disabled" : ""}`}
+                role="slider"
                 aria-label="Seek"
-                disabled={!isThis || durationMs === 0}
-                onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); player.seek(((e.clientX - r.left) / r.width) * durationMs); }}
+                aria-valuemin={0}
+                aria-valuemax={durationMs}
+                aria-valuenow={Math.round(positionMs)}
+                onClick={(e) => {
+                  if (!isThis || durationMs === 0) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  player.seek(((e.clientX - r.left) / r.width) * durationMs);
+                }}
               >
                 <i style={{ width: `${progress * 100}%` }} />
-              </button>
+                {noteTicks.map((tick) => (
+                  <button
+                    key={tick.id}
+                    className="np-tick"
+                    style={{ left: `${(tick.ms / durationMs) * 100}%` }}
+                    onClick={(e) => { e.stopPropagation(); seekToMs(tick.ms); }}
+                    aria-label={`Note at ${formatTimestamp(tick.ms)}: ${tick.body}`}
+                  >
+                    <span className="np-tick-tip" role="tooltip">
+                      <span className="tip-head">{tick.author} · {formatTimestamp(tick.ms)}</span>
+                      <span className="tip-body">{tick.body}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
               <span className="np-time">{formatTimestamp(durationMs)}</span>
+            </div>
+            <div className="np-scrub-foot">
+              {onRequestNote && (
+                <button className="np-noteat" onClick={() => onRequestNote(positionMs)}>
+                  + Note at {formatTimestamp(positionMs)}
+                </button>
+              )}
+              <div className={`np-hints${hintsSeen ? " seen" : ""}`} aria-hidden={!hintsSeen}>
+                <span>Space play/pause</span>
+                <span>←/→ ±10s</span>
+                <span>N note at playhead</span>
+                <span>Esc close</span>
+              </div>
             </div>
           </div>
         </footer>
@@ -1941,29 +2102,6 @@ function NowPlayingView({ payload, onClose, onNote }: { payload: SongPayload; on
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
         />
         <div className="np-seam" />
-        <div className="np-lab tp">
-          <span className="cw-micro">Generative Cover</span>
-          <div className="pls-pickers">
-            <div className="pls-pick">
-              <span className="pls-pick-lab">Motion</span>
-              {MOTION_MODES.map((m) => (
-                <button key={m.id} className={`pls-pk${coverMode === m.id ? " active" : ""}`} onClick={() => { setCoverMode(m.id); persistCover({ mode: m.id }); }}>{m.label}</button>
-              ))}
-            </div>
-            <div className="pls-pick">
-              <span className="pls-pick-lab">Tone</span>
-              {TONE_MODES.map((t) => (
-                <button key={t.id} className={`pls-pk${coverTone === t.id ? " active" : ""}`} onClick={() => { setCoverTone(t.id); persistCover({ tone: t.id }); }}>{t.label}</button>
-              ))}
-              <label className={`pls-swatch${coverTone === 3 ? " active" : ""}`} title="Pick a main color" style={{ ["--sw" as string]: coverHex }}>
-                <input type="color" value={coverHex} onChange={(e) => { setCoverHex(e.target.value); setCoverTone(3); persistCover({ tone: 3, hex: e.target.value }); }} />
-              </label>
-            </div>
-          </div>
-        </div>
-        <div className="np-lab bt">
-          <span className="cw-micro">Generative cover</span>
-        </div>
       </div>
     </div>
   );
@@ -2014,12 +2152,15 @@ function SongWorkspace({
   playlists = [],
   onRefreshPlaylists,
   onOpenSong,
+  noteCue,
 }: {
   payload: SongPayload;
   onRefresh: () => void;
   playlists?: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists?: () => void;
   onOpenSong?: (id: string) => void;
+  /** From the player panel: open the composer pre-filled at this playhead (ms). */
+  noteCue?: { ms: number; key: number } | null;
 }) {
   const [activeVersionID, setActiveVersionID] = useState(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
   const [noteDraftOpen, setNoteDraftOpen] = useState(false);
@@ -2037,11 +2178,71 @@ function SongWorkspace({
 
   const activeVersion = payload.versions.find((version) => version.version_id === activeVersionID) ?? payload.currentVersion;
   const activeAsset = assetForVersion(payload.assets, activeVersion);
-  const currentAsset = assetForVersion(payload.assets, payload.currentVersion);
 
   useEffect(() => {
     setActiveVersionID(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
+    setShareToken(null);
+    setAudition(null);
   }, [payload.song.song_id, payload.currentVersion?.version_id]);
+
+  // Player-panel "N" / "+ Note at" → open the composer at that playhead.
+  useEffect(() => {
+    if (!noteCue) return;
+    setNoteTimestamp(noteCue.ms);
+    setNoteDraftOpen(true);
+  }, [noteCue?.key]);
+
+  // === Share — same link shape the playlist + routing flows create ======
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  async function shareSong() {
+    if (shareBusy) return;
+    setShareBusy(true);
+    try {
+      const result = await api.createLink({
+        workspace_id: payload.song.workspace_id,
+        target_type: "song",
+        target_id: payload.song.song_id,
+        link_name: `${payload.song.title} — share`,
+        access_mode: "identity_required",
+        version_policy: "latest_only",
+        download_policy: "none",
+        watermark_enabled: true,
+        allow_comments: true,
+        allow_approval: true,
+        allow_forwarding: false,
+      });
+      setShareToken(result.token);
+    } finally {
+      setShareBusy(false);
+    }
+  }
+  const shareUrl = shareToken ? `${window.location.origin}/shared/${shareToken}` : null;
+
+  // === A/B version flip — purely client-side audition ====================
+  // Hot-swaps the audio source to another take at the SAME playhead, with
+  // playback state preserved; current/approved state in data never changes.
+  const [audition, setAudition] = useState<{ versionID: string; returnVersionID: string } | null>(null);
+  function flipTo(version: Version) {
+    const asset = assetForVersion(payload.assets, version);
+    if (!asset) return;
+    const pos = player.positionMs;
+    const wasPlaying = player.isPlaying;
+    if (audition?.versionID === version.version_id) {
+      // Flip back to where we came from.
+      const back = payload.versions.find((v) => v.version_id === audition.returnVersionID);
+      const backAsset = back ? assetForVersion(payload.assets, back) : undefined;
+      if (back && backAsset) player.play(payload.song, back, backAsset, { startAtMs: pos, autoplay: wasPlaying });
+      setAudition(null);
+      return;
+    }
+    const returnVersionID = audition?.returnVersionID
+      ?? player.version?.version_id
+      ?? activeVersion?.version_id
+      ?? "";
+    player.play(payload.song, version, asset, { startAtMs: pos, autoplay: wasPlaying });
+    setAudition({ versionID: version.version_id, returnVersionID });
+  }
 
   function triggerUpload() {
     setUploadError(null);
@@ -2084,11 +2285,15 @@ function SongWorkspace({
     }
   }
 
-  const openNotes = payload.notes.filter((n) => n.status === "open");
-  const hasNotesDue = openNotes.length > 0;
-  const approvedVersion = payload.versions.find((v) => v.version_id === payload.song.approved_version_id);
-  const catalogId = catalogIdFor(payload.song.song_id);
-  const versionLabel = activeVersion?.version_label ?? "v1";
+  // One meta line — each fact exactly once on the whole page (the scrubber
+  // shows time, so duration here is the only allowed repeat).
+  const metaParts = [
+    activeAsset?.duration_ms != null ? formatTimestamp(activeAsset.duration_ms) : null,
+    activeAsset?.loudness_lufs != null ? `${activeAsset.loudness_lufs} LUFS` : null,
+    activeAsset?.mime_type ? activeAsset.mime_type.replace("audio/", "").toUpperCase() : null,
+    payload.song.bpm != null ? `${payload.song.bpm} BPM` : null,
+    payload.song.song_key ?? null,
+  ].filter((part): part is string => part !== null);
 
   // Moment 1: resolve sentinel to actual first-version ID once it's available.
   // C2: only start the 2.2s flash window AFTER the real id resolves from the
@@ -2109,158 +2314,56 @@ function SongWorkspace({
 
   return (
     <div className="view-stack">
-      <div className="song-card-hero">
+      <div className="sw-head">
         <div className="breadcrumb">
-          {payload.song.project_name ?? "Room"} / <b>{payload.song.title}</b> / {versionLabel}
+          {payload.song.project_name ?? "Room"} / <b>{payload.song.title}</b>
         </div>
-        <div className="song-card-frame">
-          <div className="stamp-row">
-            {approvedVersion && (
-              <Stamp kind="approved" straight>{approvedVersion.version_label}</Stamp>
-            )}
-            {hasNotesDue && (
-              <Stamp kind="notes-due">{openNotes.length} open</Stamp>
-            )}
-          </div>
-          <div className="song-card-body">
-            <div className="song-card-cover">
-              <LivingCover style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
-              <div className="grain" />
-              <span className="cat-strip">{catalogId} · {versionLabel}</span>
-              <div className="mono-corner">
-                <MonoMark />
-              </div>
-            </div>
-            <div className="song-card-info">
-              <span className="cat">
-                <span className="b">{payload.song.artist_display_name}</span>
-                {payload.song.project_name ? ` / ${payload.song.project_name}` : ""}
-              </span>
-              <h2 className="title">{payload.song.title}</h2>
-              <div className="artist">
-                {payload.song.artist_display_name}
-                {activeVersion?.version_label ? ` · ${activeVersion.version_label}` : ""}
-              </div>
-              <div className="meta-row">
-                {activeAsset?.duration_ms && (
-                  <span><span className="b">{formatTimestamp(activeAsset.duration_ms)}</span></span>
-                )}
-                {payload.song.bpm && <span><span className="b">{payload.song.bpm}</span> BPM</span>}
-                {payload.song.song_key && <span><span className="b">{payload.song.song_key}</span></span>}
-                {activeAsset?.loudness_lufs && <span>{activeAsset.loudness_lufs} LUFS</span>}
-                {activeAsset?.mime_type && <span>{activeAsset.mime_type.replace("audio/", "").toUpperCase()}</span>}
-              </div>
-              <div className="versions" role="group" aria-label="Version stack">
-                <h6>Stack</h6>
-                {payload.versions.map((v) => {
-                  const isCur = v.version_id === activeVersion?.version_id;
-                  return (
-                    <button
-                      key={v.version_id}
-                      className={`v ${isCur ? "cur" : ""}`}
-                      aria-current={isCur ? "true" : undefined}
-                      onClick={() => {
-                        setActiveVersionID(v.version_id);
-                        const a = assetForVersion(payload.assets, v);
-                        if (a) player.play(payload.song, v, a);
-                      }}
-                    >
-                      {v.version_label ?? `v${v.version_number}`}
-                      {v.is_current ? " · current" : ""}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="actions">
-                <button
-                  className="btn red primary"
-                  onClick={() => activeVersion && activeAsset?.playback_url && player.play(payload.song, activeVersion, activeAsset)}
-                  disabled={!activeAsset?.playback_url}
-                  title={!activeAsset?.playback_url ? "Upload a revision to add audio" : undefined}
-                >
-                  <Play size={14} /> Play
-                </button>
-                <button
-                  className="chrome-button"
-                  onClick={triggerUpload}
-                  disabled={uploadingPct !== null}
-                  title={uploadingPct !== null ? `Uploading… ${uploadingPct}%` : "Drop a new revision into the version stack"}
-                >
-                  <Upload size={14} />
-                  {uploadingPct === null
-                    ? "New revision"
-                    : `Uploading ${uploadingPct}%`}
-                </button>
-                <input
-                  ref={(el) => { fileInputRef.current = el; }}
-                  type="file"
-                  accept="audio/*,.wav,.mp3,.m4a,.flac,.aiff,.aif"
-                  hidden
-                  onChange={onFileChosen}
-                />
-                <button
-                  className="text-button with-icon"
-                  onClick={() => {
-                    setNoteTimestamp(player.positionMs);
-                    setNoteDraftOpen(true);
-                  }}
-                >
-                  <MessageSquare size={14} /> Add note
-                </button>
-                {playlists.length > 0 && onRefreshPlaylists && (
-                  <AddToPlaylistMenu
-                    playlists={playlists}
-                    songID={payload.song.song_id}
-                    onAdded={onRefreshPlaylists}
-                  />
-                )}
-                {uploadError && (
-                  <span className="upload-error">{uploadError}</span>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="song-card-waveband">
-            {activeAsset?.playback_url ? (
-              <>
-                <button
-                  className="play"
-                  aria-label={player.isPlaying ? "Pause" : "Play"}
-                  onClick={() => {
-                    if (player.isPlaying) player.toggle();
-                    else if (activeVersion && activeAsset) player.play(payload.song, activeVersion, activeAsset);
-                  }}
-                >
-                  {player.isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                </button>
-                <div className="wave-host">
-                  <Waveform
-                    peaks={activeAsset?.waveform_peaks ?? []}
-                    positionMs={player.positionMs}
-                    durationMs={activeAsset?.duration_ms ?? 1}
-                    onSeek={(position) => {
-                      player.seek(position);
-                      setNoteTimestamp(position);
-                    }}
-                  />
-                </div>
-                <div className="times">
-                  {formatTimestamp(player.positionMs)} / {formatTimestamp(activeAsset?.duration_ms)}
-                </div>
-              </>
-            ) : (
-              <>
-                <button className="play" disabled aria-label="No audio yet" style={{ opacity: 0.3 }}>
-                  <Play size={16} />
-                </button>
-                <div className="wave-host no-audio">
-                  <span className="no-audio-label">No audio — upload a revision to add it</span>
-                </div>
-                <div className="times" style={{ opacity: 0.3 }}>--:--</div>
-              </>
-            )}
-          </div>
+        <p className="eyebrow">{payload.song.artist_display_name}</p>
+        <h2 className="sw-title">{payload.song.title}</h2>
+        {metaParts.length > 0 && <div className="sw-meta">{metaParts.join(" · ")}</div>}
+        <div className="sw-actions">
+          <button
+            className="hairline-act"
+            onClick={triggerUpload}
+            disabled={uploadingPct !== null}
+            title={uploadingPct !== null ? `Uploading… ${uploadingPct}%` : "Drop a new revision into the stack"}
+          >
+            {uploadingPct === null ? "New revision" : `Uploading ${uploadingPct}%`}
+          </button>
+          <input
+            ref={(el) => { fileInputRef.current = el; }}
+            type="file"
+            accept="audio/*,.wav,.mp3,.m4a,.flac,.aiff,.aif"
+            hidden
+            onChange={onFileChosen}
+          />
+          <button
+            className="hairline-act"
+            onClick={() => {
+              setNoteTimestamp(player.positionMs);
+              setNoteDraftOpen(true);
+            }}
+          >
+            Add note
+          </button>
+          <button className="hairline-act" onClick={() => void shareSong()} disabled={shareBusy}>
+            {shareBusy ? "Creating…" : "Share"}
+          </button>
+          {playlists.length > 0 && onRefreshPlaylists && (
+            <AddToPlaylistMenu
+              playlists={playlists}
+              songID={payload.song.song_id}
+              onAdded={onRefreshPlaylists}
+            />
+          )}
         </div>
+        {uploadError && <span className="upload-error">{uploadError}</span>}
+        {shareUrl && (
+          <div className="sw-share">
+            <code>{shareUrl}</code>
+            <button className="text-button" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy</button>
+          </div>
+        )}
       </div>
 
       {noteDraftOpen && activeVersion && (
@@ -2281,6 +2384,9 @@ function SongWorkspace({
           payload={payload}
           activeVersionID={activeVersion?.version_id}
           flashVersionID={resolvedFlashID ?? undefined}
+          auditionVersionID={audition?.versionID}
+          playingVersionID={player.song?.song_id === payload.song.song_id ? player.version?.version_id : undefined}
+          onFlip={flipTo}
           onSelect={(version) => {
             const asset = assetForVersion(payload.assets, version);
             setActiveVersionID(version.version_id);
@@ -2672,12 +2778,20 @@ function VersionStack({
   payload,
   activeVersionID,
   flashVersionID,
+  auditionVersionID,
+  playingVersionID,
+  onFlip,
   onSelect,
   onSetCurrent,
 }: {
   payload: SongPayload;
   activeVersionID?: string;
   flashVersionID?: string;
+  /** Version currently being auditioned via the A/B flip (client-side only). */
+  auditionVersionID?: string;
+  /** Version actually loaded in the player — FLIP shows on the other rows. */
+  playingVersionID?: string;
+  onFlip?: (version: Version) => void;
   onSelect: (version: Version) => void;
   onSetCurrent: (versionID: string) => void;
 }) {
@@ -2695,8 +2809,8 @@ function VersionStack({
     <section className="rail-panel">
       <div className="panel-topline">
         <div>
-          <p className="eyebrow">VERSION STACK</p>
-          <h2>History</h2>
+          <p className="eyebrow">VERSIONS</p>
+          <h2>{payload.versions.length}</h2>
         </div>
         <History size={18} />
       </div>
@@ -2710,13 +2824,19 @@ function VersionStack({
         const delta = computeVersionDelta(version, sortedVersions, assetMap);
         const deltaStr = formatVersionDelta(delta);
         const isFlashing = version.version_id === flashVersionID;
+        const isAuditioning = version.version_id === auditionVersionID;
+        // FLIP: ≥2 versions, never on the row that's already in the player —
+        // except the auditioning row itself, whose FLIP means "flip back".
+        const canFlip = !!onFlip
+          && payload.versions.length > 1
+          && (isAuditioning || version.version_id !== (playingVersionID ?? activeVersionID));
         // A11Y A3: flash cue needs aria-live
         return (
           <div
             key={version.version_id}
             role="button"
             tabIndex={0}
-            className={`version-row ${version.version_id === activeVersionID ? "selected" : ""} ${isFlashing ? "version-row--first-flash" : ""}`}
+            className={`version-row ${version.version_id === activeVersionID ? "selected" : ""} ${isFlashing ? "version-row--first-flash" : ""} ${isAuditioning ? "auditioning" : ""}`}
             onClick={() => onSelect(version)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") onSelect(version);
@@ -2737,13 +2857,30 @@ function VersionStack({
                   v1 is in the stack.
                 </span>
               )}
+              {isAuditioning && (
+                <span className="version-audition-cue" role="status" aria-live="polite">
+                  Auditioning
+                </span>
+              )}
             </div>
             <div className="version-state">
               {version.version_id === payload.song.approved_version_id && (
                 <Stamp kind="approved" tight straight />
               )}
+              {canFlip && (
+                <button
+                  className={`flip-btn${isAuditioning ? " on" : ""}`}
+                  title={isAuditioning ? "Flip back" : "Flip to this take at the same playhead"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onFlip?.(version);
+                  }}
+                >
+                  Flip
+                </button>
+              )}
               {version.is_current ? (
-                <span className="status-pill red">Current</span>
+                <span className="ver-current">Current</span>
               ) : (
                 <button className="text-button" onClick={(event) => {
                   event.stopPropagation();
@@ -2766,17 +2903,20 @@ function NotesPanel({ notes, onRefresh }: { notes: VisibleNote[]; onRefresh: () 
   const resolved = notes.filter((n) => n.status === "resolved");
 
   function renderNote(note: VisibleNote) {
+    // "@m:ss " body convention: strip the prefix, surface it as the time chip
+    // (native timestamp_start_ms wins when both exist).
+    const parts = noteDisplayParts(note);
     return (
       <article key={note.note_id} className={`note-item ${note.is_collapsed ? "collapsed" : ""}`}>
         <div className="note-head">
           <span>{note.author_guest_label ?? "Workspace"}</span>
           <span>{note.is_carried ? `carried from ${note.anchor_version_label}` : `from ${note.anchor_version_label}`}</span>
         </div>
-        <p>{note.body}</p>
+        <p>{parts.body}</p>
         <div className="note-foot">
           <span className={note.approximate_timestamp ? "approx" : ""}>
             {note.approximate_timestamp ? "≈ " : ""}
-            {formatTimestamp(note.timestamp_start_ms)}
+            {formatTimestamp(parts.ms)}
             {note.approximate_timestamp ? ", position may have shifted" : ""}
           </span>
           {note.status === "open" ? (
@@ -2843,17 +2983,15 @@ function DeliverablesPanel({ payload }: { payload: SongPayload }) {
         </div>
         {payload.deliverables.ready ? <CheckCircle2 size={18} /> : <CircleDashed size={18} />}
       </div>
-      <div className="checklist">
+      <div className="readiness-lines">
         {payload.deliverables.present.map((item) => (
-          <span key={item} className="check present">
-            <CheckCircle2 size={14} />
-            {item}
+          <span key={item} className="ready-line present">
+            {item.toUpperCase()} — ✓
           </span>
         ))}
         {payload.deliverables.missing.map((item) => (
-          <span key={item} className="check missing">
-            <X size={14} />
-            {item}
+          <span key={item} className="ready-line missing">
+            {item.toUpperCase()} — MISSING
           </span>
         ))}
       </div>
@@ -3005,15 +3143,21 @@ function NoteComposer({
 }) {
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
+  // Typing "@m:ss " at the start of the body pins the note to that moment —
+  // parsed out and stored in the native timestamp field, never sent twice.
+  const typed = parseTimestampPrefix(body.trim());
+  const effectiveTimestampMs = typed.ms ?? timestampMs;
   async function submit() {
-    if (!body.trim()) return;
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    const sendBody = typed.ms !== null && typed.rest.length > 0 ? typed.rest : trimmed;
     setPosting(true);
     try {
       await api.createNote({
         song_id: song.song_id,
         anchor_version_id: version.version_id,
-        body: body.trim(),
-        timestamp_start_ms: timestampMs,
+        body: sendBody,
+        timestamp_start_ms: effectiveTimestampMs,
         scope: "song",
         visibility: "everyone",
       });
@@ -3023,7 +3167,7 @@ function NoteComposer({
       setPosting(false);
     }
   }
-  const cueLabel = timestampMs && timestampMs > 0 ? `@ ${formatTimestamp(timestampMs)}` : "@ start";
+  const cueLabel = effectiveTimestampMs && effectiveTimestampMs > 0 ? `@ ${formatTimestamp(effectiveTimestampMs)}` : "@ start";
   const ariaLabel = `Leave a note on ${version.version_label}${deckLabel ? ` · Deck ${deckLabel}` : ""} ${cueLabel}`;
   return (
     <div className="note-composer">
@@ -4626,6 +4770,14 @@ function SongOverlay({
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  // "N" / "+ Note at" / the transport note key in the player panel open the
+  // workspace composer pre-filled at that playhead position.
+  const [noteCue, setNoteCue] = useState<{ ms: number; key: number } | null>(null);
+  function requestNote(ms: number) {
+    setNoteCue({ ms, key: Date.now() });
+    onTabChange("workspace"); // narrow screens: bring the composer into view
+  }
+
   // ESC to close
   useEffect(() => {
     if (!open) return;
@@ -4694,7 +4846,7 @@ function SongOverlay({
       {/* Player panel — left on wide, full on narrow when tab=player */}
       <div className={`overlay-panel overlay-player-panel${tab === "workspace" ? " narrow-hidden" : ""}`}>
         {payload
-          ? <NowPlayingView payload={payload} onClose={onClose} onNote={() => onTabChange("workspace")} />
+          ? <NowPlayingView payload={payload} active={open} onClose={onClose} onRequestNote={requestNote} />
           : loadError
             ? <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
             : <div className="overlay-loading">Loading…</div>
@@ -4711,6 +4863,7 @@ function SongOverlay({
               onRefresh={onRefresh}
               onRefreshPlaylists={onRefreshPlaylists}
               onOpenSong={onOpenSong}
+              noteCue={noteCue}
             />
           )
           : loadError

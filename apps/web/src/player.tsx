@@ -10,6 +10,13 @@ import {
 } from "react";
 import type { FileAsset, Song, Version } from "@pmw/shared";
 
+export type PlayOptions = {
+  /** Start playback from this position (ms). Applied once metadata is ready. */
+  startAtMs?: number;
+  /** When false, swap the source without starting playback (default true). */
+  autoplay?: boolean;
+};
+
 type PlayerState = {
   song?: Song;
   version?: Version;
@@ -17,7 +24,7 @@ type PlayerState = {
   isPlaying: boolean;
   positionMs: number;
   loudnessMatched: boolean;
-  play: (song: Song, version: Version, asset: FileAsset) => void;
+  play: (song: Song, version: Version, asset: FileAsset, opts?: PlayOptions) => void;
   pause: () => void;
   toggle: () => void;
   seek: (positionMs: number) => void;
@@ -87,7 +94,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   });
 
   const play = useCallback(
-    (nextSong: Song, nextVersion: Version, nextAsset: FileAsset) => {
+    (nextSong: Song, nextVersion: Version, nextAsset: FileAsset, opts?: PlayOptions) => {
+      const startAtMs = opts?.startAtMs;
+      const autoplay = opts?.autoplay ?? true;
       setSong(nextSong);
       setVersion(nextVersion);
       setAsset(nextAsset);
@@ -100,20 +109,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           el.src = url;
           el.dataset.assetId = nextAsset.asset_id;
           el.load();
+          if (startAtMs != null) {
+            // A/B flip: restore the playhead on the freshly-loaded source.
+            // currentTime can only be set once metadata is in; the browser
+            // clamps to the new duration if the other take runs shorter.
+            const applyStart = () => {
+              try { el.currentTime = startAtMs / 1000; } catch { /* not seekable yet */ }
+            };
+            if (el.readyState >= 1) applyStart();
+            else el.addEventListener("loadedmetadata", applyStart, { once: true });
+          }
         } else {
           el.removeAttribute("src");
           el.dataset.assetId = "";
         }
-        setPositionMs(0);
+        setPositionMs(startAtMs ?? 0);
+      } else if (startAtMs != null) {
+        if (el.duration && Number.isFinite(el.duration)) {
+          el.currentTime = Math.min(startAtMs / 1000, el.duration);
+        }
+        setPositionMs(startAtMs);
       }
       if (nextAsset.playback_url) {
-        el.play().catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn("Audio play() blocked or failed:", err);
-          setIsPlaying(false);
-        });
+        if (autoplay) {
+          el.play().catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn("Audio play() blocked or failed:", err);
+            setIsPlaying(false);
+          });
+        } else if (!el.paused) {
+          el.pause();
+        }
       } else {
-        setIsPlaying(true); // virtual playback
+        setIsPlaying(autoplay); // virtual playback
       }
     },
     []

@@ -572,6 +572,32 @@ export async function uploadNewSong(
   return result;
 }
 
+/**
+ * Upload a small recorded voice-note blob (MediaRecorder webm/mp4) to the
+ * audio bucket via the SAME sign-upload path the song uploader uses — but
+ * WITHOUT any finalize call, so no song/version/asset rows are created.
+ * The blob lands at `{workspace}/{song}/{uuid}.{ext}` and the returned
+ * public URL goes into the note body via the `[voice](URL)` convention.
+ */
+export async function uploadVoiceBlob(
+  blob: Blob,
+  songExternalId: string,
+  filename: string,
+): Promise<string> {
+  const contentType = blob.type || "audio/webm";
+  const sig = await api.signUpload({ filename, contentType, songExternalId });
+  const putRes = await fetch(sig.uploadUrl, {
+    method: "PUT",
+    headers: { "content-type": contentType, "x-upsert": "true" },
+    body: blob,
+  });
+  if (!putRes.ok) {
+    const detail = await putRes.text().catch(() => "");
+    throw new Error(`Voice upload failed (${putRes.status}): ${detail.slice(0, 200)}`);
+  }
+  return sig.publicUrl;
+}
+
 export function assetForVersion(assets: FileAsset[], version?: Version): FileAsset | undefined {
   if (!version) return undefined;
   return assets.find((asset) => asset.asset_id === version.file_asset_id);

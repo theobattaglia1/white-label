@@ -51,3 +51,31 @@ export function noteDisplayParts(note: { body: string; timestamp_start_ms?: numb
     body: ms !== null ? rest : note.body,
   };
 }
+
+// =====================================================================
+// Note-lane time math — the strip beneath the scrubber where notes are
+// dropped by direct manipulation. Pure px↔ms conversions, vitest-covered.
+// =====================================================================
+
+/** Pointer x (px from the lane's left edge) → playhead ms, clamped to [0, durationMs]. */
+export function laneMsAtX(x: number, laneWidth: number, durationMs: number): number {
+  if (laneWidth <= 0 || durationMs <= 0) return 0;
+  const frac = Math.min(1, Math.max(0, x / laneWidth));
+  return Math.round(frac * durationMs);
+}
+
+/** Tick position for a note at `ms`, as a percentage of the lane width, clamped to [0, 100]. */
+export function laneTickPct(ms: number, durationMs: number): number {
+  if (durationMs <= 0) return 0;
+  return Math.min(100, Math.max(0, (ms / durationMs) * 100));
+}
+
+/**
+ * Clamp an anchored composer's center (pct of lane width) so the popover
+ * stays inside the lane. Falls back to center when the lane is unmeasured.
+ */
+export function clampComposerPct(pct: number, laneWidth: number, composerWidth: number): number {
+  if (laneWidth <= 0) return 50;
+  const half = Math.min(50, (composerWidth / 2 / laneWidth) * 100);
+  return Math.min(100 - half, Math.max(half, pct));
+}

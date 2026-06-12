@@ -6943,3 +6943,357 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   .np-hints { transition: none; }
   .np-tick:hover { transform: translateY(-50%); }
 }
+
+
+/* =====================================================================
+   Song page v2 — the rail becomes the session notebook.
+   - Notes happen ON the waveform: the NOTE LANE under the scrubber
+     (scrubber stays pure seek; ticks live in the lane).
+   - Two-panel rail (VERSIONS / NOTES) as two quiet cards on the dark.
+   - Redline is RESERVED for: the CURRENT version dot, an open-notes
+     count > 0, true alerts, and the live recording state.
+   ===================================================================== */
+
+/* ── The note lane: a thin strip beneath the scrubber ── */
+.note-lane-wrap { position: relative; margin-top: 12px; }
+.note-lane {
+  position: relative;
+  height: 28px;
+  border-top: 1px solid var(--studio-hairline);
+  cursor: crosshair;
+}
+.note-lane.disabled { cursor: default; }
+.note-lane.empty {
+  /* faint ghost-tick pattern while the lane is empty */
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(243, 236, 222, 0.05) 0,
+    rgba(243, 236, 222, 0.05) 1px,
+    transparent 1px,
+    transparent 26px
+  );
+}
+.lane-label {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, .45);
+  pointer-events: none;
+  z-index: 1;
+}
+.lane-count {
+  color: var(--redline);
+  font-weight: 700;
+  letter-spacing: .08em;
+  font-variant-numeric: tabular-nums;
+}
+.lane-tick { z-index: 2; }
+.lane-ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.lane-ghost i {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 1px;
+  background: rgba(243, 236, 222, .5);
+}
+.lane-ghost b {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, .75);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lane-whisper {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, .3);
+  pointer-events: none;
+}
+
+/* ── Compact composer anchored at the clicked x, above the lane ── */
+.lane-composer {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  width: 300px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: rgba(12, 9, 7, .97);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 9px;
+  padding: 9px 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+  z-index: 40;
+}
+.lane-composer .at-chip {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, .6);
+  border: 1px solid var(--studio-hairline);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lane-composer input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--tape-oxide);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.lane-composer input::placeholder { color: var(--pencil-warm); }
+.lane-composer-state {
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(243, 236, 222, .5);
+}
+.lane-composer-state.error { color: var(--redline); }
+
+/* ── Voice notes: mic, recording state, preview + inline player chip ── */
+.voice-mic {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  color: var(--pencil-warm);
+  cursor: pointer;
+  padding: 0;
+  transition: color .15s, border-color .15s;
+}
+.voice-mic:hover { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
+.voice-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.voice-state.recording {
+  /* live capture — a legit redline use */
+  background: transparent;
+  border: 1px solid rgba(255, 74, 34, .5);
+  border-radius: 14px;
+  color: var(--redline);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--redline);
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+.rec-time { letter-spacing: .08em; }
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+.voice-state.error {
+  /* honest failure state — a true alert */
+  color: var(--redline);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.voice-discard {
+  background: none;
+  border: none;
+  color: var(--pencil-warm);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+}
+.voice-discard:hover { color: var(--tape-oxide); }
+.voice-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 14px;
+  padding: 3px 10px 3px 4px;
+}
+.note-item .voice-chip { margin: 6px 0 2px; }
+.voice-chip-play {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  color: var(--tape-oxide);
+  cursor: pointer;
+  padding: 0;
+  transition: border-color .15s;
+}
+.voice-chip-play:hover { border-color: rgba(243, 236, 222, .4); }
+.voice-chip-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--pencil-warm);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ── Two-panel rail: quiet cards floating on the dark ── */
+.song-overlay .rail-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 22px 20px 30px;
+}
+.song-overlay .rail-cards .rail-panel {
+  /* the sign-in door surface: slight tint + hairline + inner padding */
+  background: rgba(22, 17, 12, 0.78);
+  border: 1px solid rgba(243, 236, 222, 0.12);
+  border-radius: 2px;
+  padding: 18px 20px 20px;
+}
+/* Slim header + actions sit above the first panel, unboxed. */
+.song-overlay .sw-head { border-bottom: none; padding-bottom: 4px; }
+
+/* ── Color hierarchy: redline reserved across the rail ── */
+.song-overlay .eyebrow { color: rgba(243, 236, 222, 0.5); }
+.song-overlay .add-to-playlist .add-menu .eyebrow { color: rgba(243, 236, 222, 0.5); }
+.song-overlay .version-row .ver-num { color: rgba(243, 236, 222, 0.45); }
+.song-overlay .version-row.selected { border-left-color: rgba(243, 236, 222, 0.4); }
+.song-overlay .notes-open-count.hot { color: var(--redline); }
+
+/* Exactly one interactive register: rail text-buttons become hairline mono-caps. */
+.song-overlay .rail-cards .text-button {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.song-overlay .rail-cards .text-button:hover {
+  color: var(--tape-oxide);
+  border-color: rgba(243, 236, 222, .4);
+}
+
+/* Notes list: time chip + author mono-caps + body */
+.note-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--pencil-warm);
+  min-width: 0;
+}
+.note-time-chip {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  font-variant-numeric: tabular-nums;
+  color: var(--pencil-warm);
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 5px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.note-time-chip:hover { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
+.note-author {
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-weight: 600;
+  color: rgba(243, 236, 222, .65);
+}
+.note-origin {
+  color: rgba(243, 236, 222, .35);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-panel-foot { margin-top: 14px; }
+.untimed-act { border-color: rgba(243, 236, 222, .14); color: rgba(243, 236, 222, .5); }
+
+/* The untimed composer inside the NOTES card: quiet send, no red. */
+.song-overlay .notes-panel .note-composer {
+  background: transparent;
+  border: 1px solid var(--studio-hairline);
+  border-radius: 8px;
+}
+.song-overlay .note-composer .accent-button {
+  background: transparent;
+  border-color: var(--studio-hairline);
+  color: var(--pencil-warm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.song-overlay .note-composer .accent-button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--tape-oxide);
+  border-color: rgba(243, 236, 222, .4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot { animation: none; }
+}

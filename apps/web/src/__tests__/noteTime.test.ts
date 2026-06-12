@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteDisplayParts, parseTimestampPrefix, stripTimestampPrefix } from "../noteTime";
+import { clampComposerPct, laneMsAtX, laneTickPct, noteDisplayParts, parseTimestampPrefix, stripTimestampPrefix } from "../noteTime";
 
 describe("parseTimestampPrefix", () => {
   it("parses @m:ss and strips it from the body", () => {
@@ -95,5 +95,60 @@ describe("noteDisplayParts", () => {
       ms: 1_000,
       body: "tighten kick",
     });
+  });
+});
+
+describe("laneMsAtX", () => {
+  it("maps a pointer x to ms proportionally", () => {
+    expect(laneMsAtX(250, 1000, 200_000)).toBe(50_000);
+  });
+
+  it("clamps to the lane edges", () => {
+    expect(laneMsAtX(-40, 1000, 200_000)).toBe(0);
+    expect(laneMsAtX(1400, 1000, 200_000)).toBe(200_000);
+  });
+
+  it("rounds to whole ms", () => {
+    expect(laneMsAtX(1, 3, 100)).toBe(33);
+  });
+
+  it("returns 0 for an unmeasured lane or unknown duration", () => {
+    expect(laneMsAtX(100, 0, 200_000)).toBe(0);
+    expect(laneMsAtX(100, 1000, 0)).toBe(0);
+  });
+});
+
+describe("laneTickPct", () => {
+  it("positions a tick proportionally", () => {
+    expect(laneTickPct(30_000, 120_000)).toBe(25);
+  });
+
+  it("clamps out-of-range timestamps", () => {
+    expect(laneTickPct(-5_000, 120_000)).toBe(0);
+    expect(laneTickPct(500_000, 120_000)).toBe(100);
+  });
+
+  it("is 0 when the duration is unknown", () => {
+    expect(laneTickPct(30_000, 0)).toBe(0);
+  });
+});
+
+describe("clampComposerPct", () => {
+  it("passes through a center position", () => {
+    expect(clampComposerPct(50, 1000, 300)).toBe(50);
+  });
+
+  it("clamps near the edges so the popover stays inside the lane", () => {
+    // 300px composer on a 1000px lane → half-width is 15%
+    expect(clampComposerPct(2, 1000, 300)).toBe(15);
+    expect(clampComposerPct(99, 1000, 300)).toBe(85);
+  });
+
+  it("falls back to center when the lane is unmeasured", () => {
+    expect(clampComposerPct(80, 0, 300)).toBe(50);
+  });
+
+  it("centers when the composer is wider than the lane", () => {
+    expect(clampComposerPct(10, 200, 600)).toBe(50);
   });
 });

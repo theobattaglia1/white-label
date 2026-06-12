@@ -14,6 +14,7 @@ import {
   ListMusic,
   LockKeyhole,
   MessageSquare,
+  Mic,
   Pause,
   Play,
   Plus,
@@ -29,11 +30,12 @@ import {
   X,
 } from "lucide-react";
 import { formatTimestamp, type FileAsset, type ShareLink, type Song, type Version, type VersionType, type VisibleNote } from "@pmw/shared";
-import { api, assetForVersion, uploadAudio, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
+import { api, assetForVersion, uploadAudio, uploadVoiceBlob, type MyPinsPayload, type RecentItem, type RoomPayload, type SharedPayload, type SongPayload, versionsForSong } from "./api";
 import { catalogIdFor, catalogNumber, computeVersionDelta, coverGradient, formatHeardDisplay, formatVersionDelta, hashHue, heardByCount, humanizeVersionType, matchesSmart } from "./utils";
 import { usePlayer } from "./player";
 import { AmbientField } from "./ambientField";
-import { noteDisplayParts, parseTimestampPrefix } from "./noteTime";
+import { clampComposerPct, laneMsAtX, laneTickPct, noteDisplayParts, parseTimestampPrefix } from "./noteTime";
+import { buildVoiceBody, extForMime, parseVoiceMarker, pickRecordingMime } from "./voiceNote";
 import { LivingCover, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
@@ -1838,6 +1840,285 @@ function PlaylistView({
   );
 }
 
+/* =====================================================================
+   Voice notes — MediaRecorder capture + the [voice](URL) body convention.
+   Defensive by design: feature-detect, and surface "MIC UNAVAILABLE"
+   instead of throwing when permission or hardware is missing.
+   ===================================================================== */
+
+type VoiceRecorderState = "idle" | "recording" | "preview" | "error";
+
+type VoicePreview = { blob: Blob; url: string; durationMs: number };
+
+function useVoiceRecorder() {
+  const [state, setState] = useState<VoiceRecorderState>("idle");
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [preview, setPreview] = useState<VoicePreview | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+  const startedAtRef = useRef(0);
+
+  function clearTimer() {
+    if (timerRef.current !== null) { window.clearInterval(timerRef.current); timerRef.current = null; }
+  }
+
+  function stopTracks() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+
+  async function start() {
+    if (state === "recording") return;
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setState("error");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = pickRecordingMime((t) => MediaRecorder.isTypeSupported?.(t) ?? false);
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      streamRef.current = stream;
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        stopTracks();
+        clearTimer();
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        const durationMs = Math.max(0, Date.now() - startedAtRef.current);
+        if (blob.size === 0) { setState("error"); return; }
+        setPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev.url);
+          return { blob, url: URL.createObjectURL(blob), durationMs };
+        });
+        setState("preview");
+      };
+      rec.onerror = () => { stopTracks(); clearTimer(); setState("error"); };
+      recRef.current = rec;
+      startedAtRef.current = Date.now();
+      setElapsedMs(0);
+      rec.start();
+      setState("recording");
+      timerRef.current = window.setInterval(
+        () => setElapsedMs(Date.now() - startedAtRef.current),
+        250,
+      );
+    } catch {
+      stopTracks();
+      setState("error");
+    }
+  }
+
+  function stop() {
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
+    else { clearTimer(); stopTracks(); }
+  }
+
+  function discard() {
+    clearTimer();
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") { rec.onstop = null; rec.stop(); }
+    stopTracks();
+    setPreview((prev) => { if (prev) URL.revokeObjectURL(prev.url); return null; });
+    setElapsedMs(0);
+    setState("idle");
+  }
+
+  // Unmount: stop everything; leave object URLs to the preview setter.
+  useEffect(() => () => {
+    clearTimer();
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") { rec.onstop = null; rec.stop(); }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+  }, []);
+
+  return { state, elapsedMs, preview, start, stop, discard };
+}
+
+/** Upload a recorded voice blob and return the [voice](URL) body for `text`. */
+async function uploadVoiceNoteBody(blob: Blob, songExternalId: string, text: string): Promise<string> {
+  const filename = `voice-note-${Date.now()}${extForMime(blob.type || "audio/webm")}`;
+  const url = await uploadVoiceBlob(blob, songExternalId, filename);
+  return buildVoiceBody(url, text);
+}
+
+/** Inline player chip for a voice note — play/pause + duration, mono-caps. */
+function VoiceChip({ src, durationMs }: { src: string; durationMs?: number }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [knownMs, setKnownMs] = useState<number | undefined>(durationMs);
+
+  function toggle() {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) el.pause();
+    else void el.play().catch(() => setPlaying(false));
+  }
+
+  return (
+    <span className="voice-chip">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(e) => {
+          const d = e.currentTarget.duration;
+          if (Number.isFinite(d) && d > 0) setKnownMs(Math.round(d * 1000));
+        }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+      />
+      <button
+        type="button"
+        className="voice-chip-play"
+        onClick={toggle}
+        aria-label={playing ? "Pause voice note" : "Play voice note"}
+      >
+        {playing ? <Pause size={11} /> : <Play size={11} />}
+      </button>
+      <span className="voice-chip-time">
+        {knownMs !== undefined ? formatTimestamp(knownMs) : "Voice"}
+      </span>
+    </span>
+  );
+}
+
+/** Mic affordance + recording/preview states, shared by both composers. */
+function VoiceControls({
+  recorder,
+  compact = false,
+}: {
+  recorder: ReturnType<typeof useVoiceRecorder>;
+  compact?: boolean;
+}) {
+  const { state, elapsedMs, preview, start, stop, discard } = recorder;
+  if (state === "error") {
+    return (
+      <span className={`voice-state error${compact ? " compact" : ""}`}>
+        Mic unavailable
+        <button type="button" className="voice-discard" onClick={discard} aria-label="Dismiss mic error">
+          <X size={11} />
+        </button>
+      </span>
+    );
+  }
+  if (state === "recording") {
+    return (
+      <button type="button" className="voice-state recording" onClick={stop} aria-label="Stop recording">
+        <i className="rec-dot" aria-hidden="true" />
+        <span className="rec-time">{formatTimestamp(elapsedMs)}</span>
+      </button>
+    );
+  }
+  if (state === "preview" && preview) {
+    return (
+      <span className="voice-state preview">
+        <VoiceChip src={preview.url} durationMs={preview.durationMs} />
+        <button type="button" className="voice-discard" onClick={discard} aria-label="Discard recording">
+          <X size={11} />
+        </button>
+      </span>
+    );
+  }
+  return (
+    <button type="button" className="voice-mic" onClick={() => void start()} aria-label="Record a voice note" title="Record a voice note">
+      <Mic size={13} />
+    </button>
+  );
+}
+
+/* Compact composer anchored on the note lane — the primary way a note is
+   left on web. Frozen "AT m:ss" chip + text input + mic; Enter saves,
+   Esc cancels, clicking elsewhere dismisses. */
+const LANE_COMPOSER_WIDTH = 300;
+
+function LaneComposer({
+  song,
+  version,
+  ms,
+  leftPct,
+  onPosted,
+  onDismiss,
+}: {
+  song: Song;
+  version: Version;
+  ms: number;
+  leftPct: number;
+  onPosted: () => void;
+  onDismiss: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState(false);
+  const recorder = useVoiceRecorder();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Click elsewhere dismisses (mousedown so a drag outside also closes).
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onDismiss();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [onDismiss]);
+
+  // "@m:ss" typed in any composer still wins over the anchored time.
+  const typed = parseTimestampPrefix(text.trim());
+  const effectiveMs = typed.ms ?? ms;
+  const sendText = typed.ms !== null ? typed.rest : text.trim();
+  const canSave = !posting && (sendText.length > 0 || (recorder.state === "preview" && !!recorder.preview));
+
+  async function save() {
+    if (!canSave) return;
+    setPosting(true);
+    setPostError(false);
+    try {
+      const body = recorder.state === "preview" && recorder.preview
+        ? await uploadVoiceNoteBody(recorder.preview.blob, song.song_id, sendText)
+        : sendText;
+      await api.createNote({
+        song_id: song.song_id,
+        anchor_version_id: version.version_id,
+        body,
+        timestamp_start_ms: effectiveMs,
+        scope: "song",
+        visibility: "everyone",
+      });
+      onPosted();
+    } catch {
+      setPostError(true);
+      setPosting(false);
+    }
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className="lane-composer"
+      style={{ left: `${leftPct}%` }}
+      role="dialog"
+      aria-label={`Leave a note at ${formatTimestamp(effectiveMs)}`}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onDismiss(); } }}
+    >
+      <span className="at-chip">At {formatTimestamp(effectiveMs)}</span>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+        placeholder={recorder.state === "preview" ? "Add text (optional)…" : "Say what you hear…"}
+        autoFocus
+        disabled={posting}
+      />
+      <VoiceControls recorder={recorder} compact />
+      {posting && <span className="lane-composer-state">Saving…</span>}
+      {postError && <span className="lane-composer-state error">Couldn't save — try again</span>}
+    </div>
+  );
+}
+
 /* The immersive now-playing surface — matches the Playback now-playing concept:
    a dark editorial field (huge title, credits, integrated transport) beside a
    full-bleed generative cover with the motion/tone pickers. */
@@ -1845,14 +2126,17 @@ function NowPlayingView({
   payload,
   active = true,
   onClose,
-  onRequestNote,
+  noteCue,
+  onRefresh,
 }: {
   payload: SongPayload;
   /** Overlay visibility — gates keyboard shortcuts + the ambient field. */
   active?: boolean;
   onClose?: () => void;
-  /** Open the note composer pre-filled at this playhead position (ms). */
-  onRequestNote?: (ms: number) => void;
+  /** External cue (rail ADD NOTE) — open the lane composer at this playhead (ms). */
+  noteCue?: { ms: number; key: number } | null;
+  /** Refetch the song payload after a note posts from the lane. */
+  onRefresh?: () => void;
 }) {
   const player = usePlayer();
   const song = payload.song;
@@ -1922,17 +2206,19 @@ function NowPlayingView({
   }
 
   // Notes that carry a timestamp (native field, or the honest "@m:ss " body
-  // convention) become ticks on the scrubber.
+  // convention) become ticks on the NOTE LANE beneath the scrubber — the
+  // scrubber itself stays pure seek.
   const noteTicks = useMemo(() => {
     const ticks: Array<{ id: string; ms: number; body: string; author: string }> = [];
     if (durationMs <= 0) return ticks;
     for (const note of payload.notes) {
       const parts = noteDisplayParts(note);
       if (parts.ms === undefined || parts.ms < 0 || parts.ms > durationMs) continue;
+      const voice = parseVoiceMarker(parts.body);
       ticks.push({
         id: note.note_id,
         ms: parts.ms,
-        body: parts.body,
+        body: voice.url ? (voice.rest || "Voice note") : parts.body,
         author: note.author_guest_label ?? "Workspace",
       });
     }
@@ -1944,6 +2230,43 @@ function NowPlayingView({
     else if (version && asset) player.play(song, version, asset, { startAtMs: ms });
   }
 
+  // ── NOTE LANE — direct manipulation: hover shows a ghost tick + "+ m:ss",
+  // click opens a compact composer anchored at that x. N / rail ADD NOTE are
+  // accelerators that open the same composer at the playhead.
+  const laneRef = useRef<HTMLDivElement | null>(null);
+  const [laneHover, setLaneHover] = useState<{ pct: number; ms: number } | null>(null);
+  const [laneComposer, setLaneComposer] = useState<{ ms: number; pct: number } | null>(null);
+  const openNoteCount = useMemo(
+    () => payload.notes.filter((n) => n.status === "open").length,
+    [payload.notes],
+  );
+
+  function openLaneComposerAt(ms: number) {
+    if (durationMs <= 0 || !version) return;
+    const clamped = Math.max(0, Math.min(durationMs, ms));
+    const width = laneRef.current?.getBoundingClientRect().width ?? 0;
+    setLaneHover(null);
+    setLaneComposer({
+      ms: clamped,
+      pct: clampComposerPct(laneTickPct(clamped, durationMs), width, LANE_COMPOSER_WIDTH),
+    });
+  }
+
+  function onLaneMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (durationMs <= 0) { setLaneHover(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    const ms = laneMsAtX(e.clientX - r.left, r.width, durationMs);
+    setLaneHover({ pct: laneTickPct(ms, durationMs), ms });
+  }
+
+  // Rail "ADD NOTE" lands here: open the lane composer at the playhead.
+  const openLaneRef = useRef(openLaneComposerAt);
+  openLaneRef.current = openLaneComposerAt;
+  useEffect(() => {
+    if (!noteCue) return;
+    openLaneRef.current(noteCue.ms);
+  }, [noteCue?.key]);
+
   // Keyboard: Space play/pause · ←/→ ±10s · N note at playhead. Esc close
   // lives in SongOverlay. Never trap keys while a field is focused.
   const keyActionsRef = useRef({ togglePlay, seekBy: (_: number) => {}, note: () => {} });
@@ -1953,7 +2276,7 @@ function NowPlayingView({
       if (!isThis || durationMs === 0) return;
       player.seek(Math.max(0, Math.min(durationMs, positionMs + deltaMs)));
     },
-    note: () => onRequestNote?.(positionMs),
+    note: () => openLaneComposerAt(positionMs),
   };
   useEffect(() => {
     if (!active) return;
@@ -2043,7 +2366,7 @@ function NowPlayingView({
                 const nextAsset = assetForVersion(payload.assets, next);
                 if (next && nextAsset) player.play(payload.song, next, nextAsset);
               }}
-              onNote={onRequestNote ? () => onRequestNote(positionMs) : undefined}
+              onNote={() => openLaneComposerAt(positionMs)}
             />
             <div className="np-scrub">
               <span className="np-time">{formatTimestamp(positionMs)}</span>
@@ -2061,11 +2384,45 @@ function NowPlayingView({
                 }}
               >
                 <i style={{ width: `${progress * 100}%` }} />
+              </div>
+              <span className="np-time">{formatTimestamp(durationMs)}</span>
+            </div>
+            <div className="note-lane-wrap">
+              {laneComposer && version && (
+                <LaneComposer
+                  song={song}
+                  version={version}
+                  ms={laneComposer.ms}
+                  leftPct={laneComposer.pct}
+                  onPosted={() => {
+                    setLaneComposer(null);
+                    onRefresh?.();
+                  }}
+                  onDismiss={() => setLaneComposer(null)}
+                />
+              )}
+              <div
+                ref={laneRef}
+                className={`note-lane${durationMs <= 0 ? " disabled" : ""}${noteTicks.length === 0 ? " empty" : ""}`}
+                role="button"
+                aria-label="Note lane — click to drop a note at that moment"
+                onMouseMove={onLaneMove}
+                onMouseLeave={() => setLaneHover(null)}
+                onClick={(e) => {
+                  if (durationMs <= 0) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  openLaneComposerAt(laneMsAtX(e.clientX - r.left, r.width, durationMs));
+                }}
+              >
+                <span className="lane-label" aria-hidden="true">
+                  Notes
+                  {openNoteCount > 0 && <b className="lane-count">{openNoteCount}</b>}
+                </span>
                 {noteTicks.map((tick) => (
                   <button
                     key={tick.id}
-                    className="np-tick"
-                    style={{ left: `${(tick.ms / durationMs) * 100}%` }}
+                    className="np-tick lane-tick"
+                    style={{ left: `${laneTickPct(tick.ms, durationMs)}%` }}
                     onClick={(e) => { e.stopPropagation(); seekToMs(tick.ms); }}
                     aria-label={`Note at ${formatTimestamp(tick.ms)}: ${tick.body}`}
                   >
@@ -2075,15 +2432,18 @@ function NowPlayingView({
                     </span>
                   </button>
                 ))}
+                {laneHover && !laneComposer && durationMs > 0 && (
+                  <span className="lane-ghost" style={{ left: `${laneHover.pct}%` }} aria-hidden="true">
+                    <i />
+                    <b>+ {formatTimestamp(laneHover.ms)}</b>
+                  </span>
+                )}
+                {noteTicks.length === 0 && laneHover && !laneComposer && (
+                  <span className="lane-whisper" aria-hidden="true">Click to drop a note</span>
+                )}
               </div>
-              <span className="np-time">{formatTimestamp(durationMs)}</span>
             </div>
             <div className="np-scrub-foot">
-              {onRequestNote && (
-                <button className="np-noteat" onClick={() => onRequestNote(positionMs)}>
-                  + Note at {formatTimestamp(positionMs)}
-                </button>
-              )}
               <div className={`np-hints${hintsSeen ? " seen" : ""}`} aria-hidden={!hintsSeen}>
                 <span>Space play/pause</span>
                 <span>←/→ ±10s</span>
@@ -2152,19 +2512,17 @@ function SongWorkspace({
   playlists = [],
   onRefreshPlaylists,
   onOpenSong,
-  noteCue,
+  onRequestNote,
 }: {
   payload: SongPayload;
   onRefresh: () => void;
   playlists?: Awaited<ReturnType<typeof api.playlists>>;
   onRefreshPlaylists?: () => void;
   onOpenSong?: (id: string) => void;
-  /** From the player panel: open the composer pre-filled at this playhead (ms). */
-  noteCue?: { ms: number; key: number } | null;
+  /** ADD NOTE accelerator — opens the player panel's lane composer at this playhead (ms). */
+  onRequestNote?: (ms: number) => void;
 }) {
   const [activeVersionID, setActiveVersionID] = useState(payload.currentVersion?.version_id ?? payload.versions[0]?.version_id);
-  const [noteDraftOpen, setNoteDraftOpen] = useState(false);
-  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(undefined);
   const [uploadingPct, setUploadingPct] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingPromote, setPendingPromote] = useState<Version | null>(null);
@@ -2184,13 +2542,6 @@ function SongWorkspace({
     setShareToken(null);
     setAudition(null);
   }, [payload.song.song_id, payload.currentVersion?.version_id]);
-
-  // Player-panel "N" / "+ Note at" → open the composer at that playhead.
-  useEffect(() => {
-    if (!noteCue) return;
-    setNoteTimestamp(noteCue.ms);
-    setNoteDraftOpen(true);
-  }, [noteCue?.key]);
 
   // === Share — same link shape the playlist + routing flows create ======
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -2337,15 +2688,15 @@ function SongWorkspace({
             hidden
             onChange={onFileChosen}
           />
-          <button
-            className="hairline-act"
-            onClick={() => {
-              setNoteTimestamp(player.positionMs);
-              setNoteDraftOpen(true);
-            }}
-          >
-            Add note
-          </button>
+          {onRequestNote && (
+            <button
+              className="hairline-act"
+              onClick={() => onRequestNote(player.positionMs)}
+              title="Open the note lane composer at the playhead"
+            >
+              Add note
+            </button>
+          )}
           <button className="hairline-act" onClick={() => void shareSong()} disabled={shareBusy}>
             {shareBusy ? "Creating…" : "Share"}
           </button>
@@ -2366,20 +2717,7 @@ function SongWorkspace({
         )}
       </div>
 
-      {noteDraftOpen && activeVersion && (
-        <NoteComposer
-          song={payload.song}
-          version={activeVersion}
-          timestampMs={noteTimestamp}
-          onPosted={() => {
-            setNoteDraftOpen(false);
-            onRefresh();
-          }}
-          onDismiss={() => setNoteDraftOpen(false)}
-        />
-      )}
-
-      <div className="content-columns">
+      <div className="rail-cards">
         <VersionStack
           payload={payload}
           activeVersionID={activeVersion?.version_id}
@@ -2435,8 +2773,16 @@ function SongWorkspace({
             onCancel={() => setPendingUploadFile(null)}
           />
         )}
-        <NotesPanel notes={payload.notes} onRefresh={onRefresh} />
-        <DeliverablesPanel payload={payload} />
+        <NotesPanel
+          notes={payload.notes}
+          song={payload.song}
+          version={activeVersion}
+          onRefresh={onRefresh}
+          onSeekTo={(ms) => {
+            if (player.song?.song_id === payload.song.song_id) player.seek(ms);
+            else if (activeVersion && activeAsset) player.play(payload.song, activeVersion, activeAsset, { startAtMs: ms });
+          }}
+        />
       </div>
       {onOpenSong && (
         <FindSimilarPanel song={payload.song} onOpenSong={onOpenSong} />
@@ -2897,28 +3243,62 @@ function VersionStack({
   );
 }
 
-function NotesPanel({ notes, onRefresh }: { notes: VisibleNote[]; onRefresh: () => void }) {
-  const openCurrent = notes.filter((n) => n.status === "open" && !n.is_carried);
-  const openCarried = notes.filter((n) => n.status === "open" && n.is_carried);
-  const resolved = notes.filter((n) => n.status === "resolved");
+/** Chronological order: timestamped notes by position, untimed last by creation. */
+function noteTimeOrder(a: VisibleNote, b: VisibleNote): number {
+  const aMs = noteDisplayParts(a).ms;
+  const bMs = noteDisplayParts(b).ms;
+  if (aMs !== undefined && bMs !== undefined) return aMs - bMs;
+  if (aMs !== undefined) return -1;
+  if (bMs !== undefined) return 1;
+  return a.created_at.localeCompare(b.created_at);
+}
+
+function NotesPanel({
+  notes,
+  song,
+  version,
+  onRefresh,
+  onSeekTo,
+}: {
+  notes: VisibleNote[];
+  song: Song;
+  /** Anchor for untimed notes composed from the rail. */
+  version?: Version;
+  onRefresh: () => void;
+  /** Time chip click → seek the player there. */
+  onSeekTo: (ms: number) => void;
+}) {
+  const openCurrent = notes.filter((n) => n.status === "open" && !n.is_carried).sort(noteTimeOrder);
+  const openCarried = notes.filter((n) => n.status === "open" && n.is_carried).sort(noteTimeOrder);
+  const resolved = notes.filter((n) => n.status === "resolved").sort(noteTimeOrder);
+  const openCount = openCurrent.length + openCarried.length;
+  const [untimedOpen, setUntimedOpen] = useState(false);
 
   function renderNote(note: VisibleNote) {
     // "@m:ss " body convention: strip the prefix, surface it as the time chip
-    // (native timestamp_start_ms wins when both exist).
+    // (native timestamp_start_ms wins when both exist). A leading
+    // "[voice](URL)" marker becomes the inline player chip.
     const parts = noteDisplayParts(note);
+    const voice = parseVoiceMarker(parts.body);
     return (
       <article key={note.note_id} className={`note-item ${note.is_collapsed ? "collapsed" : ""}`}>
-        <div className="note-head">
-          <span>{note.author_guest_label ?? "Workspace"}</span>
-          <span>{note.is_carried ? `carried from ${note.anchor_version_label}` : `from ${note.anchor_version_label}`}</span>
+        <div className="note-meta-row">
+          {parts.ms !== undefined && (
+            <button
+              className="note-time-chip"
+              onClick={() => onSeekTo(parts.ms!)}
+              title={note.approximate_timestamp ? "Play from here — carried note, position may have shifted" : "Play from here"}
+            >
+              {note.approximate_timestamp ? "≈ " : ""}{formatTimestamp(parts.ms)}
+            </button>
+          )}
+          <span className="note-author">{note.author_guest_label ?? "Workspace"}</span>
+          <span className="note-origin">{note.is_carried ? `carried from ${note.anchor_version_label}` : `from ${note.anchor_version_label}`}</span>
         </div>
-        <p>{parts.body}</p>
+        {voice.url && <VoiceChip src={voice.url} />}
+        {(voice.url ? voice.rest : parts.body) && <p>{voice.url ? voice.rest : parts.body}</p>}
         <div className="note-foot">
-          <span className={note.approximate_timestamp ? "approx" : ""}>
-            {note.approximate_timestamp ? "≈ " : ""}
-            {formatTimestamp(parts.ms)}
-            {note.approximate_timestamp ? ", position may have shifted" : ""}
-          </span>
+          <span />
           {note.status === "open" ? (
             <button className="text-button" onClick={async () => {
               await api.patchNote(note.note_id, { status: "resolved" });
@@ -2940,11 +3320,11 @@ function NotesPanel({ notes, onRefresh }: { notes: VisibleNote[]; onRefresh: () 
   }
 
   return (
-    <section className="rail-panel">
+    <section className="rail-panel notes-panel">
       <div className="panel-topline">
         <div>
           <p className="eyebrow">NOTES</p>
-          <h2>{openCurrent.length + openCarried.length} Open</h2>
+          <h2 className={openCount > 0 ? "notes-open-count hot" : "notes-open-count"}>{openCount} Open</h2>
         </div>
         <MessageSquare size={18} />
       </div>
@@ -2967,13 +3347,38 @@ function NotesPanel({ notes, onRefresh }: { notes: VisibleNote[]; onRefresh: () 
         </div>
       )}
       {notes.length === 0 && (
-        <p className="muted" style={{ padding: "12px 0" }}>No notes yet.</p>
+        <p className="muted" style={{ padding: "12px 0" }}>No notes yet — click the lane under the scrubber to drop one.</p>
       )}
+      <div className="notes-panel-foot">
+        {untimedOpen && version ? (
+          <NoteComposer
+            song={song}
+            version={version}
+            enableVoice
+            onPosted={() => {
+              setUntimedOpen(false);
+              onRefresh();
+            }}
+            onDismiss={() => setUntimedOpen(false)}
+          />
+        ) : (
+          <button
+            className="hairline-act untimed-act"
+            onClick={() => setUntimedOpen(true)}
+            disabled={!version}
+          >
+            + Untimed note
+          </button>
+        )}
+      </div>
     </section>
   );
 }
 
-function DeliverablesPanel({ payload }: { payload: SongPayload }) {
+// Release readiness no longer renders on the song overlay (v2: the page is
+// about notes, voice notes, and versions — not release project management).
+// The panel is kept for other surfaces; export so the component survives.
+export function DeliverablesPanel({ payload }: { payload: SongPayload }) {
   return (
     <section className="rail-panel">
       <div className="panel-topline">
@@ -3133,6 +3538,7 @@ function NoteComposer({
   deckLabel,
   onPosted,
   onDismiss,
+  enableVoice = false,
 }: {
   song: Song;
   version: Version;
@@ -3140,19 +3546,26 @@ function NoteComposer({
   deckLabel?: string;
   onPosted: () => void;
   onDismiss?: () => void;
+  /** Show the mic — record → preview → save as a [voice](URL) note. */
+  enableVoice?: boolean;
 }) {
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
+  const recorder = useVoiceRecorder();
+  const hasVoice = enableVoice && recorder.state === "preview" && !!recorder.preview;
   // Typing "@m:ss " at the start of the body pins the note to that moment —
   // parsed out and stored in the native timestamp field, never sent twice.
   const typed = parseTimestampPrefix(body.trim());
   const effectiveTimestampMs = typed.ms ?? timestampMs;
   async function submit() {
     const trimmed = body.trim();
-    if (!trimmed) return;
-    const sendBody = typed.ms !== null && typed.rest.length > 0 ? typed.rest : trimmed;
+    if (!trimmed && !hasVoice) return;
+    let sendBody = typed.ms !== null && typed.rest.length > 0 ? typed.rest : trimmed;
     setPosting(true);
     try {
+      if (hasVoice && recorder.preview) {
+        sendBody = await uploadVoiceNoteBody(recorder.preview.blob, song.song_id, sendBody);
+      }
       await api.createNote({
         song_id: song.song_id,
         anchor_version_id: version.version_id,
@@ -3162,6 +3575,7 @@ function NoteComposer({
         visibility: "everyone",
       });
       setBody("");
+      recorder.discard();
       onPosted();
     } finally {
       setPosting(false);
@@ -3181,19 +3595,20 @@ function NoteComposer({
           aria-label={ariaLabel}
           value={body}
           onChange={(event) => setBody(event.target.value)}
-          onKeyDown={(event) => { if (event.key === "Enter" && body.trim()) submit(); }}
-          placeholder="Pull the snare 1dB at the bridge…"
+          onKeyDown={(event) => { if (event.key === "Enter" && (body.trim() || hasVoice)) submit(); }}
+          placeholder={hasVoice ? "Add text (optional)…" : "Pull the snare 1dB at the bridge…"}
           autoFocus
           disabled={posting}
         />
       </div>
       <div className="composer-actions">
+        {enableVoice && <VoiceControls recorder={recorder} />}
         {onDismiss && (
           <button className="icon-button" title="Dismiss" onClick={onDismiss}>
             <X size={16} />
           </button>
         )}
-        <button className="accent-button" onClick={submit} disabled={posting || !body.trim()}>
+        <button className="accent-button" onClick={submit} disabled={posting || (!body.trim() && !hasVoice)}>
           <Send size={15} />
           {posting ? "Sending…" : "Send"}
         </button>
@@ -4770,12 +5185,12 @@ function SongOverlay({
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // "N" / "+ Note at" / the transport note key in the player panel open the
-  // workspace composer pre-filled at that playhead position.
+  // The rail's ADD NOTE accelerator opens the player panel's LANE composer
+  // at the playhead (N and the transport note key are handled in the panel).
   const [noteCue, setNoteCue] = useState<{ ms: number; key: number } | null>(null);
   function requestNote(ms: number) {
     setNoteCue({ ms, key: Date.now() });
-    onTabChange("workspace"); // narrow screens: bring the composer into view
+    onTabChange("player"); // narrow screens: bring the lane into view
   }
 
   // ESC to close
@@ -4846,7 +5261,7 @@ function SongOverlay({
       {/* Player panel — left on wide, full on narrow when tab=player */}
       <div className={`overlay-panel overlay-player-panel${tab === "workspace" ? " narrow-hidden" : ""}`}>
         {payload
-          ? <NowPlayingView payload={payload} active={open} onClose={onClose} onRequestNote={requestNote} />
+          ? <NowPlayingView payload={payload} active={open} onClose={onClose} noteCue={noteCue} onRefresh={onRefresh} />
           : loadError
             ? <div className="overlay-loading overlay-loading--error" role="alert">{loadError}</div>
             : <div className="overlay-loading">Loading…</div>
@@ -4863,7 +5278,7 @@ function SongOverlay({
               onRefresh={onRefresh}
               onRefreshPlaylists={onRefreshPlaylists}
               onOpenSong={onOpenSong}
-              noteCue={noteCue}
+              onRequestNote={requestNote}
             />
           )
           : loadError

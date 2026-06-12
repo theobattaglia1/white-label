@@ -32,6 +32,14 @@ final class WorkspaceStore {
     var localPlaylists: [Playlist] = SampleData.playlists  // mutable; drafts and offline lists
     var customRooms: [Room] = []
     var customTracks: [StoredTrack] = []
+    /// Persistent FIFO upload queue — the only path into the library for
+    /// imported audio. Engine lives in UploadQueue.swift.
+    var uploadJobs: [UploadJob] = []
+    /// jobID → 0…1, runtime-only; fed by the upload task delegate.
+    var uploadProgressByJob: [String: Double] = [:]
+    @ObservationIgnored var uploadWorker: Task<Void, Never>?
+    @ObservationIgnored var isUploadTransferInFlight = false
+    @ObservationIgnored var networkObserver: NetworkRegainObserver?
     var serviceTracks: [Track] = []
     var serviceRooms: [Room] = []
     var servicePlaylists: [Playlist] = []
@@ -64,6 +72,7 @@ final class WorkspaceStore {
     private let playlistsKey = "wl.playlists.v1"
     private let customRoomsKey = "wl.customRooms.v1"
     private let customTracksKey = "wl.customTracks.v1"
+    let uploadJobsKey = "wl.uploadJobs.v1"
     private let inboxKey = "wl.inbox.v1"
     private let activityKey = "wl.activity.v1"
     private let deletedTracksKey = "wl.deletedTracks.v1"
@@ -73,7 +82,7 @@ final class WorkspaceStore {
     var isUsingServiceLibrary: Bool { !serviceTracks.isEmpty || syncState == .synced }
     var tracks: [Track] {
         let base = isUsingServiceLibrary ? customTracks.map(\.track) + serviceTracks : customTracks.map(\.track) + SampleData.tracks
-        return base.filter { !deletedTrackIDs.contains($0.id) }
+        return (pendingUploadTracks + base).filter { !deletedTrackIDs.contains($0.id) }
     }
     var playlists: [Playlist] {
         if isUsingServiceLibrary {
@@ -95,6 +104,7 @@ final class WorkspaceStore {
     func track(_ id: String) -> Track? {
         guard !deletedTrackIDs.contains(id) else { return nil }
         return customTracks.first { $0.id == id }?.track
+            ?? uploadJob(forTrack: id)?.track
             ?? serviceTracks.first { $0.id == id }
             ?? SampleData.track(id)
     }
@@ -237,6 +247,12 @@ final class WorkspaceStore {
         } catch {}
     }
 
+    /// Import = enqueue, never fork. The optimistic pending row is visible
+    /// instantly and the persistent queue owns the upload (backoff retries,
+    /// survival across kills — see UploadQueue.swift). The old failure
+    /// fallback that minted a normal-looking device-local track is gone: a
+    /// song that exists in the UI exists in the cloud, or is visibly
+    /// mid-upload.
     @MainActor
     func uploadImportedSong(
         title: String,
@@ -251,8 +267,10 @@ final class WorkspaceStore {
     ) async -> Track {
         guard Config.useRemoteAPI,
               let importedAudioPath,
-              let audioURL = importedFileURL(importedAudioPath)
+              importedFileURL(importedAudioPath) != nil
         else {
+            // Demo / sample-library mode only (no remote API): a plain local
+            // track IS the library here, not a fork of it.
             return createTrack(
                 title: title,
                 artist: artist,
@@ -266,39 +284,15 @@ final class WorkspaceStore {
             )
         }
 
-        syncState = .syncing
-        syncMessage = "Uploading song"
-        do {
-            let result = try await ServiceClient.shared.uploadNewSong(
-                audioURL: audioURL,
-                title: title,
-                artist: artist,
-                project: project,
-                versionLabel: versionLabel,
-                durationMs: durationMs,
-                artworkPath: importedArtworkPath
-            )
-            await refreshFromService()
-            if let synced = track(result.songExternalId) { return synced }
-            syncState = .synced
-            syncMessage = "Uploaded"
-        } catch {
-            // Honest state: the song exists only on this device now. Keep the
-            // notice sticky (executePersist won't clobber .offline) — the
-            // NOT SYNCED badge carries the ongoing state in lists/player.
-            syncState = .offline
-            syncMessage = "Upload failed — saved on this device only"
-        }
-
-        return createTrack(
+        return enqueueUpload(
             title: title,
             artist: artist,
             project: project,
             versionLabel: versionLabel,
             durationMs: durationMs,
-            importedAudioPath: importedAudioPath,
+            audioPath: importedAudioPath,
             sourceFileName: sourceFileName,
-            importedArtworkPath: importedArtworkPath,
+            artworkPath: importedArtworkPath,
             artworkPalette: artworkPalette
         )
     }
@@ -550,11 +544,11 @@ final class WorkspaceStore {
         customTracks.contains { $0.id == id }
     }
 
-    /// Honest sync state: a custom track lives only on this device — the
-    /// cloud has never seen its id, so share links can never resolve it.
-    /// (Upload failed at import, or it was created while offline.)
+    /// Honest sync state: this track's id has never been seen by the cloud,
+    /// so share links can never resolve it. True for pending uploads (the
+    /// queue is still working) and for legacy device-local tracks.
     func isLocalOnlyTrack(_ id: String) -> Bool {
-        Config.useRemoteAPI && isCustomTrack(id)
+        Config.useRemoteAPI && (isCustomTrack(id) || isPendingUpload(id))
     }
 
     /// The import keeps the source audio in Documents (`importedAudioPath`),
@@ -568,48 +562,42 @@ final class WorkspaceStore {
         return importedFileURL(path) != nil
     }
 
-    /// Re-runs the upload path used at import for a local-only track.
-    /// On success the track swaps to its cloud identity: the device-local
-    /// copy is dropped and every local reference is remapped to the new
-    /// song id (same reconciliation the import success path relies on).
+    /// Manual retry — queue-backed now. Pending rows kick the worker
+    /// immediately (skipping any backoff); a legacy local-only track with a
+    /// retained file self-heals by enqueueing under its existing id, so the
+    /// same adoption/remapping runs on success. Returns true when the
+    /// upload was handed to the queue.
     @MainActor
     @discardableResult
     func retryUpload(_ id: String) async -> Bool {
+        if isPendingUpload(id) {
+            retryUploadNow(id)
+            return true
+        }
         guard Config.useRemoteAPI,
               let stored = customTracks.first(where: { $0.id == id }),
               let path = stored.importedAudioPath,
-              let audioURL = importedFileURL(path)
+              importedFileURL(path) != nil
         else { return false }
-
-        syncState = .syncing
-        syncMessage = "Uploading song"
-        do {
-            let result = try await ServiceClient.shared.uploadNewSong(
-                audioURL: audioURL,
-                title: stored.title,
-                artist: stored.artist,
-                project: stored.label,
-                versionLabel: stored.versionLabel,
-                durationMs: stored.durationMs,
-                artworkPath: stored.importedArtworkPath
-            )
-            adoptUploadedTrack(localID: id, cloudID: result.songExternalId)
-            await refreshFromService()
-            syncState = .synced
-            syncMessage = "Uploaded"
-            lastSavedAt = Date()
-            return true
-        } catch {
-            syncState = .offline
-            syncMessage = "Upload failed — saved on this device only"
-            return false
-        }
+        _ = enqueueUpload(
+            title: stored.title,
+            artist: stored.artist,
+            project: stored.label,
+            versionLabel: stored.versionLabel,
+            durationMs: stored.durationMs,
+            audioPath: path,
+            sourceFileName: stored.sourceFileName,
+            artworkPath: stored.importedArtworkPath,
+            artworkPalette: stored.meshHexes,
+            localTrackID: stored.id
+        )
+        return true
     }
 
     /// Swap a local-only track for its cloud identity after a successful
     /// upload: remap playlist/room/pin/note references and drop the local
     /// copy so the service track is the single identity going forward.
-    private func adoptUploadedTrack(localID: String, cloudID: String) {
+    func adoptUploadedTrack(localID: String, cloudID: String) {
         customTracks.removeAll { $0.id == localID }
         for i in localPlaylists.indices {
             localPlaylists[i].trackIDs = localPlaylists[i].trackIDs.map { $0 == localID ? cloudID : $0 }
@@ -645,9 +633,13 @@ final class WorkspaceStore {
         let wasCustom = customTracks.firstIndex(where: { $0.id == id })
         let wasService = serviceTracks.contains { $0.id == id }
         let wasSample = SampleData.track(id) != nil
+        let wasPending = isPendingUpload(id)
         let wasVisible = tracks.contains { $0.id == id }
-        guard wasCustom != nil || wasService || wasSample || wasVisible else { return false }
+        guard wasCustom != nil || wasService || wasSample || wasPending || wasVisible else { return false }
 
+        // Deleting a pending row drops its upload job too; if a transfer is
+        // mid-flight the worker honors the delete on completion.
+        let removedJob = removeUploadJob(forTrack: id)
         let removed = wasCustom.map { customTracks.remove(at: $0) }
         deletedTrackIDs.insert(id)
         serviceTracks.removeAll { $0.id == id }
@@ -671,6 +663,9 @@ final class WorkspaceStore {
         if let removed {
             deleteImportedFile(at: removed.importedAudioPath)
             deleteImportedFile(at: removed.importedArtworkPath)
+        } else if let removedJob {
+            deleteImportedFile(at: removedJob.audioPath)
+            deleteImportedFile(at: removedJob.artworkPath)
         }
         persist()
         if wasService {
@@ -1363,6 +1358,7 @@ final class WorkspaceStore {
            let v = try? dec.decode(Set<String>.self, from: d) {
             deletedTrackIDs = v
         }
+        loadUploadJobs()
     }
 
     private func nextCatalog() -> String {
@@ -1389,7 +1385,7 @@ final class WorkspaceStore {
         customRooms.insert(room, at: 0)
     }
 
-    private func deleteImportedFile(at path: String?) {
+    func deleteImportedFile(at path: String?) {
         guard let path else { return }
         let url: URL
         if path.hasPrefix("/") {
@@ -1401,7 +1397,7 @@ final class WorkspaceStore {
         try? FileManager.default.removeItem(at: url)
     }
 
-    private func importedFileURL(_ path: String) -> URL? {
+    func importedFileURL(_ path: String) -> URL? {
         let url: URL
         if path.hasPrefix("/") {
             url = URL(fileURLWithPath: path)
@@ -1433,7 +1429,7 @@ final class WorkspaceStore {
         return palettes[index % palettes.count]
     }
 
-    private static func normalizedPalette(_ palette: [UInt]?) -> [UInt]? {
+    static func normalizedPalette(_ palette: [UInt]?) -> [UInt]? {
         guard let palette, !palette.isEmpty else { return nil }
         if palette.count == 9 { return palette }
         if palette.count > 9 { return Array(palette.prefix(9)) }

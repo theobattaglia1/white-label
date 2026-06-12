@@ -544,9 +544,16 @@ struct SongRow: View {
                 MonoLabel("\(track.artist) · \(track.versionLabel)", color: PB.pencil, size: 9, tracking: 1.2)
             }
             Spacer()
-            // Honest state: this song lives only on this device — quiet dim
-            // cream, not redline; it's a fact, not an alert.
-            if store.isLocalOnlyTrack(track.id) {
+            // Server-authoritative register: a pending row carries its queue
+            // state (uploading · % / queued / failed-retrying). The quiet
+            // NOT SYNCED fact is reserved for legacy device-local tracks.
+            if let job = store.uploadJob(forTrack: track.id) {
+                UploadStateBadge(
+                    job: job,
+                    progress: store.uploadProgressByJob[job.id] ?? 0,
+                    onRetry: { store.retryUploadNow(track.id) }
+                )
+            } else if store.isLocalOnlyTrack(track.id) {
                 MonoLabel("Not synced", color: PB.cream.opacity(0.45), size: 8, tracking: 1.4)
             }
             if let trailing { MonoLabel(trailing, color: trailingColor, size: 9, tracking: 1) }

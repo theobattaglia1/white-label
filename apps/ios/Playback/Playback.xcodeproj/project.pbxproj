@@ -13,6 +13,7 @@
 		0D066AC78923AA6DB5E94414 /* duel-v5.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 271B2FA5D17D20FFE5C6F58D /* duel-v5.m4a */; };
 		121938F56C5BE8F209B56CE0 /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6944F8FE30EB6C0B9DBF2CC5 /* AuthSession.swift */; };
 		123ED5BA700F24F96DFBCEBA /* PlaybackShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D8315AFC8D38644A51CA8016 /* PlaybackShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		16CFD4F2F8F38517EB22EAF4 /* UploadQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6AB088481EF60E525A573B /* UploadQueue.swift */; };
 		22D07EDF6884AEADB1261A0A /* BrowseViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0100A3287D02257D048B9B27 /* BrowseViews.swift */; };
 		237FF25563D73AA06A989C32 /* TeamScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF8A9DF68C817192487CCCE5 /* TeamScreen.swift */; };
 		267CFE5B94895043C3A430F4 /* JogWheel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E579C6BE3B770D72C28C7712 /* JogWheel.swift */; };
@@ -117,6 +118,7 @@
 		95C3D524B0E01D5DED4C9308 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		97E95328550DF81F350E4A9B /* ServiceClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceClient.swift; sourceTree = "<group>"; };
 		A7DC99BB341F26094D63120D /* the-first-night-v1-pitch.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "the-first-night-v1-pitch.mp3"; sourceTree = "<group>"; };
+		BC6AB088481EF60E525A573B /* UploadQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueue.swift; sourceTree = "<group>"; };
 		BF75674146E57BA3C0364479 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		C78EB7971777995A030426F5 /* UniversTE20-Thin.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "UniversTE20-Thin.ttf"; sourceTree = "<group>"; };
 		CB28B34FC14448DF10D2B144 /* ShelfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfView.swift; sourceTree = "<group>"; };
@@ -165,6 +167,7 @@
 				EF8A9DF68C817192487CCCE5 /* TeamScreen.swift */,
 				DEEC248012156299E15BC1A3 /* Theme.swift */,
 				500D8D49CD7BAF508CA1AA8D /* Transport.swift */,
+				BC6AB088481EF60E525A573B /* UploadQueue.swift */,
 				314121DFCCA684CC9AEB0AF1 /* Waveform.swift */,
 				0E77B0286638E838E565A618 /* WorkspaceSheet.swift */,
 				0E9CF177F7CCAC7DE77D0A00 /* WorkspaceStore.swift */,
@@ -408,6 +411,7 @@
 				237FF25563D73AA06A989C32 /* TeamScreen.swift in Sources */,
 				5ED941980DD0F0ACDB99DB27 /* Theme.swift in Sources */,
 				A93BE4281F54C409D0B7D050 /* Transport.swift in Sources */,
+				16CFD4F2F8F38517EB22EAF4 /* UploadQueue.swift in Sources */,
 				88F103B25F67CDF0F6BE8571 /* Waveform.swift in Sources */,
 				0049FCB7B7A0B13A21BCD322 /* WorkspaceSheet.swift in Sources */,
 				D733264BE3C829F8E142BC9A /* WorkspaceStore.swift in Sources */,

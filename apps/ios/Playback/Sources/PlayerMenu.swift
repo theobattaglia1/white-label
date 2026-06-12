@@ -47,9 +47,6 @@ struct MenuSheet: View {
     @State private var shareError: String?
     @State private var exportItems: [Any] = []
     @State private var showExportSheet = false
-    @State private var isUploading = false
-    @State private var uploadFailed = false
-    @State private var uploaded = false
 
     private var track: Track { player.track }
 
@@ -87,22 +84,29 @@ struct MenuSheet: View {
                                     tint: linkIssue?.tint ?? (copied ? PB.green : PB.cream),
                                     monoTitle: linkIssue != nil)
                         }
-                        if uploaded {
-                            MenuRow(icon: "checkmark.icloud",
-                                    title: "Uploaded — synced",
-                                    detail: nil,
-                                    tint: PB.green,
-                                    monoTitle: true)
+                        if let job = store.uploadJob(forTrack: track.id) {
+                            // The persistent queue owns this upload — the row
+                            // mirrors its state; tapping a failed row skips
+                            // the backoff and retries now.
+                            Button { store.retryUploadNow(track.id) } label: {
+                                MenuRow(icon: "icloud.and.arrow.up",
+                                        title: queueRowTitle(job),
+                                        detail: nil,
+                                        tint: job.state == .failed ? PB.redline : PB.cream.opacity(0.7),
+                                        monoTitle: true)
+                            }
+                            .disabled(job.state != .failed)
                         } else if store.isLocalOnlyTrack(track.id) {
                             if store.canRetryUpload(track.id) {
+                                // Legacy local-only track with a retained
+                                // file — hands the upload to the queue.
                                 Button { retryUpload() } label: {
                                     MenuRow(icon: "icloud.and.arrow.up",
-                                            title: uploadRowTitle,
+                                            title: "Retry upload",
                                             detail: nil,
-                                            tint: uploadRowTint,
+                                            tint: PB.cream,
                                             monoTitle: true)
                                 }
-                                .disabled(isUploading)
                             } else {
                                 // The source file is gone — re-upload is
                                 // impossible; be honest about what's possible.
@@ -168,33 +172,22 @@ struct MenuSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PB.cream.opacity(0.07), lineWidth: 1))
     }
 
-    private var uploadRowTitle: String {
-        if isUploading { return "Uploading" }
-        if uploadFailed { return "Upload failed — tap to retry" }
-        return "Retry upload"
-    }
-
-    private var uploadRowTint: Color {
-        if isUploading { return PB.cream.opacity(0.55) }
-        if uploadFailed { return PB.redline }
-        return PB.cream
+    /// Queue-state row title; the percent comes from the upload task
+    /// delegate (no timers in the body).
+    private func queueRowTitle(_ job: UploadJob) -> String {
+        switch job.state {
+        case .uploading:
+            let pct = Int(((store.uploadProgressByJob[job.id] ?? 0) * 100).rounded())
+            return "Uploading · \(pct)%"
+        case .failed:
+            return "Upload failed — tap to retry now"
+        default:
+            return job.stateLabel
+        }
     }
 
     private func retryUpload() {
-        guard !isUploading else { return }
-        isUploading = true
-        withAnimation { uploadFailed = false }
-        Task {
-            let ok = await store.retryUpload(track.id)
-            await MainActor.run {
-                isUploading = false
-                withAnimation {
-                    uploaded = ok
-                    uploadFailed = !ok
-                    if ok { linkIssue = nil }
-                }
-            }
-        }
+        Task { _ = await store.retryUpload(track.id) }
     }
 
     private func copyLink() {

@@ -185,6 +185,8 @@ struct AppShell: View {
                 lastBackgroundedAt = Date().timeIntervalSince1970
             case .active:
                 checkSharedImportInbox()
+                // Foreground is one of the upload queue's retry triggers.
+                workspace.kickUploadQueue()
                 let hoursAway = Date().timeIntervalSince1970 - lastBackgroundedAt
                 if hasLaunched && hoursAway > 8 * 3600 {
                     showLaunch = true
@@ -207,6 +209,9 @@ struct AppShell: View {
                 await auth.bootstrap()
                 guard auth.isSignedIn else { return }
             }
+            // Launch: migrate legacy local-only tracks into the queue and
+            // resume any uploads that survived the last app kill.
+            workspace.startUploadQueue()
             async let refresh: () = workspace.refreshFromService()
             async let profile: () = auth.refreshProfile()
             await refresh
@@ -216,6 +221,7 @@ struct AppShell: View {
         .onChange(of: auth.isSignedIn) { _, signedIn in
             guard Config.useRealAuth, signedIn else { return }
             Task {
+                workspace.startUploadQueue()
                 await auth.refreshProfile()
                 await workspace.refreshFromService()
                 player.replaceQueue(workspace.tracks)

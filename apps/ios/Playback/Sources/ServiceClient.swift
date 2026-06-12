@@ -800,7 +800,8 @@ struct ServiceClient {
         project: String,
         versionLabel: String,
         durationMs: Int,
-        artworkPath: String?
+        artworkPath: String?,
+        progress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> APIFinalizeNewSong {
         let workspaceID = await resolvedWorkspaceID(nil)
         let filename = audioURL.lastPathComponent
@@ -811,7 +812,7 @@ struct ServiceClient {
             as: APISignUpload.self
         )
 
-        try await uploadFile(audioURL, to: signed.uploadUrl, contentType: audioContentType)
+        try await uploadFile(audioURL, to: signed.uploadUrl, contentType: audioContentType, progress: progress)
 
         var artworkStoragePath: String?
         var artworkPublicUrl: String?
@@ -917,7 +918,17 @@ struct ServiceClient {
         return value
     }
 
-    private func uploadFile(_ url: URL, to signedURL: String, contentType: String) async throws {
+    /// Foreground URLSession PUT. Progress (for the upload queue's pending
+    /// rows) arrives via a per-task delegate — no timers. A background
+    /// URLSessionConfiguration (uploads surviving app suspension) needs a
+    /// delegate-based rewrite of this async path; the queue compensates
+    /// with persistence + aggressive auto-resume. Follow-up.
+    private func uploadFile(
+        _ url: URL,
+        to signedURL: String,
+        contentType: String,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws {
         guard let destination = URL(string: signedURL) else {
             throw ServiceError.requestFailed("Upload URL was invalid.")
         }
@@ -925,7 +936,8 @@ struct ServiceClient {
         request.httpMethod = "PUT"
         request.setValue(contentType, forHTTPHeaderField: "content-type")
         request.setValue("true", forHTTPHeaderField: "x-upsert")
-        let (_, response) = try await session.upload(for: request, fromFile: url)
+        let delegate = progress.map { UploadProgressObserver(onProgress: $0) }
+        let (_, response) = try await session.upload(for: request, fromFile: url, delegate: delegate)
         guard let http = response as? HTTPURLResponse else { return }
         guard (200...299).contains(http.statusCode) else {
             throw ServiceError.uploadFailed(http.statusCode, HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
@@ -958,5 +970,25 @@ struct ServiceClient {
 
     private func endpoint(_ path: String) -> URL {
         Config.apiBaseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+    }
+}
+
+/// Per-task delegate that surfaces upload progress for pending rows.
+private final class UploadProgressObserver: NSObject, URLSessionTaskDelegate {
+    private let onProgress: @Sendable (Double) -> Void
+
+    init(onProgress: @escaping @Sendable (Double) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        onProgress(Double(totalBytesSent) / Double(totalBytesExpectedToSend))
     }
 }

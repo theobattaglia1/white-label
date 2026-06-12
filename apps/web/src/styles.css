@@ -5805,7 +5805,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .np-artist { font-family: var(--font-mono); font-size: 13px; font-weight: 500; letter-spacing: .24em; text-transform: uppercase; color: var(--pencil-warm); margin-top: 28px; }
 .np-flag { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-top: 20px; }
 .np-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 8px; box-shadow: 0 0 10px rgba(255,74,34,.7); }
-.np-foot { border-top: 1px solid var(--ed-line); padding-top: 20px; }
+/* padding-bottom keeps the lane + hint rows off the viewport's bottom edge
+   even when np-left's content overflows into its own bottom padding. */
+.np-foot { border-top: 1px solid var(--ed-line); padding-top: 20px; padding-bottom: 18px; }
 .np-credits { display: flex; flex-wrap: wrap; gap: 22px 40px; margin-bottom: 22px; }
 .np-c { display: flex; flex-direction: column; gap: 5px; }
 .np-c .k { font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--pencil-faint, rgba(243,236,222,.3)); }
@@ -5817,7 +5819,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .np-keys button:disabled { opacity: .3; cursor: default; }
 .np-keys .play { background: var(--tape-oxide); color: var(--studio-black); width: 44px; height: 44px; border-radius: 50%; opacity: 1; }
 .np-keys .play:disabled { opacity: .4; }
-.np-scrub { display: flex; align-items: center; gap: 14px; }
+/* Grid (not flex) so the note lane can sit in row 2 of the bar's column,
+   sharing the np-bar's exact left/right edges. */
+.np-scrub { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 14px; }
 .np-time { font-family: var(--font-mono); font-size: 11px; color: var(--pencil-warm); font-variant-numeric: tabular-nums; }
 .np-bar { flex: 1; height: 3px; border-radius: 2px; background: rgba(243,236,222,.16); position: relative; border: none; padding: 0; cursor: pointer; }
 .np-bar:disabled { cursor: default; }
@@ -6766,11 +6770,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 
 .np-scrub-foot {
+  /* Own full-width row BELOW the scrubber + lane (np-transport is a
+     two-column grid — without this it lands beside the lane). */
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
-  margin-top: 10px;
+  margin-top: 0;
 }
 .np-noteat {
   font-family: var(--font-mono);
@@ -6791,13 +6798,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 /* Keyboard hints: invisible until the first hover of the left panel */
 .np-hints {
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 18px;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 500;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--pencil-faint, rgba(243, 236, 222, .3));
+  color: var(--pencil-faint, rgba(243, 236, 222, .26));
   opacity: 0;
   transition: opacity .8s ease;
 }
@@ -6955,7 +6964,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
    ===================================================================== */
 
 /* ── The note lane: a thin strip beneath the scrubber ── */
-.note-lane-wrap { position: relative; margin-top: 12px; }
+.note-lane-wrap {
+  position: relative;
+  /* Row 2 of the .np-scrub grid, under the bar's minmax(0,1fr) column —
+     the strip's edges are the bar's edges, so tick x ↔ song time. */
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  margin-top: 10px;
+}
 .note-lane {
   position: relative;
   height: 28px;
@@ -6973,14 +6990,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
     transparent 26px
   );
 }
+/* Label sits ABOVE the strip (not overlaid on it) so the full strip width
+   stays clean for ticks and click-to-drop. */
 .lane-label {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
   gap: 7px;
+  margin-bottom: 5px;
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
@@ -6988,7 +7004,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   text-transform: uppercase;
   color: rgba(243, 236, 222, .45);
   pointer-events: none;
-  z-index: 1;
 }
 .lane-count {
   color: var(--redline);
@@ -7044,7 +7059,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
   position: absolute;
   bottom: calc(100% + 12px);
   transform: translateX(-50%);
-  width: 300px;
+  width: min(300px, calc(100vw - 48px));
   display: flex;
   align-items: center;
   gap: 8px;

@@ -2386,61 +2386,64 @@ function NowPlayingView({
                 <i style={{ width: `${progress * 100}%` }} />
               </div>
               <span className="np-time">{formatTimestamp(durationMs)}</span>
-            </div>
-            <div className="note-lane-wrap">
-              {laneComposer && version && (
-                <LaneComposer
-                  song={song}
-                  version={version}
-                  ms={laneComposer.ms}
-                  leftPct={laneComposer.pct}
-                  onPosted={() => {
-                    setLaneComposer(null);
-                    onRefresh?.();
-                  }}
-                  onDismiss={() => setLaneComposer(null)}
-                />
-              )}
-              <div
-                ref={laneRef}
-                className={`note-lane${durationMs <= 0 ? " disabled" : ""}${noteTicks.length === 0 ? " empty" : ""}`}
-                role="button"
-                aria-label="Note lane — click to drop a note at that moment"
-                onMouseMove={onLaneMove}
-                onMouseLeave={() => setLaneHover(null)}
-                onClick={(e) => {
-                  if (durationMs <= 0) return;
-                  const r = e.currentTarget.getBoundingClientRect();
-                  openLaneComposerAt(laneMsAtX(e.clientX - r.left, r.width, durationMs));
-                }}
-              >
+              {/* The lane lives in the scrubber's middle grid column (row 2),
+                  so its left/right edges match the np-bar above and tick
+                  x-positions map 1:1 onto song time. */}
+              <div className="note-lane-wrap">
+                {laneComposer && version && (
+                  <LaneComposer
+                    song={song}
+                    version={version}
+                    ms={laneComposer.ms}
+                    leftPct={laneComposer.pct}
+                    onPosted={() => {
+                      setLaneComposer(null);
+                      onRefresh?.();
+                    }}
+                    onDismiss={() => setLaneComposer(null)}
+                  />
+                )}
                 <span className="lane-label" aria-hidden="true">
                   Notes
                   {openNoteCount > 0 && <b className="lane-count">{openNoteCount}</b>}
                 </span>
-                {noteTicks.map((tick) => (
-                  <button
-                    key={tick.id}
-                    className="np-tick lane-tick"
-                    style={{ left: `${laneTickPct(tick.ms, durationMs)}%` }}
-                    onClick={(e) => { e.stopPropagation(); seekToMs(tick.ms); }}
-                    aria-label={`Note at ${formatTimestamp(tick.ms)}: ${tick.body}`}
-                  >
-                    <span className="np-tick-tip" role="tooltip">
-                      <span className="tip-head">{tick.author} · {formatTimestamp(tick.ms)}</span>
-                      <span className="tip-body">{tick.body}</span>
+                <div
+                  ref={laneRef}
+                  className={`note-lane${durationMs <= 0 ? " disabled" : ""}${noteTicks.length === 0 ? " empty" : ""}`}
+                  role="button"
+                  aria-label="Note lane — click to drop a note at that moment"
+                  onMouseMove={onLaneMove}
+                  onMouseLeave={() => setLaneHover(null)}
+                  onClick={(e) => {
+                    if (durationMs <= 0) return;
+                    const r = e.currentTarget.getBoundingClientRect();
+                    openLaneComposerAt(laneMsAtX(e.clientX - r.left, r.width, durationMs));
+                  }}
+                >
+                  {noteTicks.map((tick) => (
+                    <button
+                      key={tick.id}
+                      className="np-tick lane-tick"
+                      style={{ left: `${laneTickPct(tick.ms, durationMs)}%` }}
+                      onClick={(e) => { e.stopPropagation(); seekToMs(tick.ms); }}
+                      aria-label={`Note at ${formatTimestamp(tick.ms)}: ${tick.body}`}
+                    >
+                      <span className="np-tick-tip" role="tooltip">
+                        <span className="tip-head">{tick.author} · {formatTimestamp(tick.ms)}</span>
+                        <span className="tip-body">{tick.body}</span>
+                      </span>
+                    </button>
+                  ))}
+                  {laneHover && !laneComposer && durationMs > 0 && (
+                    <span className="lane-ghost" style={{ left: `${laneHover.pct}%` }} aria-hidden="true">
+                      <i />
+                      <b>+ {formatTimestamp(laneHover.ms)}</b>
                     </span>
-                  </button>
-                ))}
-                {laneHover && !laneComposer && durationMs > 0 && (
-                  <span className="lane-ghost" style={{ left: `${laneHover.pct}%` }} aria-hidden="true">
-                    <i />
-                    <b>+ {formatTimestamp(laneHover.ms)}</b>
-                  </span>
-                )}
-                {noteTicks.length === 0 && laneHover && !laneComposer && (
-                  <span className="lane-whisper" aria-hidden="true">Click to drop a note</span>
-                )}
+                  )}
+                  {noteTicks.length === 0 && laneHover && !laneComposer && (
+                    <span className="lane-whisper" aria-hidden="true">Click to drop a note</span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="np-scrub-foot">

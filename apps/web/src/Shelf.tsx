@@ -46,29 +46,32 @@ type Pose = { x: number; z: number; ry: number; fade: number; tuck: number };
 type CrateGeometry = { spacing: number; focusGap: number; backSpacing: number; backGap: number };
 
 /** Crate pose for a card `d` slots from focus — ONE continuous lean.
- *  Focused: a gentle −18°. Ahead (d > 0): falls back toward −58° as it
+ *  Focused: a gentle −18°. Ahead (d > 0): falls back toward a −66° cap as it
  *  recedes. Behind (d < 0): the SAME lean direction, but these are the
- *  already-flipped records — pushed deeper (z −60…−126 vs −26…−104), packed
- *  tighter, and faded, so the left side reads as the back of the same run,
- *  never a mirrored book-end. `fade` is the at-rest card opacity; `tuck`
- *  (0…1) quiets sleeve initials/type on strongly receded cards. */
+ *  already-flipped records — pushed deeper (z −60… vs −26…), packed tighter,
+ *  and faded, so the left side reads as the back of the same run, never a
+ *  mirrored book-end. Both sides extrapolate past slot 4 (the adaptive window
+ *  can extend either run when the other side has no items): z keeps sinking,
+ *  the lean eases toward −66°, opacity keeps falling to a 0.3 floor — never
+ *  a flat run of identical slivers. `fade` is the at-rest card opacity;
+ *  `tuck` (0…1) quiets sleeve initials/type on strongly receded cards. */
 function cardPose(d: number, g: CrateGeometry): Pose {
   if (d === 0) return { x: 0, z: 90, ry: -18, fade: 1, tuck: 0 };
   const abs = Math.abs(d);
   if (d > 0) {
     return {
       x: g.focusGap + (abs - 1) * g.spacing,
-      z: -26 * Math.min(abs, 4),
-      ry: -18 - Math.min(8 + abs * 11, 40), // −37, −48, −58, −58 …
-      fade: 1 - Math.min(abs - 1, 4) * 0.08, // 1, 0.92 … 0.68
+      z: -26 * Math.min(abs, 4) - Math.max(0, abs - 4) * 9, // keeps sinking past slot 4
+      ry: -18 - Math.min(8 + abs * 11, 40) - Math.min(Math.max(0, abs - 3) * 2, 8), // −37, −48, −58 … −66 cap
+      fade: Math.max(0.3, 1 - (abs - 1) * 0.08), // 1, 0.92 … falls to a 0.3 floor
       tuck: Math.min(1, (abs - 1) * 0.3),
     };
   }
   return {
     x: -(g.backGap + (abs - 1) * g.backSpacing),
-    z: -60 - (Math.min(abs, 4) - 1) * 22, // −60, −82, −104, −126
-    ry: -50 - Math.min((abs - 1) * 6, 14), // −50, −56, −62, −64
-    fade: Math.max(0.35, 0.8 - (abs - 1) * 0.15), // 0.8, 0.65 … 0.35
+    z: -60 - (Math.min(abs, 4) - 1) * 22 - Math.max(0, abs - 4) * 9, // −60, −82, −104, −126, then −9/slot
+    ry: -50 - Math.min((abs - 1) * 6, 14) - Math.min(Math.max(0, abs - 4), 2), // −50, −56, −62, −64 … −66 cap
+    fade: Math.max(0.3, 0.8 - (abs - 1) * 0.15), // 0.8, 0.65 … falls to a 0.3 floor
     tuck: Math.min(1, 0.45 + (abs - 1) * 0.3),
   };
 }
@@ -208,13 +211,21 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
   const geom: CrateGeometry = { spacing, focusGap, backSpacing, backGap };
 
   // Visible window per side. Behind shows fewer — it's the quiet end of the
-  // stack — and both sides shrink further if the measured band can't hold
+  // stack — but the TOTAL stays ~constant at every focus index: when one
+  // side runs out of items (focus at/near an end), the other side inherits
+  // its unused budget, so the band never collapses to a sliver at the ends
+  // (at the last slot the behind-run extends to 10; at slot 0 the ahead-run
+  // does). Both sides then shrink further if the measured band can't hold
   // the composed span, so the outermost sleeve is always fully inside the
   // band instead of a clipped sliver at its edge.
   const aheadExtent = (n: number) => (n === 0 ? cardHalf : focusGap + (n - 1) * spacing + cardHalf);
   const behindExtent = (n: number) => (n === 0 ? cardHalf : backGap + (n - 1) * backSpacing + cardHalf);
-  let visAhead = Math.min(slots.length - 1 - focus, narrow ? 2 : 6);
-  let visBehind = Math.min(focus, narrow ? 2 : 4);
+  const aheadBudget = narrow ? 2 : 6;
+  const behindBudget = narrow ? 2 : 4;
+  const availAhead = slots.length - 1 - focus;
+  const availBehind = focus;
+  let visAhead = Math.min(availAhead, aheadBudget + Math.max(0, behindBudget - availBehind));
+  let visBehind = Math.min(availBehind, behindBudget + Math.max(0, aheadBudget - availAhead));
   while (
     bandW > 0 &&
     visAhead + visBehind > 2 &&

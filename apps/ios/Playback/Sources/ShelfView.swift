@@ -46,8 +46,24 @@ struct ShelfView: View {
     private let focusGap: CGFloat = 104     // focused card → first card ahead
     private let backSpacing: CGFloat = 26   // tighter pitch behind focus
     private let backGap: CGFloat = 84       // focused card → first card behind
-    private let maxVisibleAhead = 3         // cards drawn ahead of focus
+    private let maxVisibleAhead = 3         // base budget ahead of focus
     private let maxVisibleBehind = 2        // fewer behind — the quiet end of the stack
+
+    /// Adaptive visible window — the TOTAL visible card count stays ~constant
+    /// at every focus index. When one side runs out of items (focus at/near
+    /// an end), the other side inherits its unused budget, so the band never
+    /// collapses to a sliver: at the last slot the behind-run extends to 5,
+    /// at slot 0 the ahead-run does, mid-list it's the usual 2/3 split.
+    private var visAhead: Int {
+        let availAhead = max(items.count - 1 - focus, 0)
+        let availBehind = focus
+        return min(availAhead, maxVisibleAhead + max(0, maxVisibleBehind - availBehind))
+    }
+
+    private var visBehind: Int {
+        let availAhead = max(items.count - 1 - focus, 0)
+        return min(focus, maxVisibleBehind + max(0, maxVisibleAhead - availAhead))
+    }
     private let depth: CGFloat = 1100       // perspective distance for z → scale
     private let labelBandH: CGFloat = 56
     private let stageH: CGFloat = 282
@@ -67,29 +83,33 @@ struct ShelfView: View {
 
     /// Crate pose for a card `d` slots away from focus — ONE continuous lean
     /// direction across the whole bin. Focused: a gentle −18°. Ahead (d > 0):
-    /// falls back toward −55° as it recedes. Behind (d < 0): the SAME lean,
-    /// but these are the already-flipped records — pushed deeper (z −60…−126
-    /// vs −26…−104), packed tighter, and faded, so the left side reads as the
-    /// back of the same run, never a mirrored book-end.
+    /// falls back toward a −65° cap as it recedes. Behind (d < 0): the SAME
+    /// lean, but these are the already-flipped records — pushed deeper
+    /// (z −60… vs −26…), packed tighter, and faded, so the left side reads as
+    /// the back of the same run, never a mirrored book-end. Both sides
+    /// extrapolate past their base budgets (the adaptive window extends
+    /// either run when the other side has no items): z keeps sinking, the
+    /// lean eases toward −65°, opacity keeps falling to a 0.3 floor — never
+    /// a flat run of identical slivers.
     private func pose(_ d: Int) -> Pose {
         if d == 0 { return Pose(x: 0, z: 90, ry: -18, hidden: false, fade: 1, tuck: 0) }
         let a = abs(d)
         if d > 0 {
             return Pose(
                 x: focusGap + CGFloat(a - 1) * spacing,
-                z: CGFloat(-26 * min(a, 4)),
-                ry: -18 - Double(min(8 + a * 11, 37)),          // −37°, −48°, −55° …
-                hidden: a > maxVisibleAhead,
-                fade: 1 - Double(min(a - 1, 4)) * 0.08,         // 1, 0.92 …
+                z: CGFloat(-26 * min(a, 4) - max(0, a - 4) * 9),
+                ry: -18 - Double(min(8 + a * 11, 37)) - Double(min(max(0, a - 3) * 5, 10)), // −37°, −48°, −55° … −65° cap
+                hidden: a > visAhead,
+                fade: max(0.3, 1 - Double(a - 1) * 0.08),       // 1, 0.92 … falls to a 0.3 floor
                 tuck: min(1, Double(a - 1) * 0.3)
             )
         }
         return Pose(
             x: -(backGap + CGFloat(a - 1) * backSpacing),
-            z: CGFloat(-60 - (min(a, 4) - 1) * 22),             // −60, −82, −104 …
-            ry: -50 - Double(min((a - 1) * 6, 14)),             // −50°, −56°, −62° …
-            hidden: a > maxVisibleBehind,
-            fade: max(0.35, 0.8 - Double(a - 1) * 0.15),        // 0.8, 0.65 …
+            z: CGFloat(-60 - (min(a, 4) - 1) * 22 - max(0, a - 4) * 9), // −60, −82, −104, −126, then −9/slot
+            ry: -50 - Double(min((a - 1) * 6, 14)) - Double(min(max(0, a - 4), 2)), // −50°, −56°, −62° … −66° cap
+            hidden: a > visBehind,
+            fade: max(0.3, 0.8 - Double(a - 1) * 0.15),         // 0.8, 0.65 … falls to a 0.3 floor
             tuck: min(1, 0.45 + Double(a - 1) * 0.3)
         )
     }
@@ -107,8 +127,8 @@ struct ShelfView: View {
     }
 
     private var crateShift: CGFloat {
-        let behind = behindExtent(min(focus, maxVisibleBehind))
-        let ahead = aheadExtent(min(max(items.count - 1 - focus, 0), maxVisibleAhead))
+        let behind = behindExtent(visBehind)
+        let ahead = aheadExtent(visAhead)
         return ((behind - ahead) / 2).rounded()
     }
 

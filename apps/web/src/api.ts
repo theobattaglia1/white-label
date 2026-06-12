@@ -24,6 +24,7 @@ import type {
   VisibleNote,
 } from "@pmw/shared";
 import { supabase } from "./auth";
+import type { StemJob } from "./stems";
 
 // =====================================================================
 // Pin / Recent types  (Pieces 4 & 5 — defined here for the client layer)
@@ -409,6 +410,20 @@ export const api = {
       `/room/${token}/notes`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+
+  // === Stem splitting (Demucs worker) ===================================
+
+  /** Kick a stem-split job. 503 → "stems worker unavailable…" (prod). */
+  splitStems: (versionID: string, force = false) =>
+    request<StemJob>(`/versions/${versionID}/split-stems`, {
+      method: "POST",
+      body: JSON.stringify(force ? { force: true } : {}),
+    }),
+  stemJob: (jobID: string) => request<StemJob>(`/stem-jobs/${jobID}`),
+  /** Latest job for a version — lets the panel resume polling after reload. */
+  versionStemJob: (versionID: string) => request<StemJob | null>(`/versions/${versionID}/stem-job`),
+  /** Short-lived signed download URL for the stems zip. */
+  stemsUrl: (versionID: string) => request<{ url: string; key: string }>(`/versions/${versionID}/stems-url`),
 
   // === Real audio uploads (Supabase Storage) ============================
 

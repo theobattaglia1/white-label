@@ -36,6 +36,7 @@ import { usePlayer } from "./player";
 import { AmbientField } from "./ambientField";
 import { clampComposerPct, laneMsAtX, laneTickPct, noteDisplayParts, parseTimestampPrefix } from "./noteTime";
 import { buildVoiceBody, extForMime, parseVoiceMarker, pickRecordingMime } from "./voiceNote";
+import { isLiveStemJob, isStemsWorkerOfflineError, stemControlView, type StemJob } from "./stems";
 import { LivingCover, hueAt, seedLabel, hexToHue, MOTION_MODES, TONE_MODES } from "./LivingCover";
 import { onAuthChange, signOut, getSession } from "./auth";
 import { SignIn } from "./SignIn";
@@ -2727,6 +2728,7 @@ function SongWorkspace({
           flashVersionID={resolvedFlashID ?? undefined}
           auditionVersionID={audition?.versionID}
           playingVersionID={player.song?.song_id === payload.song.song_id ? player.version?.version_id : undefined}
+          onStemsChanged={onRefresh}
           onFlip={flipTo}
           onSelect={(version) => {
             const asset = assetForVersion(payload.assets, version);
@@ -3132,6 +3134,7 @@ function VersionStack({
   onFlip,
   onSelect,
   onSetCurrent,
+  onStemsChanged,
 }: {
   payload: SongPayload;
   activeVersionID?: string;
@@ -3143,6 +3146,8 @@ function VersionStack({
   onFlip?: (version: Version) => void;
   onSelect: (version: Version) => void;
   onSetCurrent: (versionID: string) => void;
+  /** A stem job finished — refresh the payload so key_stems_zip arrives. */
+  onStemsChanged?: () => void;
 }) {
   // PF1: sort once and build the asset Map once — not per row.
   const sortedVersions = useMemo(
@@ -3216,6 +3221,7 @@ function VersionStack({
               {version.version_id === payload.song.approved_version_id && (
                 <Stamp kind="approved" tight straight />
               )}
+              <StemsControl version={version} asset={asset} onChanged={onStemsChanged} />
               {canFlip && (
                 <button
                   className={`flip-btn${isAuditioning ? " on" : ""}`}
@@ -3243,6 +3249,149 @@ function VersionStack({
         );
       })}
     </section>
+  );
+}
+
+/**
+ * Per-version stem-split control (design language: hairline mono-caps; red
+ * only for the failed state).
+ *
+ *   idle    → SPLIT STEMS            (quiet hairline action)
+ *   live    → SPLITTING · 43%        (thin progress hairline, 2s poll)
+ *   ready   → STEMS ✓                (click downloads the zip via signed URL)
+ *   failed  → SPLIT FAILED — RETRY   (redline; retry forces a new job)
+ *   offline → STEMS WORKER OFFLINE   (prod 503 — disabled, title explains)
+ */
+function StemsControl({
+  version,
+  asset,
+  onChanged,
+}: {
+  version: Version;
+  asset?: FileAsset;
+  onChanged?: () => void;
+}) {
+  const hasStems = Boolean(asset?.key_stems_zip);
+  const [job, setJob] = useState<StemJob | null>(null);
+  const [workerOffline, setWorkerOffline] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Resume a live job after a reload (cheap one-shot; skipped once stems exist).
+  useEffect(() => {
+    if (hasStems) return;
+    let cancelled = false;
+    api
+      .versionStemJob(version.version_id)
+      .then((latest) => {
+        if (!cancelled && latest && isLiveStemJob(latest.state)) setJob(latest);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [version.version_id, hasStems]);
+
+  // Poll the live job every 2s; stop on done/failed.
+  const liveJobID = job && isLiveStemJob(job.state) ? job.id : null;
+  useEffect(() => {
+    if (!liveJobID) return;
+    const timer = setInterval(() => {
+      api
+        .stemJob(liveJobID)
+        .then((next) => {
+          setJob(next);
+          if (next.state === "done") onChanged?.();
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [liveJobID]);
+
+  async function start(force: boolean) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setJob(await api.splitStems(version.version_id, force));
+    } catch (err) {
+      if (isStemsWorkerOfflineError(err)) setWorkerOffline(true);
+      else console.warn("split-stems failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function download() {
+    try {
+      const { url } = await api.stemsUrl(version.version_id);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      a.rel = "noopener";
+      a.click();
+    } catch (err) {
+      console.warn("stems download failed:", err);
+    }
+  }
+
+  const view = stemControlView({ hasStems, job, workerOffline });
+
+  if (view.kind === "live") {
+    return (
+      <span className="stems-ctl stems-ctl--live" role="status" aria-live="polite">
+        {view.label}
+        <i className="stems-hairline">
+          <i style={{ width: `${view.pct}%` }} />
+        </i>
+      </span>
+    );
+  }
+  if (view.kind === "ready") {
+    return (
+      <button
+        className="stems-ctl stems-ctl--ready"
+        title="Download the 4-stem zip (vocals / drums / bass / other)"
+        onClick={(event) => {
+          event.stopPropagation();
+          void download();
+        }}
+      >
+        {view.label}
+      </button>
+    );
+  }
+  if (view.kind === "failed") {
+    return (
+      <button
+        className="stems-ctl stems-ctl--failed"
+        title={job?.error ?? "Stem split failed"}
+        onClick={(event) => {
+          event.stopPropagation();
+          void start(true);
+        }}
+      >
+        {view.label}
+      </button>
+    );
+  }
+  if (view.kind === "offline") {
+    return (
+      <button className="stems-ctl" disabled title="Stem splitting runs on the local API only — this deployment can't run demucs.">
+        {view.label}
+      </button>
+    );
+  }
+  return (
+    <button
+      className="stems-ctl"
+      disabled={busy}
+      title="Split this take into vocals / drums / bass / other (Demucs)"
+      onClick={(event) => {
+        event.stopPropagation();
+        void start(false);
+      }}
+    >
+      {view.label}
+    </button>
   );
 }
 

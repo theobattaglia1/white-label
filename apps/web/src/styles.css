@@ -6914,6 +6914,41 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 }
 .flip-btn:hover { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
 .flip-btn.on { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .55); }
+
+/* === Stem splitting (versions panel) — hairline mono-caps; red only for the
+   failed state =========================================================== */
+.stems-ctl {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--pencil-warm);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--studio-hairline);
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+button.stems-ctl:hover:not(:disabled) { color: var(--tape-oxide); border-color: rgba(243, 236, 222, .4); }
+button.stems-ctl:disabled { opacity: .45; cursor: default; }
+.stems-ctl--ready { color: var(--tape-oxide); }
+.stems-ctl--failed { color: var(--redline); border-bottom-color: var(--redline); }
+.stems-ctl--live { display: inline-flex; flex-direction: column; gap: 3px; cursor: default; border-bottom: none; }
+.stems-hairline {
+  display: block;
+  height: 1px;
+  width: 100%;
+  background: var(--studio-hairline);
+}
+.stems-hairline > i {
+  display: block;
+  height: 1px;
+  background: var(--tape-oxide);
+  transition: width .4s ease;
+}
 .version-audition-cue {
   display: block;
   font-family: var(--font-mono);

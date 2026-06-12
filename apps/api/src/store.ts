@@ -69,6 +69,7 @@ import {
   persistVersionPatch,
 } from "./supabase-persist";
 import { isSupabaseEnabled } from "./supabase";
+import type { StemJob } from "./stems";
 
 export interface AuthContext {
   userID: string;
@@ -87,6 +88,9 @@ type UploadState = {
 export class WorkspaceStore {
   private snapshot: WorkspaceSnapshot = createSeedSnapshot();
   private uploads = new Map<string, UploadState>();
+  /** Ephemeral stem-split jobs (see stems.ts) — restart loses history by
+   *  design; the durable artifact is key_stems_zip on the asset row. */
+  readonly stemJobs = new Map<string, StemJob>();
 
   get data(): WorkspaceSnapshot {
     return this.snapshot;
@@ -298,6 +302,14 @@ export class WorkspaceStore {
       metadata: { action: "set_current" },
     });
     return this.getSong(song.song_id);
+  }
+
+  /** Stamp key_stems_zip on an in-memory asset after the worker uploads. */
+  setAssetStemsKey(assetID: string, key: string): FileAsset | undefined {
+    this.snapshot.assets = this.snapshot.assets.map((asset) =>
+      asset.asset_id === assetID ? { ...asset, key_stems_zip: key } : asset,
+    );
+    return this.snapshot.assets.find((asset) => asset.asset_id === assetID);
   }
 
   patchVersion(versionID: string, patch: { version_label?: string; type?: VersionType }) {

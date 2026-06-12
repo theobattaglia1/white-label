@@ -17,6 +17,12 @@ import { authFromHeaders, requireAuthedFromHeaders, assertInternalSecret, AuthEr
 import { isAssistantLlmEnabled } from "./assistant";
 import { rateLimit } from "./ratelimit";
 import { persistSongPatch } from "./supabase-persist";
+import {
+  enqueueStemJob,
+  isStemsWorkerEnabled,
+  latestStemJobForVersion,
+  liveStemJobForVersionOrAsset,
+} from "./stems-worker";
 
 /**
  * Builds and returns a fully-registered Fastify instance without binding a
@@ -1321,6 +1327,62 @@ server.post("/storage/finalize-new-song", async (request) => {
     server.log.warn({ err: hydrateErr }, "store.hydrate() failed after finalize-new-song; snapshot may be stale");
   }
   return ok(result);
+});
+
+// ===== Stem splitting (Demucs worker — local deployments only) ==========
+
+/** Kick a stem-split job for a version. 503 when the worker isn't enabled on
+ *  this deployment (prod Render can't run demucs); 409 when a live job already
+ *  covers this version/asset or stems already exist (unless {force:true}). */
+server.post("/versions/:id/split-stems", async (request, reply) => {
+  await requireAuthedFromRequest(request);
+  if (!isStemsWorkerEnabled()) {
+    return reply.code(503).send({ error: "stems worker unavailable on this deployment" });
+  }
+  const { id } = request.params as { id: string };
+  const body = (request.body ?? {}) as { force?: boolean };
+  const version = store.data.versions.find((v) => v.version_id === id);
+  if (!version) return reply.code(404).send({ error: "Version not found" });
+  const song = store.data.songs.find((s) => s.song_id === version.song_id);
+  const asset = store.data.assets.find((a) => a.asset_id === version.file_asset_id);
+  if (!song || !asset) return reply.code(404).send({ error: "Song or asset not found for version" });
+
+  const live = liveStemJobForVersionOrAsset(version.version_id, asset.asset_id);
+  if (live) return reply.code(409).send({ error: "A stem job is already running for this version", job: live });
+  if (asset.key_stems_zip && !body.force) {
+    return reply.code(409).send({ error: "Stems already exist for this version", key_stems_zip: asset.key_stems_zip });
+  }
+  return ok(enqueueStemJob({ song, version, asset }));
+});
+
+/** Job state — the UI polls this every ~2s while a job is live. */
+server.get("/stem-jobs/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const job = store.stemJobs.get(id);
+  if (!job) return reply.code(404).send({ error: "Stem job not found" });
+  return ok(job);
+});
+
+/** Latest job for a version (lets the UI resume polling after a reload). */
+server.get("/versions/:id/stem-job", async (request) => {
+  const { id } = request.params as { id: string };
+  return ok(latestStemJobForVersion(id) ?? null);
+});
+
+/** Short-lived signed URL for the stems zip — resolved like other storage
+ *  assets (signed per-request, never a stored permanent URL). */
+server.get("/versions/:id/stems-url", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const version = store.data.versions.find((v) => v.version_id === id);
+  const asset = version ? store.data.assets.find((a) => a.asset_id === version.file_asset_id) : undefined;
+  if (!asset?.key_stems_zip) return reply.code(404).send({ error: "No stems for this version" });
+  try {
+    const url = await signPlaybackUrl(asset.key_stems_zip);
+    return ok({ url, key: asset.key_stems_zip });
+  } catch (err) {
+    server.log.warn({ err }, "signPlaybackUrl failed for stems zip");
+    return reply.code(404).send({ error: "Stems zip is not available" });
+  }
 });
 
 server.setErrorHandler((error, _request, reply) => {

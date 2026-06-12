@@ -16,12 +16,17 @@ struct AuthSessionModel: Codable {
 
 enum AuthError: Error, LocalizedError {
     case server(String)
+    /// GoTrue definitively rejected the credentials / refresh token (4xx).
+    /// Unlike .server (outage / 5xx) this is NOT transient: retrying with the
+    /// same token can never succeed, so the session must be surfaced as dead.
+    case sessionInvalid(String)
     case invalidResponse
     case network(Error)
 
     var errorDescription: String? {
         switch self {
         case .server(let message): return message
+        case .sessionInvalid(let message): return message
         case .invalidResponse: return "Authentication failed. Please try again."
         case .network(let error): return error.localizedDescription
         }
@@ -110,10 +115,15 @@ struct AuthClient {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw AuthError.invalidResponse }
             guard (200...299).contains(http.statusCode) else {
-                if let decoded = try? JSONDecoder().decode(GoTrueError.self, from: data) {
-                    throw AuthError.server(decoded.human)
+                let message = (try? JSONDecoder().decode(GoTrueError.self, from: data))?.human
+                    ?? "Authentication failed (\(http.statusCode))."
+                // 4xx = the token/credentials themselves were rejected (e.g.
+                // "Invalid Refresh Token: Already Used") — permanently dead.
+                // 5xx / timeouts = GoTrue outage — transient, keep the session.
+                if (400...499).contains(http.statusCode) {
+                    throw AuthError.sessionInvalid(message)
                 }
-                throw AuthError.server("Authentication failed (\(http.statusCode)).")
+                throw AuthError.server(message)
             }
             return try JSONDecoder().decode(T.self, from: data)
         } catch let error as AuthError {
@@ -147,6 +157,11 @@ final class PlaybackAuthSession {
     var isLoading = false
     var errorMessage: String?
     var keychainSaveFailed = false
+    /// True when the session died because GoTrue rejected our refresh token —
+    /// the honest "SESSION EXPIRED — SIGN IN AGAIN" state. Never set for
+    /// transient failures (network blips, GoTrue outages), which keep the
+    /// session and retry later. Cleared by the next successful sign-in.
+    var sessionExpired = false
 
     @ObservationIgnored private var refreshTask: Task<AuthSessionModel, Error>?
     @ObservationIgnored private let workspaceKey = "wl.activeWorkspaceID.v1"
@@ -180,6 +195,7 @@ final class PlaybackAuthSession {
         do {
             let session = try await AuthClient.shared.signIn(email: email, password: password)
             current = session
+            sessionExpired = false
             keychainSaveFailed = !AuthKeychain.save(session)
             await refreshProfile()
         } catch {
@@ -194,6 +210,7 @@ final class PlaybackAuthSession {
         do {
             let session = try await AuthClient.shared.signUp(email: email, password: password, displayName: displayName)
             current = session
+            sessionExpired = false
             keychainSaveFailed = !AuthKeychain.save(session)
             await refreshProfile()
         } catch {
@@ -210,6 +227,7 @@ final class PlaybackAuthSession {
         profile = nil
         errorMessage = nil
         keychainSaveFailed = false
+        sessionExpired = false
         AuthKeychain.delete()
         if let token {
             Task { await AuthClient.shared.signOut(accessToken: token) }
@@ -239,10 +257,34 @@ final class PlaybackAuthSession {
         }
     }
 
+    /// Proactive margin: refresh this many seconds before the token expires
+    /// so a request never leaves the device with a token about to lapse.
+    @ObservationIgnored private let expiryMargin: TimeInterval = 120
+
+    /// Proactive path — used by every ServiceClient request. Returns the
+    /// current access token, refreshing it first when it is near expiry.
     func validAccessToken() async -> String? {
         guard let session = current else { return nil }
-        guard session.expiresAt.timeIntervalSinceNow <= 60 else { return session.accessToken }
+        if session.expiresAt.timeIntervalSinceNow > expiryMargin { return session.accessToken }
+        return await refreshedAccessToken(from: session)
+    }
 
+    /// Reactive path — the server answered 401 to `rejectedToken` even though
+    /// the client believed it was fresh (revoked session, key rotation, clock
+    /// skew). Refresh once and hand back a new token so the caller can retry.
+    /// If a concurrent caller already refreshed, returns the newer token
+    /// without spending another refresh.
+    func accessTokenAfterRejection(of rejectedToken: String) async -> String? {
+        guard let session = current else { return nil }
+        if session.accessToken != rejectedToken { return session.accessToken }
+        return await refreshedAccessToken(from: session)
+    }
+
+    /// Single-flight refresh. Concurrent callers (library refresh fan-out +
+    /// upload queue) await one shared task — Supabase refresh tokens are
+    /// single-use, so issuing two refreshes with the same token would kill
+    /// the session.
+    private func refreshedAccessToken(from session: AuthSessionModel) async -> String? {
         let task: Task<AuthSessionModel, Error>
         if let refreshTask {
             task = refreshTask
@@ -260,13 +302,28 @@ final class PlaybackAuthSession {
             refreshTask = nil
             current = refreshed
             keychainSaveFailed = !AuthKeychain.save(refreshed)
+            sessionExpired = false
             return refreshed.accessToken
         } catch {
             refreshTask = nil
-            current = nil
-            AuthKeychain.delete()
+            if case AuthError.sessionInvalid = error {
+                // GoTrue rejected the refresh token itself — the session is
+                // permanently dead. Surface the honest expired state.
+                expireSession()
+            }
+            // Anything else (network blip, GoTrue 5xx/timeout) is transient:
+            // KEEP the session and let a later call retry the refresh.
             return nil
         }
+    }
+
+    /// The session is unrecoverable: clear it and flag the honest
+    /// "session expired — sign in again" state (RootView swaps to SignInView).
+    private func expireSession() {
+        current = nil
+        profile = nil
+        AuthKeychain.delete()
+        sessionExpired = true
     }
 }
 

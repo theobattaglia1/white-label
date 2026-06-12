@@ -44,6 +44,9 @@ struct SignInView: View {
                     field("Password", text: $password, keyboard: .default, isSecure: true)
                 }
 
+                if auth.sessionExpired {
+                    MonoLabel("Session expired — sign in again", color: PB.redline, size: 9, tracking: 1)
+                }
                 if let error = auth.errorMessage {
                     MonoLabel(error, color: PB.redline, size: 9, tracking: 1)
                 }

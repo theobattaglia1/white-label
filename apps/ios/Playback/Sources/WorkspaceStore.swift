@@ -147,7 +147,11 @@ final class WorkspaceStore {
             isLibraryLoaded = true
         } catch {
             syncState = isUsingServiceLibrary ? .offline : .ready
-            syncMessage = "Cloud sync unavailable"
+            // Auth death is not a connectivity problem — say so. The session
+            // layer has already surfaced the expired state (SignInView).
+            syncMessage = error.isAuthFailure
+                ? "Session expired — sign in again"
+                : "Cloud sync unavailable"
             isLibraryLoaded = true  // stop spinner even on failure
         }
     }

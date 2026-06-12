@@ -26,6 +26,15 @@ extension Error {
         default: return nil
         }
     }
+
+    /// True when the API rejected our identity even after the one automatic
+    /// session refresh + retry (.httpStatus 401 — deliberately NOT a 401 from
+    /// a signed-URL PUT, which is a storage problem, not an identity one).
+    /// The upload queue parks on this instead of burning backoff retries.
+    var isAuthFailure: Bool {
+        if case .httpStatus(401, _)? = self as? ServiceError { return true }
+        return false
+    }
 }
 
 struct ServiceClient {
@@ -891,11 +900,14 @@ struct ServiceClient {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "content-type")
+        var sentToken: String?
         if Config.useRealAuth {
+            // Proactive: refreshes the Supabase session when it is near expiry.
             guard let token = await PlaybackAuthSession.shared.validAccessToken() else {
-                throw ServiceError.requestFailed("Sign in again to continue.")
+                throw ServiceError.httpStatus(401, "Session expired — sign in again to continue.")
             }
             request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+            sentToken = token
         } else {
             request.setValue(Config.devUserID, forHTTPHeaderField: "x-user-id")
         }
@@ -903,10 +915,21 @@ struct ServiceClient {
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
         }
 
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw ServiceError.requestFailed("No HTTP response.")
+        var (data, http) = try await perform(request)
+
+        // Reactive: the server can 401 a token the client still believes is
+        // fresh (session revoked elsewhere, signing-key rotation, clock skew).
+        // Refresh the session once and retry the request once — every caller
+        // (library refresh, upload queue, profile) gets this for free. Only
+        // when the refresh itself is rejected does auth failure surface.
+        if http.statusCode == 401, let rejected = sentToken {
+            guard let fresh = await PlaybackAuthSession.shared.accessTokenAfterRejection(of: rejected) else {
+                throw ServiceError.httpStatus(401, "Session expired — sign in again to continue.")
+            }
+            request.setValue("Bearer \(fresh)", forHTTPHeaderField: "authorization")
+            (data, http) = try await perform(request)
         }
+
         guard (200...299).contains(http.statusCode) else {
             let message = (try? JSONDecoder().decode([String: String].self, from: data)["error"])
                 ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
@@ -916,6 +939,14 @@ struct ServiceClient {
         if let error = envelope.error { throw ServiceError.requestFailed(error) }
         guard let value = envelope.data else { throw ServiceError.emptyResponse }
         return value
+    }
+
+    private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ServiceError.requestFailed("No HTTP response.")
+        }
+        return (data, http)
     }
 
     /// Foreground URLSession PUT. Progress (for the upload queue's pending

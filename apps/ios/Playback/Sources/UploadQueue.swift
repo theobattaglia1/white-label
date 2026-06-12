@@ -333,6 +333,18 @@ extension WorkspaceStore {
                 }
             } catch {
                 isUploadTransferInFlight = false
+                if error.isAuthFailure {
+                    // The session is dead, not the upload. Burning backoff
+                    // retries while signed out is pointless — park the job
+                    // as queued and stop the worker. Sign-in (RootView's
+                    // onChange(of: isSignedIn)) and foreground both re-kick
+                    // the queue, so work resumes the moment auth returns.
+                    setJobState(job.id, .queued)
+                    uploadProgressByJob[job.id] = nil
+                    syncState = .offline
+                    syncMessage = "Session expired — sign in to resume uploads"
+                    return
+                }
                 let delay = Self.uploadBackoffDelay(forAttempt: job.attempts)
                 markJobFailed(job.id, message: error.localizedDescription, retryDelay: delay)
                 syncState = .offline

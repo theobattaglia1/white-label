@@ -21,7 +21,12 @@ import SwiftUI
 ///   2. tap the focused card  → PULL-OUT (rises + comes forward, rest dims)
 ///   3. tap the pulled card   → onOpen(item) navigates
 /// Tap outside / swipe down while pulled → slips back. Horizontal drags flip
-/// through the crate, rubber-banding at the ends.
+/// through the crate. With more records than one visible window holds, the
+/// crate LOOPS — flipping past the last record wraps to the first in both
+/// directions (poses come from the shortest wrap distance, not raw index
+/// distance), so the band is consistently filled at every position and the
+/// drag just keeps flipping. With few records the ends stay real and drags
+/// rubber-band past them.
 struct ShelfView: View {
     var items: [ShelfItem]
     var store: WorkspaceStore
@@ -31,6 +36,11 @@ struct ShelfView: View {
     @State private var pulled = false
     @State private var dragAnchor: Int?
     @State private var rubber: CGFloat = 0
+    /// Item ids whose wrap distance jumped across the loop seam on the most
+    /// recent flip (e.g. d −3 → +3 when focus wraps past an end). Their
+    /// transaction animation is stripped so they relocate instantly at the
+    /// faded band edge instead of springing across the whole crate.
+    @State private var seamCrossing: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @AppStorage("wl.reduceMotion") private var appReduceMotion = false
 
@@ -49,18 +59,41 @@ struct ShelfView: View {
     private let maxVisibleAhead = 3         // base budget ahead of focus
     private let maxVisibleBehind = 2        // fewer behind — the quiet end of the stack
 
-    /// Adaptive visible window — the TOTAL visible card count stays ~constant
-    /// at every focus index. When one side runs out of items (focus at/near
-    /// an end), the other side inherits its unused budget, so the band never
-    /// collapses to a sliver: at the last slot the behind-run extends to 5,
-    /// at slot 0 the ahead-run does, mid-list it's the usual 2/3 split.
+    /// The crate loops only when it holds more records than one visible
+    /// window (n > behind + ahead + 1) — wrapping with fewer would ask the
+    /// same sleeve to appear on both sides of focus in a single frame.
+    /// Below that, the ends stay real and the clamped behavior holds.
+    private var looping: Bool { items.count > maxVisibleAhead + maxVisibleBehind + 1 }
+
+    /// Display offset of card `i` from focus `f`. Looping: the wrap-forward
+    /// (ahead) distance while it fits the ahead budget, else negative — the
+    /// card sits behind focus via the wrap. Every card gets a distinct
+    /// offset, biased to match the asymmetric window (more ahead than
+    /// behind), so both sides of focus are always populated and flipping
+    /// past either end just keeps going. Non-looping: plain index distance.
+    private func delta(_ i: Int, from f: Int) -> Int {
+        guard looping else { return i - f }
+        let n = items.count
+        let ahead = (((i - f) % n) + n) % n
+        return ahead <= maxVisibleAhead ? ahead : ahead - n
+    }
+
+    /// Visible window per side. On a LOOPING crate both sides are always
+    /// populated (wrap distance fills them), so each side takes its base
+    /// budget and the window is identical at every focus index. On a small
+    /// (non-looping) crate the adaptive end-extension still applies: when
+    /// one side runs out of items, the other inherits its unused budget, so
+    /// the band never collapses to a sliver — at the last slot the
+    /// behind-run extends to 5, at slot 0 the ahead-run does.
     private var visAhead: Int {
+        if looping { return maxVisibleAhead }
         let availAhead = max(items.count - 1 - focus, 0)
         let availBehind = focus
         return min(availAhead, maxVisibleAhead + max(0, maxVisibleBehind - availBehind))
     }
 
     private var visBehind: Int {
+        if looping { return maxVisibleBehind }
         let availAhead = max(items.count - 1 - focus, 0)
         return min(focus, maxVisibleBehind + max(0, maxVisibleAhead - availAhead))
     }
@@ -162,7 +195,10 @@ struct ShelfView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if pulled { withAnimation(crateAnimation) { pulled = false } }
+                    if pulled {
+                        seamCrossing = []
+                        withAnimation(crateAnimation) { pulled = false }
+                    }
                 }
 
             labels
@@ -185,7 +221,7 @@ struct ShelfView: View {
     private var labels: some View {
         ZStack {
             ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
-                let d = i - focus
+                let d = delta(i, from: focus)
                 let p = pose(d)
                 let dir: CGFloat = d < 0 ? -1 : (d > 0 ? 1 : 0)
                 let pulledEmphasis = pulled && reduced && d == 0
@@ -210,6 +246,11 @@ struct ShelfView: View {
                 .frame(width: 184)
                 .offset(x: p.x + crateShift + dir * 52)
                 .opacity(visible ? 1 : 0)
+                .transaction { t in
+                    // Label follows its card: crossing the loop seam jumps,
+                    // never streaks across the band.
+                    if seamCrossing.contains(item.id) { t.animation = nil }
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -231,7 +272,7 @@ struct ShelfView: View {
     }
 
     private func card(_ i: Int, _ item: ShelfItem) -> some View {
-        let d = i - focus
+        let d = delta(i, from: focus)
         let p = pose(d)
         let x = p.x + crateShift + rubber
         let isFocused = d == 0
@@ -257,6 +298,12 @@ struct ShelfView: View {
         .allowsHitTesting(!p.hidden)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Open \(item.title), \(kindName(item))\(item.pinned ? ", pinned" : "")")
+        .transaction { t in
+            // Crossing the loop seam (d jumping e.g. −3 → +3) must not
+            // interpolate — strip the animation so this card relocates
+            // instantly at the faded band edge instead of springing across.
+            if seamCrossing.contains(item.id) { t.animation = nil }
+        }
     }
 
     /// The 3D face — rotation, depth scale, hairline edge, soft floor shadow.
@@ -316,16 +363,36 @@ struct ShelfView: View {
         return "·"
     }
 
+    // MARK: focus moves — every flip routes here
+
+    /// Advance focus: wrap mod n when looping (no ends), clamp otherwise.
+    /// Before the animated change, pre-compute which cards cross the loop
+    /// seam for THIS move — a crosser's wrap distance jumps by more than
+    /// half the crate (normal moves shift d by the step count; crossers by
+    /// n − step) — and strip their transaction animation so the spring
+    /// always travels the short way and nothing flies across the band.
+    private func flip(to target: Int) {
+        let n = items.count
+        guard n > 0 else { return }
+        let next = looping ? ((target % n) + n) % n : min(n - 1, max(0, target))
+        guard next != focus else { return }
+        seamCrossing = looping
+            ? Set(items.indices.compactMap { i in
+                abs(delta(i, from: next) - delta(i, from: focus)) > n / 2 ? items[i].id : nil
+            })
+            : []
+        withAnimation(crateAnimation) { focus = next }
+    }
+
     // MARK: the three-tap progression
 
     private func handleTap(_ i: Int) {
         if i != focus {
-            withAnimation(crateAnimation) {
-                pulled = false
-                focus = i
-            }
+            withAnimation(crateAnimation) { pulled = false }
+            flip(to: i)
             return
         }
+        seamCrossing = [] // pull/Esc is untouched by the wrap — never strip its spring
         if !pulled {
             withAnimation(crateAnimation) { pulled = true }
             return
@@ -337,7 +404,10 @@ struct ShelfView: View {
     // MARK: drags
 
     /// Horizontal drag flips through the crate — records move under your
-    /// thumb, one slot per `spacing` points — rubber-banding past the ends.
+    /// thumb, one slot per `spacing` points. On a looping crate there are no
+    /// ends, so no rubber-band: the drag just keeps flipping, wrapping mod n
+    /// in either direction (the spring stays short-way via `flip`'s seam
+    /// stripping). Small (non-looping) crates keep the clamp + rubber give.
     /// Vertical drags fall through to the surrounding scroll view.
     private var crateDrag: some Gesture {
         DragGesture(minimumDistance: 14)
@@ -350,10 +420,12 @@ struct ShelfView: View {
                 guard let anchor = dragAnchor else { return }
                 let steps = Int((-value.translation.width / spacing).rounded())
                 let target = anchor + steps
-                let clamped = min(items.count - 1, max(0, target))
-                if clamped != focus {
-                    withAnimation(crateAnimation) { focus = clamped }
+                flip(to: target)
+                if looping {
+                    if rubber != 0 { rubber = 0 }
+                    return
                 }
+                let clamped = min(items.count - 1, max(0, target))
                 if target != clamped {
                     let overshoot = -value.translation.width - CGFloat(clamped - anchor) * spacing
                     rubber = -overshoot * 0.18
@@ -377,6 +449,7 @@ struct ShelfView: View {
                       value.translation.height > 28,
                       value.translation.height > abs(value.translation.width)
                 else { return }
+                seamCrossing = []
                 withAnimation(crateAnimation) { pulled = false }
             }
     }

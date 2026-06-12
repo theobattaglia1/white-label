@@ -24,9 +24,14 @@ import { SHELF_MAX_SLOTS, type ShelfItem } from "./shelf";
    Esc / click anywhere else while pulled → slips back into the crate.
    ←/→ move focus, Enter advances the same progression (cards are buttons).
    Dragging horizontally across the band flips through the crate (one slot
-   per card-spacing of travel, rubber-banding past the ends); a horizontal
-   two-finger trackpad scroll does the same. A real drag (>6px) suppresses
-   the click that fires on release, so it never doubles as focus/pull. */
+   per card-spacing of travel); a horizontal two-finger trackpad scroll does
+   the same. With more records than one visible window holds, the crate
+   LOOPS — flipping past the last record wraps to the first in both
+   directions, so the band is consistently filled at every position (poses
+   come from the shortest wrap distance, not raw index distance). With few
+   records the ends stay real and drags rubber-band past them. A real drag
+   (>6px) suppresses the click that fires on release, so it never doubles
+   as focus/pull. */
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(
@@ -76,6 +81,17 @@ function cardPose(d: number, g: CrateGeometry): Pose {
   };
 }
 
+/** Display offset of card `i` from `focus` on a LOOPING crate: the wrap-
+ *  forward (ahead) distance while it fits the ahead budget, else negative —
+ *  the card sits behind focus via the wrap. Every card gets a distinct
+ *  offset, biased to match the asymmetric visible window (more ahead than
+ *  behind), so both sides of focus are always populated and flipping past
+ *  either end just keeps going. */
+function loopDelta(i: number, focus: number, n: number, aheadBudget: number): number {
+  const ahead = (((i - focus) % n) + n) % n;
+  return ahead <= aheadBudget ? ahead : ahead - n;
+}
+
 /** 1–2 quiet initials for the sleeve face — never an identical blank. */
 function sleeveInitials(title: string): string {
   const words = title.trim().split(/\s+/).filter(Boolean);
@@ -99,6 +115,16 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
   const dragRef = useRef<{ id: number; startX: number; anchor: number; active: boolean } | null>(null);
   const suppressClick = useRef(false);
   const wheelAcc = useRef(0);
+  // Previous focus, committed AFTER every render — seam detection compares
+  // each card's wrap distance under the old vs. new focus. A card whose
+  // distance jumps by more than half the crate crossed the loop seam (e.g.
+  // d −8 → +6 when focus wraps 14 → 0); its transform/opacity transition is
+  // gated off for that render so it relocates instantly at the dim band
+  // edge instead of streaking across the whole crate.
+  const prevFocus = useRef(0);
+  useEffect(() => {
+    prevFocus.current = focus;
+  });
 
   // Keep focus valid when the slot list shrinks (e.g. data refresh).
   useEffect(() => {
@@ -141,7 +167,8 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
   }, []);
 
   // Two-finger trackpad scroll: horizontal-dominant wheel deltas over the
-  // band flip focus, one slot per ~80px, clamped at the ends. Vertical-
+  // band flip focus, one slot per ~80px — wrapping mod n on a looping
+  // crate, clamped at the ends on a small (non-looping) one. Vertical-
   // dominant wheels pass through untouched so the page keeps scrolling;
   // horizontal ones are consumed (no page pan / history swipe), which needs
   // a native non-passive listener — React's synthetic onWheel is passive.
@@ -149,6 +176,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
     const el = stageRef.current;
     if (!el) return;
     const count = slots.length;
+    const loop = count > (narrow ? 2 : 6) + (narrow ? 2 : 4) + 1; // mirrors `looping` below
     const onWheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       e.preventDefault();
@@ -158,21 +186,35 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
       wheelAcc.current -= steps * 80;
       setPulled(false);
       setHovered(null); // cards slide under a stationary cursor — pointerover won't refire
-      setFocus((f) => Math.min(count - 1, Math.max(0, f + steps)));
+      setFocus((f) =>
+        loop ? (((f + steps) % count) + count) % count : Math.min(count - 1, Math.max(0, f + steps)),
+      );
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [slots.length]);
+  }, [slots.length, narrow]);
 
   if (slots.length === 0) return null;
 
+  const n = slots.length;
+  const aheadBudget = narrow ? 2 : 6;
+  const behindBudget = narrow ? 2 : 4;
+  // The crate loops only when it holds more records than one visible window
+  // (n > behind + ahead + 1) — wrapping with fewer would ask the same sleeve
+  // to appear on both sides of focus in a single frame. Below that, the ends
+  // stay real and the clamped (non-looping) behavior holds.
+  const looping = n > aheadBudget + behindBudget + 1;
+  const deltaFor = (i: number, f: number) => (looping ? loopDelta(i, f, n, aheadBudget) : i - f);
+
   function moveFocus(next: number) {
-    const clamped = Math.min(slots.length - 1, Math.max(0, next));
-    if (clamped === focus) return;
+    // Looping: ←/→ and programmatic moves wrap mod n — no ends. The roving
+    // tabindex follows (the wrapped target is the next focused card).
+    const target = looping ? ((next % n) + n) % n : Math.min(n - 1, Math.max(0, next));
+    if (target === focus) return;
     setPulled(false);
     setHovered(null); // stale under-cursor hover — the crate is about to slide
-    setFocus(clamped);
-    cardRefs.current[clamped]?.focus();
+    setFocus(target);
+    cardRefs.current[target]?.focus();
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -211,21 +253,27 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
   const geom: CrateGeometry = { spacing, focusGap, backSpacing, backGap };
 
   // Visible window per side. Behind shows fewer — it's the quiet end of the
-  // stack — but the TOTAL stays ~constant at every focus index: when one
-  // side runs out of items (focus at/near an end), the other side inherits
-  // its unused budget, so the band never collapses to a sliver at the ends
-  // (at the last slot the behind-run extends to 10; at slot 0 the ahead-run
-  // does). Both sides then shrink further if the measured band can't hold
-  // the composed span, so the outermost sleeve is always fully inside the
-  // band instead of a clipped sliver at its edge.
-  const aheadExtent = (n: number) => (n === 0 ? cardHalf : focusGap + (n - 1) * spacing + cardHalf);
-  const behindExtent = (n: number) => (n === 0 ? cardHalf : backGap + (n - 1) * backSpacing + cardHalf);
-  const aheadBudget = narrow ? 2 : 6;
-  const behindBudget = narrow ? 2 : 4;
-  const availAhead = slots.length - 1 - focus;
-  const availBehind = focus;
-  let visAhead = Math.min(availAhead, aheadBudget + Math.max(0, behindBudget - availBehind));
-  let visBehind = Math.min(availBehind, behindBudget + Math.max(0, aheadBudget - availAhead));
+  // stack. On a LOOPING crate both sides are always populated (wrap distance
+  // fills them), so each side simply takes its base budget and the window is
+  // the same at every focus index. On a small (non-looping) crate the old
+  // end-extension logic still applies: when one side runs out of items the
+  // other inherits its unused budget, so the band never collapses to a
+  // sliver at a real end. Both sides then shrink further if the measured
+  // band can't hold the composed span, so the outermost sleeve is always
+  // fully inside the band instead of a clipped sliver at its edge.
+  const aheadExtent = (k: number) => (k === 0 ? cardHalf : focusGap + (k - 1) * spacing + cardHalf);
+  const behindExtent = (k: number) => (k === 0 ? cardHalf : backGap + (k - 1) * backSpacing + cardHalf);
+  let visAhead: number;
+  let visBehind: number;
+  if (looping) {
+    visAhead = aheadBudget;
+    visBehind = behindBudget;
+  } else {
+    const availAhead = n - 1 - focus;
+    const availBehind = focus;
+    visAhead = Math.min(availAhead, aheadBudget + Math.max(0, behindBudget - availBehind));
+    visBehind = Math.min(availBehind, behindBudget + Math.max(0, aheadBudget - availAhead));
+  }
   while (
     bandW > 0 &&
     visAhead + visBehind > 2 &&
@@ -272,13 +320,16 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
       stageRef.current?.setPointerCapture(e.pointerId);
     }
     const target = st.anchor + Math.round(-dx / spacing); // one slot per spacing px
-    const clamped = Math.min(slots.length - 1, Math.max(0, target));
+    // Looping crate: no ends, so no rubber-band — the drag just keeps
+    // flipping, wrapping mod n in either direction. Small (non-looping)
+    // crates keep the clamp + rubber give past their real ends.
+    const next = looping ? ((target % n) + n) % n : Math.min(n - 1, Math.max(0, target));
     setPulled(false);
     setHovered(null); // cards travel under the captured pointer — no enter/leave fires
-    setFocus(clamped);
-    if (target !== clamped && !reduced) {
+    setFocus(next);
+    if (!looping && target !== next && !reduced) {
       // Past either end the crate follows the pointer at 0.18× — rubber-band.
-      const overshoot = -dx - (clamped - st.anchor) * spacing;
+      const overshoot = -dx - (next - st.anchor) * spacing;
       setRubber(-overshoot * 0.18);
     } else {
       setRubber(0);
@@ -321,7 +372,8 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
       >
         <div className="shelf-labels">
           {slots.map((item, i) => {
-            const d = i - focus;
+            const d = deltaFor(i, focus);
+            const seam = looping && Math.abs(d - deltaFor(i, prevFocus.current)) > n / 2;
             const pose = cardPose(d, geom);
             const hidden = d > visAhead || -d > visBehind;
             // Exactly ONE label at rest: the focused card's. Hovering any
@@ -335,7 +387,11 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
               <div
                 key={item.key}
                 className={`shelf-label${d === 0 ? " is-focused" : ""}`}
-                style={{ transform: `translateX(${labelX}px)`, opacity: visible ? (d === 0 ? 1 : 0.55) : 0 }}
+                style={{
+                  transform: `translateX(${labelX}px)`,
+                  opacity: visible ? (d === 0 ? 1 : 0.55) : 0,
+                  transition: seam ? "none" : undefined, // seam-crossers jump, never streak
+                }}
                 aria-hidden="true"
               >
                 <span className="shelf-label-title">{item.title}</span>
@@ -349,7 +405,11 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
         </div>
         <div className="shelf-crate">
           {slots.map((item, i) => {
-            const d = i - focus;
+            const d = deltaFor(i, focus);
+            // Crossing the loop seam (d jumping e.g. −8 → +6) must not
+            // interpolate — gate this card's transitions off for the render
+            // so it relocates instantly at the faded band edge.
+            const seam = looping && Math.abs(d - deltaFor(i, prevFocus.current)) > n / 2;
             const pose = cardPose(d, geom);
             const hidden = d > visAhead || -d > visBehind;
             const x = pose.x + crateShift + rubber;
@@ -384,6 +444,7 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
                   zIndex: isPulled ? 60 : 40 - Math.abs(d),
                   opacity: hidden ? 0 : dimmed ? 0.45 : pose.fade,
                   pointerEvents: hidden ? "none" : undefined,
+                  transition: seam ? "none" : undefined, // seam-crossers jump, never streak
                   ["--shelf-tuck" as string]: pose.tuck,
                 } as React.CSSProperties}
                 tabIndex={isFocused ? 0 : -1}
@@ -392,7 +453,10 @@ export function Shelf({ items, onOpen }: { items: ShelfItem[]; onOpen: (item: Sh
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
               >
-                <span className="shelf-card-face" style={{ transform: faceTransform }}>
+                <span
+                  className="shelf-card-face"
+                  style={{ transform: faceTransform, transition: seam ? "none" : undefined }}
+                >
                   <span className="shelf-card-lift">
                     <span className="shelf-cover" style={{ backgroundImage: coverGradient(item.seed) }}>
                       <span className="shelf-cover-initials">{sleeveInitials(item.title)}</span>

@@ -149,24 +149,6 @@ enum ShelfSlots {
     ///    Pins are exempt — the user chose them — but recents do skip anything
     ///    that *reads* identical to a pin.
     ///  - fewer than 15 available → return what exists
-    /// THE WALL's deep-room band: the next `limit` recents that did NOT make
-    /// the shelf's close cluster, de-duped by id and by normalized identity
-    /// against the shelf and within themselves (same rules as `build`). These
-    /// are the smaller, dimmer posters scattered farther out in the room.
-    static func spillover(shelf: [ShelfItem], recents: [ShelfItem], limit: Int = 60) -> [ShelfItem] {
-        var out: [ShelfItem] = []
-        var seen = Set(shelf.map(\.id))
-        var seenIdentity = Set(shelf.map(recentIdentity))
-        for recent in recents {
-            if out.count >= limit { break }
-            guard !seen.contains(recent.id) else { continue }
-            guard seenIdentity.insert(recentIdentity(recent)).inserted else { continue }
-            seen.insert(recent.id)
-            out.append(recent.pinned ? ShelfItem(ref: recent.ref, title: recent.title, subtitle: recent.subtitle, pinned: false) : recent)
-        }
-        return out
-    }
-
     static func build(pins: [ShelfItem], recents: [ShelfItem]) -> [ShelfItem] {
         var slots: [ShelfItem] = []
         var seen = Set<String>()

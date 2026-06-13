@@ -1,42 +1,192 @@
 import SwiftUI
 
-/// THE WALL — pins + recents plastered as posters across a draggable room on Home.
+/// THE SHELF — pins + recents as a record crate on Home.
 ///
-/// The slot logic still lives in ShelfSlots.swift: the 15 shelf slots become
-/// the close cluster (large posters near the center viewpoint) and the next
-/// ~60 recents become a spillover band deeper in the room (smaller, dimmer,
-/// slower parallax). This view is only the presentation layer: a large virtual
-/// plane the user pans freely in both axes, with a fixed marquee focal spot at
-/// band center. The tap grammar is the shelf's, unchanged:
-///   tap a wall poster  -> it travels forward into the marquee
-///   tap the marquee    -> pull-out (rises, wall dims)
-///   tap the pulled item-> open via Home's existing song / playlist / project
-///                         navigation. Tap-away or drag-down slips it back.
+/// SwiftUI port of the web reference (apps/web/src/Shelf.tsx): a row of square
+/// 12" sleeves standing on a floor, receding in 3D. Every sleeve leans the
+/// SAME way — one continuous direction, like records in a crate viewed from
+/// one side. The focused card faces the viewer most; cards ahead of focus
+/// (right) recede slot by slot; cards behind focus (left) are the flipped-past
+/// end of the stack — packed tighter, pushed deeper, faded quieter. Transforms
+/// + opacity only — no timers, no TimelineView, no auto-advance, and no reads
+/// of any high-frequency player state.
+///
+/// Hit model (ported from the web fix in bc0dbdf): each card button is a FLAT
+/// strip — offset(x:) + zIndex in painter's order, like records in a bin. The
+/// 3D pose lives on an inert inner face (`allowsHitTesting(false)`), so taps
+/// resolve through plain 2D stacking, never 3D-projected quads.
+///
+/// Three-tap state machine (focus → pull → open):
+///   1. tap an unfocused card → the crate eases so it becomes focused
+///   2. tap the focused card  → PULL-OUT (rises + comes forward, rest dims)
+///   3. tap the pulled card   → onOpen(item) navigates
+/// Tap outside / swipe down while pulled → slips back. Horizontal drags flip
+/// through the crate. With more records than one visible window holds, the
+/// crate LOOPS — flipping past the last record wraps to the first in both
+/// directions (poses come from the shortest wrap distance, not raw index
+/// distance), so the band is consistently filled at every position and the
+/// drag just keeps flipping. With few records the ends stay real and drags
+/// rubber-band past them.
 struct ShelfView: View {
     var items: [ShelfItem]
     var store: WorkspaceStore
     var onOpen: (ShelfItem) -> Void
 
-    @State private var marqueeID: String?
+    @State private var focus = 0
     @State private var pulled = false
-    @State private var returningID: String?
-    @State private var pan: CGPoint = .zero
-    @State private var dragStartPan: CGPoint?
-    @State private var cache = WallLayoutCache()
+    @State private var dragAnchor: Int?
+    @State private var rubber: CGFloat = 0
+    /// Item ids whose wrap distance jumped across the loop seam on the most
+    /// recent flip (e.g. d −3 → +3 when focus wraps past an end). Their
+    /// transaction animation is stripped so they relocate instantly at the
+    /// faded band edge instead of springing across the whole crate.
+    @State private var seamCrossing: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @AppStorage("wl.reduceMotion") private var appReduceMotion = false
 
+    /// Reduce Motion (system or in-app): crossfade focus, pull-out becomes
+    /// border + label emphasis. Fully functional, nothing travels in 3D.
     private var reduced: Bool { systemReduceMotion || appReduceMotion }
 
-    private let stageH: CGFloat = 332
-    private let marqueeSize: CGFloat = 190
-    private var marqueeY: CGFloat { stageH * 0.59 }   // leaves label room above
+    // Crate geometry — tuned for a phone band: the COMPOSED group (behind
+    // extent + ahead extent, ~355pt) must sit inside the screen with ≥16pt
+    // side insets at every focus index, so the crate reads as an object in
+    // the band rather than a strip bleeding off both edges. Ahead pitch is
+    // the tappable sliver per receding record (also drag pt/slot); behind
+    // slivers are inert filler (tighter).
+    private let cardW: CGFloat = 190
+    private let cardH: CGFloat = 190        // 1:1 square sleeve — artwork fills the face
+    private let spacing: CGFloat = 36       // slot pitch ahead of focus (also drag pt/slot)
+    private let focusGap: CGFloat = 90      // focused card → first card ahead
+    private let backSpacing: CGFloat = 26   // tighter pitch behind focus
+    private let backGap: CGFloat = 76       // focused card → first card behind
+    private let maxVisibleAhead = 3         // base budget ahead of focus
+    private let maxVisibleBehind = 2        // fewer behind — the quiet end of the stack
 
-    private var travelAnimation: Animation {
-        reduced ? .easeInOut(duration: 0.16) : .spring(response: 0.45, dampingFraction: 0.82)
+    /// The crate loops only when it holds more records than one visible
+    /// window (n > behind + ahead + 1) — wrapping with fewer would ask the
+    /// same sleeve to appear on both sides of focus in a single frame.
+    /// Below that, the ends stay real and the clamped behavior holds.
+    private var looping: Bool { items.count > maxVisibleAhead + maxVisibleBehind + 1 }
+
+    /// Display offset of card `i` from focus `f`. Looping: the wrap-forward
+    /// (ahead) distance while it fits the ahead budget, else negative — the
+    /// card sits behind focus via the wrap. Every card gets a distinct
+    /// offset, biased to match the asymmetric window (more ahead than
+    /// behind), so both sides of focus are always populated and flipping
+    /// past either end just keeps going. Non-looping: plain index distance.
+    private func delta(_ i: Int, from f: Int) -> Int {
+        guard looping else { return i - f }
+        let n = items.count
+        let ahead = (((i - f) % n) + n) % n
+        return ahead <= maxVisibleAhead ? ahead : ahead - n
     }
-    private var settleAnimation: Animation {
-        reduced ? .easeInOut(duration: 0.2) : .easeOut(duration: 0.55)
+
+    /// Visible window per side. On a LOOPING crate both sides are always
+    /// populated (wrap distance fills them), so each side takes its base
+    /// budget and the window is identical at every focus index. On a small
+    /// (non-looping) crate the adaptive end-extension still applies: when
+    /// one side runs out of items, the other inherits its unused budget, so
+    /// the band never collapses to a sliver — at the last slot the
+    /// behind-run extends to 5, at slot 0 the ahead-run does.
+    private var visAhead: Int {
+        if looping { return maxVisibleAhead }
+        let availAhead = max(items.count - 1 - focus, 0)
+        let availBehind = focus
+        return min(availAhead, maxVisibleAhead + max(0, maxVisibleBehind - availBehind))
+    }
+
+    private var visBehind: Int {
+        if looping { return maxVisibleBehind }
+        let availAhead = max(items.count - 1 - focus, 0)
+        return min(focus, maxVisibleBehind + max(0, maxVisibleAhead - availAhead))
+    }
+    private let depth: CGFloat = 1100       // perspective distance for z → scale
+    private let labelBandH: CGFloat = 48
+    private let stageH: CGFloat = 280       // 48 label + 22 gap + 190 cards + floor shadow
+
+    // Projected half-widths used to compose/center the band. The focused
+    // sleeve projects wider than cardW/2 (z 90 → scale ~1.09); the outermost
+    // slivers project far NARROWER (leaned toward edge-on + sunk in z), so
+    // using cardW/2 there would both mis-center the group and overestimate
+    // its span — the old source of edge bleed.
+    // Ahead cards lean with their NEAR (right) edge outermost — perspective
+    // widens it; behind cards put their FAR (left) edge outermost — narrower.
+    private let focusedHalf: CGFloat = 108
+    private let aheadEdgeHalf: CGFloat = 54
+    private let behindEdgeHalf: CGFloat = 36
+
+    private var crateAnimation: Animation {
+        reduced ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85)
+    }
+
+    private struct Pose {
+        var x: CGFloat
+        var z: CGFloat
+        var ry: Double
+        var hidden: Bool
+        var fade: Double    // at-rest card opacity
+        var tuck: Double    // 0…1 — quiets sleeve initials as a card recedes
+    }
+
+    /// Crate pose for a card `d` slots away from focus — ONE continuous lean
+    /// direction across the whole bin. Focused: a gentle −18°. Ahead (d > 0):
+    /// falls back toward a −65° cap as it recedes. Behind (d < 0): the SAME
+    /// lean, but these are the already-flipped records — pushed deeper
+    /// (z −60… vs −26…), packed tighter, and faded, so the left side reads as
+    /// the back of the same run, never a mirrored book-end. Both sides
+    /// extrapolate past their base budgets (the adaptive window extends
+    /// either run when the other side has no items): z keeps sinking, the
+    /// lean eases toward −65°, opacity keeps falling to a 0.3 floor — never
+    /// a flat run of identical slivers.
+    /// Lean ladders (degrees) per slot away from focus. On a phone the
+    /// receding run must compress like records in a bin — the FIRST ahead
+    /// neighbor already drops to −45° (a thin exposed sliver, not a second
+    /// face), then the lean climbs sharply toward edge-on. Behind starts
+    /// deeper still. Past the ladder both cap at −66°.
+    private static let aheadLean: [Double] = [-45, -56, -62]
+    private static let behindLean: [Double] = [-55, -60, -64]
+    private static let leanCap: Double = -66
+
+    private func pose(_ d: Int) -> Pose {
+        if d == 0 { return Pose(x: 0, z: 104, ry: -20, hidden: false, fade: 1, tuck: 0) }
+        let a = abs(d)
+        if d > 0 {
+            return Pose(
+                x: focusGap + CGFloat(a - 1) * spacing,
+                z: CGFloat(-26 * min(a, 4) - max(0, a - 4) * 9),
+                ry: a <= Self.aheadLean.count ? Self.aheadLean[a - 1] : Self.leanCap, // −45°, −56°, −62° … −66° cap
+                hidden: a > visAhead,
+                fade: max(0.3, 1 - Double(a - 1) * 0.08),       // 1, 0.92 … falls to a 0.3 floor
+                tuck: min(1, Double(a - 1) * 0.3)
+            )
+        }
+        return Pose(
+            x: -(backGap + CGFloat(a - 1) * backSpacing),
+            z: CGFloat(-60 - (min(a, 4) - 1) * 22 - max(0, a - 4) * 9), // −60, −82, −104, −126, then −9/slot
+            ry: a <= Self.behindLean.count ? Self.behindLean[a - 1] : Self.leanCap, // −55°, −60°, −64° … −66° cap
+            hidden: a > visBehind,
+            fade: max(0.3, 0.8 - Double(a - 1) * 0.15),         // 0.8, 0.65 … falls to a 0.3 floor
+            tuck: min(1, 0.45 + Double(a - 1) * 0.3)
+        )
+    }
+
+    /// Compose the band around the *visible* group so there's never a dead
+    /// half-band: shift the whole crate by half the difference between the
+    /// occupied extents behind (left) and ahead (right) of focus — the two
+    /// sides have different gaps and pitches now, so each gets its own extent.
+    private func aheadExtent(_ n: Int) -> CGFloat {
+        n == 0 ? focusedHalf : focusGap + CGFloat(n - 1) * spacing + aheadEdgeHalf
+    }
+
+    private func behindExtent(_ n: Int) -> CGFloat {
+        n == 0 ? focusedHalf : backGap + CGFloat(n - 1) * backSpacing + behindEdgeHalf
+    }
+
+    private var crateShift: CGFloat {
+        let behind = behindExtent(visBehind)
+        let ahead = aheadExtent(visAhead)
+        return ((behind - ahead) / 2).rounded()
     }
 
     var body: some View {
@@ -45,11 +195,9 @@ struct ShelfView: View {
                 head.padding(.horizontal, 24)
                 stage
             }
-            .onChange(of: items) { _, next in
-                if let id = marqueeID, !next.contains(where: { $0.id == id }) {
-                    // a stale spill/slot marquee self-heals at render too, but
-                    // reset eagerly so pull-out can't linger on a gone item.
-                    marqueeID = nil
+            .onChange(of: items.count) { _, count in
+                if focus > count - 1 {
+                    focus = max(0, count - 1)
                     pulled = false
                 }
             }
@@ -58,260 +206,185 @@ struct ShelfView: View {
 
     private var head: some View {
         HStack(spacing: 10) {
-            MonoLabel("The Wall", color: PB.pencil, size: 11, tracking: 2)
+            MonoLabel("The Shelf", color: PB.pencil, size: 11, tracking: 2)
             Rectangle().fill(.white.opacity(0.08)).frame(height: 1)
-            MonoLabel(String(format: "%02d up close", items.count),
+            MonoLabel(String(format: "%02d records", items.count),
                       color: PB.pencil.opacity(0.7), size: 9, tracking: 1.6)
         }
     }
 
     private var stage: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let model = cache.model(items: items, store: store, width: width, height: stageH)
-            let currentID = model.byID[marqueeID ?? ""] != nil ? (marqueeID ?? items[0].id) : items[0].id
-            let maxPanX = max(0, (model.planeW - width) / 2)
-            let maxPanY = max(0, (model.planeH - stageH) / 2)
-            let visible = visibleSpots(model: model, width: width, currentID: currentID)
-
-            ZStack {
-                WallBackdrop(width: width, height: stageH,
-                             planeW: model.planeW, planeH: model.planeH,
-                             pan: pan, reduced: reduced)
-                    .allowsHitTesting(false)
-
-                // CULL: only spots inside viewport + one poster-width margin
-                // are instantiated; the marquee + returning poster always are.
-                ForEach(visible) { spot in
-                    if !(reduced && spot.id == currentID) {
-                        poster(spot, width: width,
-                               isMarquee: !reduced && spot.id == currentID,
-                               currentID: currentID)
+        ZStack(alignment: .top) {
+            // Tap anywhere outside the pulled card → slips back into the crate.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if pulled {
+                        seamCrossing = []
+                        withAnimation(crateAnimation) { pulled = false }
                     }
                 }
 
-                // Dim film between the wall and the marquee occupant — very
-                // slight at rest, heavy while pulled (and then it eats taps,
-                // so tap-away slips the pulled poster back).
-                Rectangle()
-                    .fill(PB.black.opacity(pulled ? 0.55 : 0.12))
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(travelAnimation) { pulled = false }
-                    }
-                    .allowsHitTesting(pulled)
-                    .zIndex(50)
+            labels
 
-                // Reduce Motion: marquee changes crossfade instead of travel.
-                if reduced, let spot = model.byID[currentID] {
-                    poster(spot, width: width, isMarquee: true, currentID: currentID)
-                        .id("marquee-\(currentID)")
-                        .transition(.opacity)
-                }
-
-                marqueeLabel(model.byID[currentID]?.item)
-                    .frame(width: width - 56)
-                    .position(x: width / 2, y: marqueeY - marqueeSize / 2 - 36)
-                    .zIndex(80)
-                    .allowsHitTesting(false)
-                    .id("label-\(currentID)")
-            }
-            .frame(width: width, height: stageH)
-            .clipped()
-            .contentShape(Rectangle())
-            .highPriorityGesture(panGesture(maxPanX: maxPanX, maxPanY: maxPanY))
-            .accessibilityChildren {
-                // VoiceOver: a flat list, close cluster first, then spillover.
-                ForEach(model.ordered, id: \.id) { item in
-                    Button("Open \(item.title), \(kindName(item))\(item.pinned ? ", pinned" : "")") {
-                        onOpen(item)
-                    }
-                }
-            }
-            .accessibilityLabel("The wall — \(model.ordered.count) posters, pinned and recent")
+            crate
+                .padding(.top, labelBandH + 22)
         }
         .frame(height: stageH)
+        .frame(maxWidth: .infinity)
+        .gesture(crateDrag)
+        .simultaneousGesture(pulledDismissDrag)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("The shelf — pinned and recent")
     }
 
-    /// Viewport culling: a spot is live when its screen position (after its
-    /// layer's parallax factor) lands within the band plus one poster-width
-    /// margin. The marquee occupant and the poster travelling home are always
-    /// kept alive so their springs never pop mid-flight.
-    private func visibleSpots(model: WallModel, width: CGFloat, currentID: String) -> [WallSpot] {
-        model.spots.filter { spot in
-            if spot.id == currentID || spot.id == returningID { return true }
-            let f = reduced ? 1 : spot.layerFactor
-            let sx = spot.x - pan.x * f
-            let sy = spot.y - pan.y * f
-            return abs(sx) < width / 2 + spot.size && abs(sy) < stageH / 2 + spot.size
+    // MARK: labels — exactly ONE label at rest: the focused card's, anchored
+    // above ITS sleeve. Hidden during pull-out (the pulled sleeve rises into
+    // the label band); under Reduce Motion the focused label stays as the
+    // pull-out emphasis instead.
+    private var labels: some View {
+        ZStack {
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                let d = delta(i, from: focus)
+                let p = pose(d)
+                let dir: CGFloat = d < 0 ? -1 : (d > 0 ? 1 : 0)
+                let pulledEmphasis = pulled && reduced && d == 0
+                let visible = !p.hidden && d == 0 && (!pulled || pulledEmphasis)
+                VStack(spacing: 3) {
+                    Text(item.title)
+                        .font(PB.display(16))
+                        .foregroundStyle(PB.cream)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    HStack(spacing: 6) {
+                        MonoLabel(item.subtitle, color: PB.pencil, size: 8, tracking: 1.2)
+                            .lineLimit(1)
+                        if item.pinned {
+                            MonoLabel("Pinned", color: PB.pencil.opacity(0.85), size: 7, tracking: 1.4)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .overlay(Capsule().strokeBorder(PB.pencil.opacity(0.35), lineWidth: 0.75))
+                        }
+                    }
+                }
+                .frame(width: 184)
+                .offset(x: p.x + crateShift + dir * 52)
+                .opacity(visible ? 1 : 0)
+                .transaction { t in
+                    // Label follows its card: crossing the loop seam jumps,
+                    // never streaks across the band.
+                    if seamCrossing.contains(item.id) { t.animation = nil }
+                }
+            }
         }
-    }
-
-    private func poster(_ spot: WallSpot, width: CGFloat, isMarquee: Bool, currentID: String) -> some View {
-        let f = reduced ? 1 : spot.layerFactor
-        let sx = width / 2 + spot.x - pan.x * f
-        let sy = stageH * 0.5 + spot.y - pan.y * f
-        let mScale = marqueeSize / spot.size
-        let scale = isMarquee ? (pulled ? mScale * 1.12 : mScale) : 1
-        let px = isMarquee ? width / 2 : sx
-        let py = isMarquee ? marqueeY - (pulled ? 18 : 0) : sy
-        // Walls curve toward you at the extremes — subtle rotateY by screen x.
-        let norm = max(-1.0, min(1.0, Double((sx - width / 2) / max(width / 2, 1))))
-        let tilt = (reduced || isMarquee) ? 0 : norm * -14
-        let lean = (reduced || isMarquee) ? 0 : spot.rotation
-
-        return Button {
-            handleTap(spot, isMarquee: isMarquee, currentID: currentID)
-        } label: {
-            posterFace(spot.item, close: spot.close, size: spot.size, focused: isMarquee)
-                .frame(width: spot.size, height: spot.size)
-                .contentShape(Rectangle().inset(by: -max(0, (44 - spot.size) / 2)))
-        }
-        .buttonStyle(.plain)
-        .rotationEffect(.degrees(lean))
-        .rotation3DEffect(.degrees(tilt), axis: (x: 0, y: 1, z: 0), perspective: 0.62)
-        .scaleEffect(scale)
-        .shadow(color: .black.opacity(isMarquee ? 0.5 : 0.3),
-                radius: isMarquee ? 16 : 7, x: 0, y: isMarquee ? 10 : 5)
-        .position(x: px, y: py)
-        .opacity(isMarquee ? 1 : spot.baseOpacity)
-        .zIndex(isMarquee ? (pulled ? 110 : 100)
-                : spot.id == returningID ? 40
-                : spot.close ? 30
-                : spot.layer == 1 ? 20 : 10)
+        .frame(maxWidth: .infinity)
+        .frame(height: labelBandH, alignment: .center)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private func handleTap(_ spot: WallSpot, isMarquee: Bool, currentID: String) {
-        if isMarquee {
-            if pulled {
-                withAnimation(travelAnimation) { pulled = false }
-                onOpen(spot.item)
-            } else {
-                withAnimation(travelAnimation) { pulled = true }
+    // MARK: crate
+
+    private var crate: some View {
+        ZStack {
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                card(i, item)
             }
-            return
         }
-        returningID = currentID
-        withAnimation(travelAnimation) {
-            marqueeID = spot.id
-            pulled = false
+        .frame(maxWidth: .infinity)
+        .frame(height: cardH)
+    }
+
+    private func card(_ i: Int, _ item: ShelfItem) -> some View {
+        let d = delta(i, from: focus)
+        let p = pose(d)
+        let x = p.x + crateShift + rubber
+        let isFocused = d == 0
+        let isPulled = isFocused && pulled
+        let dimmed = pulled && !isFocused
+
+        return Button {
+            handleTap(i)
+        } label: {
+            // Flat 2D hit strip; the 3D pose lives on the inert face inside.
+            ZStack {
+                Color.clear.contentShape(Rectangle())
+                face(item, pose: p, isPulled: isPulled, dimmed: dimmed)
+                    .allowsHitTesting(false)
+            }
+            .frame(width: cardW, height: cardH)
         }
-        let demoted = currentID
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            if returningID == demoted { returningID = nil }
+        .buttonStyle(.plain)
+        .scaleEffect(isPulled && !reduced ? 1.12 : 1)
+        .offset(x: x, y: isPulled && !reduced ? -46 : 0)
+        .zIndex(isPulled ? 60 : Double(40 - abs(d)))
+        .opacity(p.hidden ? 0 : (dimmed ? 0.45 : p.fade))
+        .allowsHitTesting(!p.hidden)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Open \(item.title), \(kindName(item))\(item.pinned ? ", pinned" : "")")
+        .transaction { t in
+            // Crossing the loop seam (d jumping e.g. −3 → +3) must not
+            // interpolate — strip the animation so this card relocates
+            // instantly at the faded band edge instead of springing across.
+            if seamCrossing.contains(item.id) { t.animation = nil }
         }
     }
 
-    private func posterFace(_ item: ShelfItem, close: Bool, size: CGFloat, focused: Bool) -> some View {
-        ZStack(alignment: .topLeading) {
-            cover(item, close: close)
-                .frame(width: size, height: size)
-                .clipped()
-
-            LinearGradient(
-                colors: [.black.opacity(0.1), .black.opacity(close ? 0.42 : 0.3)],
-                startPoint: .top,
-                endPoint: .bottom
+    /// The 3D face — rotation, depth scale, hairline edge, soft floor shadow.
+    /// Inert: hit-testing belongs to the flat strip that wraps it.
+    private func face(_ item: ShelfItem, pose p: Pose, isPulled: Bool, dimmed: Bool) -> some View {
+        let ry: Double = (reduced || isPulled) ? 0 : p.ry
+        let z: CGFloat = p.z - (dimmed ? 40 : 0)
+        let scale: CGFloat = (reduced || isPulled) ? 1 : depth / (depth - z)
+        let emphasized = isPulled && reduced
+        return cover(item, tuck: p.tuck)
+            .frame(width: cardW, height: cardH)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(PB.cream.opacity(emphasized ? 0.7 : 0.14),
+                                  lineWidth: emphasized ? 1.5 : 0.75)
             )
-
-            if close {
-                VStack(alignment: .leading) {
-                    HStack(alignment: .top) {
-                        MonoLabel(kindName(item), color: PB.cream.opacity(0.74), size: 6, tracking: 1.1)
-                        Spacer(minLength: 0)
-                        if item.pinned {
-                            MonoLabel("Pinned", color: PB.cream.opacity(0.7), size: 6, tracking: 1.05)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    MonoLabel(initials(item.title), color: PB.cream.opacity(0.78), size: size * 0.17, tracking: 1.6)
-                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
-                }
-                .padding(8)
+            .shadow(color: .black.opacity(0.4), radius: 9, x: 0, y: 6)
+            // Soft floor shadow grounding the sleeve — drawn behind the face,
+            // hugging its bottom edge, so it scales/leans with the record.
+            .background(alignment: .bottom) {
+                Ellipse()
+                    .fill(.black.opacity(0.45))
+                    .frame(width: cardW * 0.88, height: 16)
+                    .blur(radius: 9)
+                    .offset(y: 11)
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(PB.cream.opacity(focused ? 0.28 : 0.14), lineWidth: focused ? 1 : 0.75)
-        )
+            // Anchor depth scaling at the BOTTOM edge: every record's sleeve
+            // bottom stays on one shared floor line as it recedes (only the
+            // perspective tilt varies it), instead of drifting diagonally.
+            .scaleEffect(scale, anchor: .bottom)
+            // Rotation is ALSO bottom-anchored: the projection origin sits on
+            // the floor line, so the bottom edge of every leaning sleeve maps
+            // to itself (a straight run along the floor) and the perspective
+            // flare goes upward only — records standing in a bin, not a fan.
+            .rotation3DEffect(.degrees(ry), axis: (x: 0, y: 1, z: 0),
+                              anchor: .bottom, perspective: 0.5)
     }
 
-    /// Close cluster gets real artwork (TrackArtwork caches bundled/imported
-    /// images and falls back to the mesh). Spillover is mesh-only by design:
-    /// TrackArtwork's imported-file path hits disk per instantiation and the
-    /// remote path spawns AsyncImage fetches — both jank when culling churns
-    /// 60 deep posters during a pan, so the deep room stays generative.
-    @ViewBuilder private func cover(_ item: ShelfItem, close: Bool) -> some View {
-        if close, let track = pinnedCover(item.ref, store) {
-            TrackArtwork(track: track, cornerRadius: 4, showsKeyline: false, animateFallback: false)
+    /// Sleeve artwork: real cover when one resolves (same source as Library
+    /// rows), otherwise a deterministic mesh + quiet initials — never an
+    /// identical blank. `tuck` fades + shrinks the initials as the sleeve
+    /// recedes, so strongly tucked slivers stay quiet instead of stacking
+    /// big letters into clutter. Meshes are static here: 15 sleeves must not
+    /// run 15 redraw loops.
+    @ViewBuilder private func cover(_ item: ShelfItem, tuck: Double) -> some View {
+        if let track = pinnedCover(item.ref, store) {
+            TrackArtwork(track: track, cornerRadius: 10, showsKeyline: false, animateFallback: false)
         } else {
-            MeshCover(colors: MeshPalette.colors(for: item.id), animate: false, fillsSafeArea: false)
+            ZStack {
+                MeshCover(colors: MeshPalette.colors(for: item.id), animate: false, fillsSafeArea: false)
+                MonoLabel(initials(item.title), color: PB.cream, size: 28, tracking: 2)
+                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    .scaleEffect(1 - tuck * 0.3)
+                    .opacity(1 - tuck * 0.85)
+            }
         }
-    }
-
-    @ViewBuilder private func marqueeLabel(_ item: ShelfItem?) -> some View {
-        if let item {
-            VStack(spacing: 5) {
-                Text(item.title)
-                    .font(PB.display(17))
-                    .foregroundStyle(PB.cream)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                HStack(spacing: 7) {
-                    MonoLabel(item.subtitle, color: PB.pencil, size: 7, tracking: 1.15)
-                        .lineLimit(1)
-                    if item.pinned {
-                        MonoLabel("Pinned", color: PB.pencil.opacity(0.86), size: 6, tracking: 1.2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .overlay(Capsule().strokeBorder(PB.pencil.opacity(0.35), lineWidth: 0.75))
-                    }
-                }
-            }
-            .multilineTextAlignment(.center)
-        }
-    }
-
-    /// Drag = pan. minimumDistance 6 keeps taps intact (≥6pt of movement
-    /// suppresses the tap, like the web shelf fix). Momentum comes from the
-    /// gesture's predicted end point eased out; bounds rubber-band during the
-    /// drag and settle inside on release. While pulled, a downward drag slips
-    /// the poster back instead of panning.
-    private func panGesture(maxPanX: CGFloat, maxPanY: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { value in
-                if pulled {
-                    if value.translation.height > 30 {
-                        withAnimation(travelAnimation) { pulled = false }
-                    }
-                    return
-                }
-                if dragStartPan == nil { dragStartPan = pan }
-                guard let start = dragStartPan else { return }
-                pan = CGPoint(
-                    x: rubber(start.x - value.translation.width, limit: maxPanX),
-                    y: rubber(start.y - value.translation.height, limit: maxPanY)
-                )
-            }
-            .onEnded { value in
-                guard let start = dragStartPan else { return }
-                dragStartPan = nil
-                guard !pulled else { return }
-                let target = CGPoint(
-                    x: min(maxPanX, max(-maxPanX, start.x - value.predictedEndTranslation.width)),
-                    y: min(maxPanY, max(-maxPanY, start.y - value.predictedEndTranslation.height))
-                )
-                withAnimation(settleAnimation) { pan = target }
-            }
-    }
-
-    private func rubber(_ raw: CGFloat, limit: CGFloat) -> CGFloat {
-        if raw > limit { return limit + (raw - limit) * 0.22 }
-        if raw < -limit { return -limit + (raw + limit) * 0.22 }
-        return raw
     }
 
     private func kindName(_ item: ShelfItem) -> String {
@@ -322,207 +395,103 @@ struct ShelfView: View {
         }
     }
 
+    /// 1–2 quiet initials for coverless sleeves.
     private func initials(_ title: String) -> String {
         let words = title.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
         let letters = words.prefix(2).compactMap(\.first)
-        if letters.count >= 2 { return String(letters).uppercased() }
-        if let word = words.first { return String(word.prefix(2)).uppercased() }
-        return "PB"
+        if letters.count >= 2 { return String(letters) }
+        if let word = words.first { return String(word.prefix(2)) }
+        return "·"
     }
-}
 
-// MARK: - Room backdrop
+    // MARK: focus moves — every flip routes here
 
-/// Sparse wall seams + two rails, moving at the mid-layer parallax rate so the
-/// band reads as a room and the pan reads as travel. One stroked path, no
-/// timers — it only redraws because the pan changed.
-private struct WallBackdrop: View {
-    let width: CGFloat
-    let height: CGFloat
-    let planeW: CGFloat
-    let planeH: CGFloat
-    let pan: CGPoint
-    let reduced: Bool
+    /// Advance focus: wrap mod n when looping (no ends), clamp otherwise.
+    /// Before the animated change, pre-compute which cards cross the loop
+    /// seam for THIS move — a crosser's wrap distance jumps by more than
+    /// half the crate (normal moves shift d by the step count; crossers by
+    /// n − step) — and strip their transaction animation so the spring
+    /// always travels the short way and nothing flies across the band.
+    private func flip(to target: Int) {
+        let n = items.count
+        guard n > 0 else { return }
+        let next = looping ? ((target % n) + n) % n : min(n - 1, max(0, target))
+        guard next != focus else { return }
+        seamCrossing = looping
+            ? Set(items.indices.compactMap { i in
+                abs(delta(i, from: next) - delta(i, from: focus)) > n / 2 ? items[i].id : nil
+            })
+            : []
+        withAnimation(crateAnimation) { focus = next }
+    }
 
-    var body: some View {
-        Canvas { context, _ in
-            let f: CGFloat = reduced ? 1 : 0.85
-            var seams = Path()
-            let spacing: CGFloat = 230
-            var x = -planeW / 2
-            while x <= planeW / 2 {
-                let sx = width / 2 + x - pan.x * f
-                if sx > -10, sx < width + 10 {
-                    seams.move(to: CGPoint(x: sx, y: 0))
-                    seams.addLine(to: CGPoint(x: sx, y: height))
-                }
-                x += spacing
-            }
-            for railY in [-planeH * 0.34, planeH * 0.36] {
-                let sy = height / 2 + railY - pan.y * f
-                if sy > -10, sy < height + 10 {
-                    seams.move(to: CGPoint(x: 0, y: sy))
-                    seams.addLine(to: CGPoint(x: width, y: sy))
-                }
-            }
-            context.stroke(seams, with: .color(PB.cream.opacity(0.06)), lineWidth: 1)
+    // MARK: the three-tap progression
+
+    private func handleTap(_ i: Int) {
+        if i != focus {
+            withAnimation(crateAnimation) { pulled = false }
+            flip(to: i)
+            return
         }
+        seamCrossing = [] // pull/Esc is untouched by the wrap — never strip its spring
+        if !pulled {
+            withAnimation(crateAnimation) { pulled = true }
+            return
+        }
+        withAnimation(crateAnimation) { pulled = false }
+        onOpen(items[i])
     }
-}
 
-// MARK: - Spatial model
+    // MARK: drags
 
-private struct WallSpot: Identifiable {
-    let item: ShelfItem
-    let x: CGFloat        // world coords, plane-centered
-    let y: CGFloat
-    let size: CGFloat
-    let rotation: Double  // poster lean jitter, degrees
-    let layer: Int        // 0 close · 1 mid spill · 2 deep spill
-    let baseOpacity: Double
-    let close: Bool
-    var id: String { item.id }
-    var layerFactor: CGFloat { layer == 0 ? 1 : layer == 1 ? 0.85 : 0.7 }
-}
-
-private struct WallModel {
-    var spots: [WallSpot]
-    var byID: [String: WallSpot]
-    var ordered: [ShelfItem]   // close-cluster-first, for VoiceOver
-    var planeW: CGFloat
-    var planeH: CGFloat
-}
-
-/// Memoizes the deterministic scatter. The body re-evaluates on every pan
-/// frame, so the layout (and the recents-derived spillover behind it) is only
-/// rebuilt when the inputs that can move posters change: slot ids, library
-/// shape, band width. Plain class on purpose — mutating it never invalidates
-/// the view.
-private final class WallLayoutCache {
-    private var key = ""
-    private var cached: WallModel?
-
-    func model(items: [ShelfItem], store: WorkspaceStore, width: CGFloat, height: CGFloat) -> WallModel {
-        let k = "\(Int(width))|\(items.map(\.id).joined(separator: ","))|\(store.tracks.count)|\(store.playlists.count)"
-        if let cached, key == k { return cached }
-        let spill = ShelfSlots.spillover(
-            shelf: items,
-            recents: ShelfSlots.recents(
-                tracks: store.tracks,
-                playlists: store.playlists,
-                activity: store.activity,
-                titleOverrides: store.titleOverrides
-            ),
-            limit: 60
-        )
-        let model = WallLayout.build(close: items, spill: spill, width: width, height: height)
-        key = k
-        cached = model
-        return model
-    }
-}
-
-/// Deterministic poster scatter. Every position derives from an FNV-1a hash
-/// of the item id (MeshPalette.stableHash — same convention as the mesh
-/// covers), so the room is identical across launches. Minimum-distance
-/// rejection keeps overlap under ~15%: each poster tries a fan of seeded
-/// candidates and takes the first that clears its neighbors, else the least
-/// bad one.
-private enum WallLayout {
-    static func build(close: [ShelfItem], spill: [ShelfItem], width: CGFloat, height: CGFloat) -> WallModel {
-        let planeW = max(width * 3, 900)
-        let planeH = height * 2.2
-        let maxPanX = max(0, (planeW - width) / 2)
-        let maxPanY = max(0, (planeH - height) / 2)
-        var spots: [WallSpot] = []
-
-        func place(_ candidates: [(x: CGFloat, y: CGFloat)], size: CGFloat) -> (x: CGFloat, y: CGFloat) {
-            var best = candidates[0]
-            var bestScore = -CGFloat.greatestFiniteMagnitude
-            for c in candidates {
-                var worst = CGFloat.greatestFiniteMagnitude
-                for s in spots {
-                    let need = (size + s.size) / 2 * 0.85   // ≤ ~15% overlap
-                    worst = min(worst, hypot(c.x - s.x, c.y - s.y) - need)
+    /// Horizontal drag flips through the crate — records move under your
+    /// thumb, one slot per `spacing` points. On a looping crate there are no
+    /// ends, so no rubber-band: the drag just keeps flipping, wrapping mod n
+    /// in either direction (the spring stays short-way via `flip`'s seam
+    /// stripping). Small (non-looping) crates keep the clamp + rubber give.
+    /// Vertical drags fall through to the surrounding scroll view.
+    private var crateDrag: some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { value in
+                guard !pulled else { return }
+                if dragAnchor == nil {
+                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                    dragAnchor = focus
                 }
-                if worst >= 0 { return c }
-                if worst > bestScore { bestScore = worst; best = c }
-            }
-            return best
-        }
-
-        // Close cluster — the 15 shelf slots on a jittered golden-angle
-        // spiral around the marquee's spot at the origin. 96–120pt posters.
-        for (i, item) in close.enumerated() {
-            var rng = SeededRNG(MeshPalette.stableHash("wall:" + item.id))
-            let size = 96 + rng.unit() * 24
-            let lean = Double(rng.unit() * 2 + 2) * (rng.unit() < 0.5 ? -1 : 1)
-            var candidates: [(x: CGFloat, y: CGFloat)] = []
-            for attempt in 0..<14 {
-                let angle = CGFloat(i) * 2.39996 + (rng.unit() - 0.5) * 1.1 + CGFloat(attempt) * 0.47
-                let radius = 150 + 102 * sqrt(CGFloat(i)) + (rng.unit() - 0.5) * 44 + CGFloat(attempt) * 9
-                var x = cos(angle) * radius
-                var y = sin(angle) * radius * 0.62
-                x = min(maxPanX + width / 2 - size / 2 - 8, max(-(maxPanX + width / 2) + size / 2 + 8, x))
-                y = min(maxPanY + height / 2 - size / 2 - 6, max(-(maxPanY + height / 2) + size / 2 + 6, y))
-                candidates.append((x, y))
-            }
-            let p = place(candidates, size: size)
-            spots.append(WallSpot(item: item, x: p.x, y: p.y, size: size,
-                                  rotation: lean, layer: 0, baseOpacity: 1, close: true))
-        }
-
-        // Spillover — up to 60 more recents deeper in the room: smaller,
-        // dimmer, on the slower parallax layers. Positions stay within each
-        // layer's pannable reach (viewport + pan × layer factor) so nothing
-        // is born unreachable, and a center keep-out ring leaves the close
-        // cluster breathing room.
-        for item in spill {
-            var rng = SeededRNG(MeshPalette.stableHash("wall:" + item.id))
-            let deep = rng.unit() < 0.45
-            let layer = deep ? 2 : 1
-            let f: CGFloat = deep ? 0.7 : 0.85
-            let size = deep ? 64 + rng.unit() * 12 : 72 + rng.unit() * 12
-            let lean = Double(rng.unit() * 2 + 2) * (rng.unit() < 0.5 ? -1 : 1)
-            let opacity = deep ? 0.55 + Double(rng.unit()) * 0.13 : 0.68 + Double(rng.unit()) * 0.12
-            let reachX = width / 2 + maxPanX * f - size / 2 - 8
-            let reachY = height / 2 + maxPanY * f - size / 2 - 6
-            var candidates: [(x: CGFloat, y: CGFloat)] = []
-            for _ in 0..<16 {
-                var x = (rng.unit() * 2 - 1) * reachX
-                var y = (rng.unit() * 2 - 1) * reachY
-                let nd = hypot(x, y / 0.62)
-                if nd < 330 {
-                    let push = 330 / max(nd, 1)
-                    x = min(reachX, max(-reachX, x * push))
-                    y = min(reachY, max(-reachY, y * push))
+                guard let anchor = dragAnchor else { return }
+                let steps = Int((-value.translation.width / spacing).rounded())
+                let target = anchor + steps
+                flip(to: target)
+                if looping {
+                    if rubber != 0 { rubber = 0 }
+                    return
                 }
-                candidates.append((x, y))
+                let clamped = min(items.count - 1, max(0, target))
+                if target != clamped {
+                    let overshoot = -value.translation.width - CGFloat(clamped - anchor) * spacing
+                    rubber = -overshoot * 0.18
+                } else if rubber != 0 {
+                    withAnimation(crateAnimation) { rubber = 0 }
+                }
             }
-            let p = place(candidates, size: size)
-            spots.append(WallSpot(item: item, x: p.x, y: p.y, size: size,
-                                  rotation: lean, layer: layer, baseOpacity: opacity, close: false))
-        }
-
-        var byID: [String: WallSpot] = [:]
-        for s in spots { byID[s.id] = s }
-        return WallModel(spots: spots, byID: byID, ordered: close + spill,
-                         planeW: planeW, planeH: planeH)
+            .onEnded { _ in
+                dragAnchor = nil
+                if rubber != 0 {
+                    withAnimation(crateAnimation) { rubber = 0 }
+                }
+            }
     }
-}
 
-/// SplitMix64 stream seeded from the FNV-1a id hash — cheap, deterministic,
-/// and well distributed even for near-identical seeds.
-private struct SeededRNG {
-    private var state: UInt64
-    init(_ seed: UInt64) { state = seed == 0 ? 0x9E3779B97F4A7C15 : seed }
-    mutating func next64() -> UInt64 {
-        state &+= 0x9E3779B97F4A7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
-        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
-        return z ^ (z >> 31)
+    /// Swipe down on the band while pulled → the card slips back.
+    private var pulledDismissDrag: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                guard pulled,
+                      value.translation.height > 28,
+                      value.translation.height > abs(value.translation.width)
+                else { return }
+                seamCrossing = []
+                withAnimation(crateAnimation) { pulled = false }
+            }
     }
-    /// Uniform in [0, 1).
-    mutating func unit() -> CGFloat { CGFloat(next64() >> 11) / CGFloat(UInt64(1) << 53) }
 }

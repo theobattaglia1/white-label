@@ -54,12 +54,12 @@ struct ShelfView: View {
     // the band rather than a strip bleeding off both edges. Ahead pitch is
     // the tappable sliver per receding record (also drag pt/slot); behind
     // slivers are inert filler (tighter).
-    private let cardW: CGFloat = 190
-    private let cardH: CGFloat = 190        // 1:1 square sleeve — artwork fills the face
+    private let cardW: CGFloat = 160
+    private let cardH: CGFloat = 160        // 1:1 square sleeve — artwork fills the face
     private let spacing: CGFloat = 36       // slot pitch ahead of focus (also drag pt/slot)
-    private let focusGap: CGFloat = 90      // focused card → first card ahead
+    private let focusGap: CGFloat = 80      // focused card → first card ahead
     private let backSpacing: CGFloat = 26   // tighter pitch behind focus
-    private let backGap: CGFloat = 76       // focused card → first card behind
+    private let backGap: CGFloat = 68       // focused card → first card behind
     private let maxVisibleAhead = 3         // base budget ahead of focus
     private let maxVisibleBehind = 2        // fewer behind — the quiet end of the stack
 
@@ -102,8 +102,8 @@ struct ShelfView: View {
         return min(focus, maxVisibleBehind + max(0, maxVisibleAhead - availAhead))
     }
     private let depth: CGFloat = 1100       // perspective distance for z → scale
-    private let labelBandH: CGFloat = 48
-    private let stageH: CGFloat = 280       // 48 label + 22 gap + 190 cards + floor shadow
+    private let labelBandH: CGFloat = 40
+    private let stageH: CGFloat = 218       // 40 label + 16 gap + 160 cards + floor shadow
 
     // Projected half-widths used to compose/center the band. The focused
     // sleeve projects wider than cardW/2 (z 90 → scale ~1.09); the outermost
@@ -112,7 +112,7 @@ struct ShelfView: View {
     // its span — the old source of edge bleed.
     // Ahead cards lean with their NEAR (right) edge outermost — perspective
     // widens it; behind cards put their FAR (left) edge outermost — narrower.
-    private let focusedHalf: CGFloat = 108
+    private let focusedHalf: CGFloat = 91
     private let aheadEdgeHalf: CGFloat = 54
     private let behindEdgeHalf: CGFloat = 36
 
@@ -191,7 +191,7 @@ struct ShelfView: View {
 
     var body: some View {
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 head.padding(.horizontal, 24)
                 stage
             }
@@ -228,7 +228,7 @@ struct ShelfView: View {
             labels
 
             crate
-                .padding(.top, labelBandH + 22)
+                .padding(.top, labelBandH + 14)
         }
         .frame(height: stageH)
         .frame(maxWidth: .infinity)
@@ -316,7 +316,7 @@ struct ShelfView: View {
         }
         .buttonStyle(.plain)
         .scaleEffect(isPulled && !reduced ? 1.12 : 1)
-        .offset(x: x, y: isPulled && !reduced ? -46 : 0)
+        .offset(x: x, y: isPulled && !reduced ? -38 : 0)
         .zIndex(isPulled ? 60 : Double(40 - abs(d)))
         .opacity(p.hidden ? 0 : (dimmed ? 0.45 : p.fade))
         .allowsHitTesting(!p.hidden)

@@ -15,7 +15,7 @@ private enum HomeCreationSheet: Identifiable {
     }
 }
 
-/// Home — what to play, and what needs your ear.
+/// Home — what to play, and what is waiting for you.
 struct HomeView: View {
     var player: Player
     var store: WorkspaceStore
@@ -37,7 +37,7 @@ struct HomeView: View {
     private var isLibraryEmpty: Bool {
         store.tracks.isEmpty && store.playlists.isEmpty && store.rooms.isEmpty
     }
-    private var needsEar: [Track] { store.tracks.filter { store.openCount($0.id) > 0 } }
+    private var waitingForYou: [Track] { store.tracks.filter { store.openCount($0.id) > 0 } }
     /// THE SHELF's slot list — up to 10 pins (user order), then recents
     /// newest-first, capped at 15. Pure logic lives in ShelfSlots.swift.
     private var shelfSlots: [ShelfItem] {
@@ -121,10 +121,10 @@ struct HomeView: View {
                             .padding(.horizontal, -24)
                     }
 
-                    if !needsEar.isEmpty {
-                        section("Needs your attention") {
+                    if !waitingForYou.isEmpty {
+                        section("Waiting For You") {
                             VStack(spacing: 0) {
-                                ForEach(needsEar) { t in
+                                ForEach(waitingForYou) { t in
                                     homeTrackItem(t, showOpen: true)
                                 }
                             }

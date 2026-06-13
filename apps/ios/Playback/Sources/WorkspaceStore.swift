@@ -77,6 +77,20 @@ final class WorkspaceStore {
     private let activityKey = "wl.activity.v1"
     private let deletedTracksKey = "wl.deletedTracks.v1"
 
+    private static func normalizedPlaylist(_ playlist: Playlist) -> Playlist {
+        guard playlist.title.caseInsensitiveCompare("Needs Your Ear") == .orderedSame else { return playlist }
+        var copy = playlist
+        copy.title = "Waiting For You"
+        if copy.subtitle.caseInsensitiveCompare("Flagged for review") == .orderedSame {
+            copy.subtitle = "Waiting on first listen"
+        }
+        return copy
+    }
+
+    private static func normalizedPlaylists(_ playlists: [Playlist]) -> [Playlist] {
+        playlists.map(normalizedPlaylist)
+    }
+
     // MARK: tracks
 
     var isUsingServiceLibrary: Bool { !serviceTracks.isEmpty || syncState == .synced }
@@ -86,13 +100,13 @@ final class WorkspaceStore {
     }
     var playlists: [Playlist] {
         if isUsingServiceLibrary {
-            var merged = localPlaylists
-            for playlist in servicePlaylists where !merged.contains(where: { $0.id == playlist.id }) {
+            var merged = Self.normalizedPlaylists(localPlaylists)
+            for playlist in Self.normalizedPlaylists(servicePlaylists) where !merged.contains(where: { $0.id == playlist.id }) {
                 merged.append(playlist)
             }
             return merged
         }
-        return localPlaylists
+        return Self.normalizedPlaylists(localPlaylists)
     }
     var rooms: [Room] {
         if isUsingServiceLibrary {
@@ -237,7 +251,7 @@ final class WorkspaceStore {
                         guard !deletedTrackIDs.contains(songID) else { return nil }
                         return (songID, entry.item.playlist_item_id)
                     })
-                return Playlist(
+                return Self.normalizedPlaylist(Playlist(
                     id: detail.playlist.playlist_id,
                     title: detail.playlist.title,
                     subtitle: detail.playlist.description ?? "",
@@ -245,7 +259,7 @@ final class WorkspaceStore {
                         guard let songID = entry.song?.song_id ?? entry.current_version?.song_id else { return nil }
                         return deletedTrackIDs.contains(songID) ? nil : songID
                     }
-                )
+                ))
             }
             servicePlaylistItemIDs = itemIDsByPlaylist
         } catch {}
@@ -472,7 +486,7 @@ final class WorkspaceStore {
                 guard !deletedTrackIDs.contains(songID) else { return nil }
                 return (songID, entry.item.playlist_item_id)
             })
-            return Playlist(
+            return Self.normalizedPlaylist(Playlist(
                 id: detail.playlist.playlist_id,
                 title: detail.playlist.title,
                 subtitle: detail.playlist.description ?? "",
@@ -480,7 +494,7 @@ final class WorkspaceStore {
                     guard let songID = entry.song?.song_id ?? entry.current_version?.song_id else { return nil }
                     return deletedTrackIDs.contains(songID) ? nil : songID
                 }
-            )
+            ))
         }
         servicePlaylistItemIDs = itemIDsByPlaylist
 
@@ -778,7 +792,7 @@ final class WorkspaceStore {
     // MARK: playlists (mutable; drafts aren't persisted until kept)
 
     func playlist(_ id: String) -> Playlist? {
-        localPlaylists.first { $0.id == id } ?? servicePlaylists.first { $0.id == id }
+        playlists.first { $0.id == id }
     }
     func isDraft(_ id: String) -> Bool { draftIDs.contains(id) }
 
@@ -1324,6 +1338,7 @@ final class WorkspaceStore {
         let preserveNotice = syncState == .offline || syncState == .error
         if !preserveNotice { syncState = .saving }
         pins = Self.normalizedPins(pins)
+        localPlaylists = Self.normalizedPlaylists(localPlaylists)
         let enc = JSONEncoder()
         if let d = try? enc.encode(notesByTrack) { UserDefaults.standard.set(d, forKey: notesKey) }
         if let d = try? enc.encode(currentByTrack) { UserDefaults.standard.set(d, forKey: currentKey) }
@@ -1363,7 +1378,7 @@ final class WorkspaceStore {
         }
         if let d = UserDefaults.standard.data(forKey: playlistsKey),
            let v = try? dec.decode([Playlist].self, from: d), !v.isEmpty {
-            localPlaylists = v
+            localPlaylists = Self.normalizedPlaylists(v)
         }
         if let d = UserDefaults.standard.data(forKey: customRoomsKey),
            let v = try? dec.decode([Room].self, from: d) {

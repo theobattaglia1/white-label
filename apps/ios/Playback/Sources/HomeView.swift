@@ -122,7 +122,7 @@ struct HomeView: View {
                     }
 
                     if !waitingForYou.isEmpty {
-                        section("Waiting For You") {
+                        section("Needs your attention") {
                             VStack(spacing: 0) {
                                 ForEach(waitingForYou) { t in
                                     homeTrackItem(t, showOpen: true)

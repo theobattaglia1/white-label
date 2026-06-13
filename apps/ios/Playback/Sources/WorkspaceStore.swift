@@ -80,7 +80,7 @@ final class WorkspaceStore {
     private static func normalizedPlaylist(_ playlist: Playlist) -> Playlist {
         guard playlist.title.caseInsensitiveCompare("Needs Your Ear") == .orderedSame else { return playlist }
         var copy = playlist
-        copy.title = "Waiting For You"
+        copy.title = "Needs your attention"
         if copy.subtitle.caseInsensitiveCompare("Flagged for review") == .orderedSame {
             copy.subtitle = "Waiting on first listen"
         }

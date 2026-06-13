@@ -6,7 +6,7 @@ enum SampleData {
                  trackIDs: ["first-night", "duel", "lighting-the-fuse", "best-of-me"]),
         Playlist(id: "pl-pitch", title: "Pitch — Mira", subtitle: "For the Tuesday A&R call",
                  trackIDs: ["duel", "first-night"]),
-        Playlist(id: "pl-ear", title: "Needs Your Ear", subtitle: "Flagged for review",
+        Playlist(id: "pl-ear", title: "Needs your attention", subtitle: "Waiting on first listen",
                  trackIDs: ["first-night", "best-of-me"]),
     ]
 
